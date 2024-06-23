@@ -69,6 +69,7 @@ extend-include = ["*.ipynb"]
 
 [tool.ruff.format]
 docstring-code-format = true
+exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = [
@@ -110,6 +111,8 @@ ignore = [
     "D203",
     # We want docstrings to start immediately after the opening triple quote
     "D213",
+    # Reenable
+    "D419", "D101", "D102", "D103", "D205", "D207", "C419", "E999", "UP007", "UP038"
 ]
 
 [tool.ruff.lint.pydocstyle]

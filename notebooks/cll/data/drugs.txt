@@ -1,0 +1,92 @@
+drug_id,name,main_targets,target_category,pathway
+D_001,navitoclax,"BCL2, BCL-XL, BCL-W","Apoptosis (BH3, Survivin)",Apoptosis (BH3)
+D_002,ibrutinib,BTK,B-cell receptor,B-cell receptor
+D_003,idelalisib,PI3K delta,PI3K/AKT,B-cell receptor
+D_004,SNS-032,CDK2/7/9,Cell cycle control,Other
+D_005,olaparib,PARP1/2,DNA damage response,Other
+D_006,fludarabine,Purine analogue,DNA damage response,Other
+D_007,vorinostat,HDAC I/IIa/IIb/IV,Epigenome,Other
+D_008,bortezomib,Proteasome,Proteasome,Other
+D_009,entinostat,HDAC I/III,Epigenome,Other
+D_010,nutlin-3,MDM2,DNA damage response,Other
+D_011,enzastaurin,PKC,PKC,Other
+D_012,selumetinib,MEK1/2,MAPK,Other
+D_013,afatinib,"EGFR, ERBB2",EGFR,Other
+D_014,deforolimus,mTOR,mTOR,Other
+D_015,MK-1775,WEE1,Cell cycle control,Other
+D_016,vismodegib,SMO,Hedgehog signaling,Other
+D_017,AT13387,HSP90,HSP90,Other
+D_018,RO4929097,Gamma-secretase,NOTCH,Other
+D_019,XAV-939,WNT,WNT,Other
+D_020,AZD7762,CHK1/2,DNA damage response,Other
+D_021,rigosertib,PLK,Cell cycle control,Other
+D_022,SP600125,JNK,MAPK,Other
+D_023,ralimetinib,p38 MAPK,MAPK,Other
+D_024,SGI-1776,PIM,PIM,Other
+D_025,NSC 74859,STAT,JAK/STAT,Other
+D_026,tozasertib,"Aurora A/B/C, FLT3, ABL1, JAK2",Cell cycle control,Other
+D_027,TAME,Anaphase-Promoting Complex (APC),Cell cycle control,Other
+D_028,galunisertib,TGF-beta,TGF,Other
+D_029,TAE684,ALK,ALK,Other
+D_030,MK-2206,AKT1/2 (PKB),PI3K/AKT,Other
+D_031,pomalidomide,,Immune modulation,Other
+D_032,NU7441,DNAPK,DNA damage response,Other
+D_033,tipifarnib,Farnesyltransferase (FNTA),MAPK,Other
+D_034,chaetocin,Lysine-specific histone methyltransferase,Epigenome,Other
+D_035,saracatinib,"SRC, ABL1",B-cell receptor,Other
+D_036,tamatinib,SYK,B-cell receptor,B-cell receptor
+D_037,2-methoxyestradiol,"Microtubules, HIF-1",Cytoskeleton,Other
+D_038,serdemetan,MDM2,DNA damage response,Other
+D_039,thapsigargin,Sarco/endoplasmic reticulum Ca2+ ATPase (SERCA),Other,Other
+D_040,YM155,Survivin,"Apoptosis (BH3, Survivin)",Other
+D_041,BAY 11-7085,NFkB,NFkB,Other
+D_042,curcumin,"COX2, NFkB",NFkB,Other
+D_043,SGX-523,MET,MET,Other
+D_044,MLN9708,Proteasome,Proteasome,Other
+D_045,KU-60019,ATM,DNA damage response,Other
+D_046,ZM 336372,RAF1,MAPK,Other
+D_047,sorafenib,"BRAF, RAF1, FLT3, KIT, PDGFRA, PDGFRB",MAPK,Other
+D_048,orlistat,LPL,Other,Other
+D_049,chaetoglobosin A,Actin,Cytoskeleton,Other
+D_050,dasatinib,"ABL1, KIT, LYN, PDGFRA, PDGFRB, SRC",BCR/ABL,Other
+D_051,PKI-402,Pan PI3K,PI3K/AKT,Other
+D_052,PIK-75,PI3K alpha,PI3K/AKT,Other
+D_053,sunitinib,"VEGFR, PDGFRA/B, FLT3, KIT",Angiogenesis,Other
+D_054,gefitinib,EGFR,EGFR,Other
+D_055,lapatinib,"EGFR, HER2",EGFR,Other
+D_056,actinomycin D,RNA synthesis,DNA damage response,Other
+D_057,crizotinib,"ALK, MET",ALK,Other
+D_058,ochratoxin A,Oxidative DNA damage,DNA damage response,Other
+D_059,lasalocid A,Cation transport,Other,Other
+D_060,cephaeline,40S ribosomal subunit,Other,Other
+D_061,oligomycin A,ATP synthase,Mitochondrial metabolism,Other
+D_062,fumonisin B1,Ceramide synthase,Other,Other
+D_063,everolimus,mTOR,mTOR,Other
+D_064,spliceostatin A,SF3b,Splicing,Other
+D_065,ATRA,Retinoic acid and retinoid X receptor agonist,Other,Other
+D_066,arsenic trioxide,,Other,Other
+D_067,rotenone,Electron transport chain in mitochondria,Mitochondrial metabolism,Other
+D_071,KX2-391,SRC,B-cell receptor,Other
+D_074,VE-821,ATR,DNA damage response,Other
+D_075,rabusertib,CHK1,DNA damage response,Other
+D_077,SCH 900776,"CHK1, CDK2",DNA damage response,Other
+D_078,PF 477736,"CHK1, CHK2",DNA damage response,Other
+D_079,spebrutinib,BTK,B-cell receptor,B-cell receptor
+D_081,venetoclax,BCL2,"Apoptosis (BH3, Survivin)",Apoptosis (BH3)
+D_082,duvelisib,"PI3K gamma, PI3K delta",PI3K/AKT,B-cell receptor
+D_083,encorafenib,BRAF,MAPK,Other
+D_084,ruxolitinib,JAK1/2/3,JAK/STAT,Other
+D_127,SD07,ROS,Reactive oxygen species,Reactive oxygen species
+D_141,SD51,ROS,Reactive oxygen species,Reactive oxygen species
+D_149,MIS-43,ROS,Reactive oxygen species,Reactive oxygen species
+D_159,doxorubicine,"DNA intercalation, Topoisomerase II",DNA damage response,Other
+D_162,BML-277,CHK2,DNA damage response,Other
+D_163,CCT241533,CHK2,DNA damage response,Other
+D_164,BX912,PDK1,PI3K/AKT,Other
+D_165,silmitasertib,CK2,Cell cycle control,Other
+D_166,PRT062607 HCl,SYK,B-cell receptor,B-cell receptor
+D_167,UCN-01,"PKC, MK2, CHK1",PKC,Other
+D_168,sotrastaurin,PKC,PKC,Other
+D_169,tofacitinib,JAK3,JAK/STAT,Other
+D_172,BIX02188,MEK5,MAPK,Other
+D_CHK,BML-277 + rabusertib,,,Other

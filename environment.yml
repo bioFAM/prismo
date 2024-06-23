@@ -1,0 +1,30 @@
+name: famo
+channels:
+  - conda-forge
+  - defaults
+  - pytorch
+dependencies:
+  - pytorch::pytorch
+  - altair
+  - anndata
+  - dill
+  - jupyterlab
+  - matplotlib
+  - mudata
+  - numpy
+  - pandas
+  - pyro-ppl
+  - pytest
+  - ruff
+  - scikit-learn
+  - scipy
+  - seaborn
+  - tensordict
+  - tqdm
+  - scanpy
+  - addict
+  - vegafusion-python-embed[version='>=1.5.0']
+  - vegafusion[version='>=1.5.0']
+  - vl-convert-python[version='>=1.3.0']
+  - pipreqs
+  - pip-tools

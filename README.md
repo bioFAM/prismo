@@ -1,11 +1,6 @@
-# famo
+# FAMO
 
-[![Tests][badge-tests]][link-tests]
-[![Documentation][badge-docs]][link-docs]
-
-[badge-tests]: https://img.shields.io/github/actions/workflow/status/martinrohbeck/famo/test.yaml?branch=main
-[link-tests]: https://github.com/bioFAM/famo/actions/workflows/test.yml
-[badge-docs]: https://img.shields.io/readthedocs/famo
+[![codecov](https://codecov.io/gh/bioFAM/famo/graph/badge.svg?token=IJP1IA4JEU)](https://codecov.io/gh/bioFAM/famo)
 
 Factor Analysis Models
 
@@ -49,7 +44,6 @@ If you found a bug, please use the [issue tracker][issue-tracker].
 
 > t.b.a
 
-[scverse-discourse]: https://discourse.scverse.org/
 [issue-tracker]: https://github.com/martinrohbeck/famo/issues
 [changelog]: https://famo.readthedocs.io/latest/changelog.html
 [link-docs]: https://famo.readthedocs.io

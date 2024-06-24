@@ -27,3 +27,7 @@ __pycache__/
 # IDEs
 /.idea/
 /.vscode/
+
+# Files
+*.pkl
+*.save

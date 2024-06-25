@@ -15,11 +15,11 @@ from sklearn.decomposition import PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from famo import utils_data
 from famo.model import Generative, Variational
 from famo.plotting import plot_overview
-from famo.utils_io import save_model
-from famo.utils_training import EarlyStopper
+from famo.utils import data as utils_data
+from famo.utils.io import save_model
+from famo.utils.training import EarlyStopper
 
 # Set 16bit cuda float as default
 # torch.set_default_dtype(torch.float32)
@@ -173,7 +173,12 @@ class CORE(PyroModule):
         self.variational = Variational(self.generative, self.init_tensor)
 
         self._optimizer = ClippedAdam({"lr": lr})
-        self._svi = SVI(self.generative, self.variational, self._optimizer, loss=TraceMeanField_ELBO())
+        self._svi = SVI(
+            self.generative,
+            self.variational,
+            self._optimizer,
+            loss=TraceMeanField_ELBO(),
+        )
 
         return self._svi
 
@@ -371,7 +376,13 @@ class CORE(PyroModule):
 
                 for group_batch in zip(*data_loaders, strict=False):
                     epoch_loss += self._svi.step(
-                        dict(zip(self.group_names, (batch.to(self.device) for batch in group_batch), strict=False))
+                        dict(
+                            zip(
+                                self.group_names,
+                                (batch.to(self.device) for batch in group_batch),
+                                strict=False,
+                            )
+                        )
                     )
 
                 return epoch_loss

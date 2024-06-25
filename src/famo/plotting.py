@@ -42,7 +42,7 @@ def plot_training_curve(model):
     alt.Chart(df).mark_line().encode(x="Epoch", y="-ELBO").properties(title="Training Curve").display()
 
 
-def plot_all_weights(model):
+def plot_all_weights(model, clip=(-1, 1)):
     """Plot the weight matrices using Altair."""
     # Ensure the model has been trained
     model._check_if_trained()
@@ -58,6 +58,9 @@ def plot_all_weights(model):
         df = df.melt("Feature", var_name="Factor", value_name="Weight")
         df["Factor"] += 1
 
+        if clip is None:
+            clip = (df["Weight"].min(), df["Weight"].max())
+
         chart = (
             alt.Chart(df)
             .mark_rect()
@@ -67,7 +70,7 @@ def plot_all_weights(model):
                     "Feature:O",
                     axis=alt.Axis(ticks=False, labels=False, title="Features"),
                 ),
-                color=alt.Color("Weight:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))),
+                color=alt.Color("Weight:Q", scale=alt.Scale(scheme="redblue", domain=clip)),
                 tooltip=["Feature", "Factor", "Weight"],
             )
             .properties(title=f"{k}", width=250, height=400)
@@ -230,7 +233,6 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
     """Plot the top nfeatures weights for a given factor and view."""
     model._check_if_trained()
 
-    # If factor is not a list, convert to list
     factor = [factor] if not isinstance(factor, list) else factor
 
     # We reduce the factor value by one, because we internally start counting at 0
@@ -242,7 +244,7 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
     # Create an empty list to hold all the charts
     charts = []
 
-    for k, f in enumerate(factor):
+    for f in factor:
         w = weights[view].X[f, :]
         signs = np.sign(w)
         w = np.abs(w)
@@ -260,7 +262,7 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
                     color=alt.Color("Color:N", scale=None),
                     tooltip=["Feature", "Weight"],
                 )
-                .properties(title=f"Factor {k+1} | {view}", width=300, height=300)
+                .properties(title=f"Factor {f+1} | {view}", width=300, height=300)
             )
         else:
             raise NotImplementedError("Vertical orientation not yet implemented")
@@ -304,6 +306,8 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
 
 
 def plot_weights(model, view, factor=1, top_n_features=10):
+    factor = factor - 1
+
     weights = model.get_weights()[view][factor]
     feature_names = model.feature_names[view]
     df_plot = pd.DataFrame({"weight": weights, "feature": feature_names})
@@ -341,7 +345,7 @@ def plot_weights(model, view, factor=1, top_n_features=10):
             x=alt.X(
                 "weight:Q",
                 title="Weight",
-                scale=alt.Scale(domain=[x_min - x_margin * 2.2, x_max + x_margin * 2.2]),
+                scale=alt.Scale(domain=[x_min - x_margin * 2.5, x_max + x_margin * 2.5]),
             ),
             y=alt.Y("rank:Q", title="Rank", axis=alt.Axis(labels=False, ticks=False)),
         )

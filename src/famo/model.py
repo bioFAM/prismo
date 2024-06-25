@@ -107,7 +107,7 @@ class Generative(PyroModule):
 
     def _sample_component_ard_spike_and_slab(self, site_name, outer_plate, inner_plate, **kwargs):
         with outer_plate:
-            alpha = self._sample(f"alpha_{site_name}", dist.Gamma(1e-10 * self._ones(1), 1e-10 * self._ones(1)))
+            alpha = self._sample(f"alpha_{site_name}", dist.Gamma(1e-3 * self._ones(1), 1e-3 * self._ones(1)))
             theta = self._sample(f"theta_{site_name}", dist.Beta(self._ones(1), self._ones(1)))
             with inner_plate:
                 s = self._sample(f"s_{site_name}", dist.Bernoulli(theta))

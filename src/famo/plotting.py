@@ -42,7 +42,7 @@ def plot_training_curve(model):
     alt.Chart(df).mark_line().encode(x="Epoch", y="-ELBO").properties(title="Training Curve").display()
 
 
-def plot_weights(model):
+def plot_all_weights(model):
     """Plot the weight matrices using Altair."""
     # Ensure the model has been trained
     model._check_if_trained()
@@ -63,7 +63,10 @@ def plot_weights(model):
             .mark_rect()
             .encode(
                 x="Factor:O",
-                y=alt.Y("Feature:O", axis=alt.Axis(ticks=False, labels=False, title="Features")),
+                y=alt.Y(
+                    "Feature:O",
+                    axis=alt.Axis(ticks=False, labels=False, title="Features"),
+                ),
                 color=alt.Color("Weight:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))),
                 tooltip=["Feature", "Factor", "Weight"],
             )
@@ -123,12 +126,6 @@ def plot_factor_correlation(model):
     final_chart.display()
 
 
-def _r2(y_true, y_pred):
-    ss_res = np.nansum(np.square(y_true - y_pred))
-    ss_tot = np.nansum(np.square(y_true))
-    return 1.0 - (ss_res / ss_tot)
-
-
 def plot_variance_explained(model):
     """Plot the variance explained by each factor in each view."""
     # Check if the model has been trained
@@ -160,7 +157,10 @@ def plot_variance_explained(model):
                 y=alt.Y("Factor:O", title="Factor", sort="descending"),
                 color=alt.Color(
                     "Variance Explained:Q",
-                    scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2_df["Variance Explained"]))),
+                    scale=alt.Scale(
+                        scheme="blues",
+                        domain=(0, 1.5 * max(r2_df["Variance Explained"])),
+                    ),
                 ),
                 tooltip=["Factor", "View", "Variance Explained"],
             )
@@ -301,3 +301,98 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
 
     # Display the chart
     final_chart.display()
+
+
+def plot_weights(model, view, factor=1, top_n_features=10):
+    weights = model.get_weights()[view][factor]
+    feature_names = model.feature_names[view]
+    df_plot = pd.DataFrame({"weight": weights, "feature": feature_names})
+    df_plot = df_plot.sort_values("weight", ascending=False)
+    df_plot["rank"] = len(df_plot) - np.arange(len(df_plot))
+
+    # Calculate x-axis limits with additional margin
+    x_min = df_plot["weight"].min()
+    x_max = df_plot["weight"].max()
+    x_margin = (x_max - x_min) * 0.1  # 10% margin on each side
+
+    # Select top n values with highest absolute weights
+    # and split by pos/neg because we want to label them on different sides
+    df_plot["abs_weight"] = np.abs(df_plot["weight"])
+    top_n = df_plot.nlargest(top_n_features, "abs_weight").copy()
+    top_n["sign"] = np.sign(top_n["weight"])
+    top_n_pos = top_n.query("sign > 0").copy()
+    top_n_neg = top_n.query("sign < 0").copy()
+
+    # Adjust positions for labels
+    # Create a unique y position for each label, invovles some manual tweaking
+    top_n_pos["label_x"] = x_max + x_margin
+    top_n_neg["label_x"] = x_min - x_margin
+    top_n_pos["label_y"] = top_n_pos["rank"]
+    top_n_neg["label_y"] = top_n_neg["rank"]
+    max_rank = df_plot["rank"].max()
+    top_n_pos["label_y"] = np.linspace(max_rank, 0.2 * max_rank, len(top_n_pos))
+    top_n_neg["label_y"] = np.linspace(0.2 * max_rank, 0.8 * max_rank, len(top_n_neg))
+
+    # Make an altair plot showing weight on x axis, rank on y axis
+    points = (
+        alt.Chart(df_plot)
+        .mark_point(size=10)
+        .encode(
+            x=alt.X(
+                "weight:Q",
+                title="Weight",
+                scale=alt.Scale(domain=[x_min - x_margin * 2.2, x_max + x_margin * 2.2]),
+            ),
+            y=alt.Y("rank:Q", title="Rank", axis=alt.Axis(labels=False, ticks=False)),
+        )
+    )
+
+    # Add feature names as text labels
+    text_pos = (
+        alt.Chart(top_n_pos)
+        .mark_text(align="left", baseline="middle", dx=5)
+        .encode(
+            x="label_x:Q",
+            y="label_y:Q",
+            text="feature:N",
+        )
+    )
+    text_neg = (
+        alt.Chart(top_n_neg)
+        .mark_text(align="right", baseline="middle", dx=-5)
+        .encode(
+            x="label_x:Q",
+            y="label_y:Q",
+            text="feature:N",
+        )
+    )
+
+    # Add lines connecting points and labels
+    lines_pos = (
+        alt.Chart(top_n_pos)
+        .mark_rule(color="gray", strokeDash=[1, 1])
+        .encode(
+            x="label_x:Q",
+            y="label_y:Q",
+            x2="weight:Q",
+            y2="rank:Q",
+        )
+    )
+    lines_neg = (
+        alt.Chart(top_n_neg)
+        .mark_rule(color="gray", strokeDash=[1, 1])
+        .encode(
+            x="label_x:Q",
+            y="label_y:Q",
+            x2="weight:Q",
+            y2="rank:Q",
+        )
+    )
+
+    chart = (points + text_pos + text_neg + lines_pos + lines_neg).properties(
+        title=f"Top {view} weights for factor {factor}",
+        width=600,
+        height=400,
+    )
+
+    chart.display()

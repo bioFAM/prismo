@@ -267,7 +267,9 @@ def test_center_data():
         "view4": "BetaBinomial",
     }
 
-    data_c = utils_data.center_data(data, likelihoods)
+    data_c = utils_data.center_data(
+        data, likelihoods, nmf={k: False for k in likelihoods}
+    )
 
     assert np.allclose(data_c["group1"]["view1"].X.mean(axis=0), 0)
     assert np.allclose(data_c["group2"]["view1"].X.mean(axis=0), 0)

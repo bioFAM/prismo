@@ -1,6 +1,6 @@
 import pandas as pd
-from anndata import AnnData
 from mudata import MuData
+from anndata import AnnData
 
 
 def load_CLL() -> MuData:

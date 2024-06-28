@@ -189,7 +189,9 @@ class CORE(PyroModule):
         self._factor_names = pd.Index(
             [f"Factor {k + 1}" for k in range(self.n_factors)]
         )
-        if isinstance(annotations[self.view_names[0]], pd.DataFrame):
+        if annotations is not None and isinstance(
+            annotations[self.view_names[0]], pd.DataFrame
+        ):
             self._factor_names = pd.Index(annotations[self.view_names[0]].index)
             annotations = {vn: vm.values for vn, vm in annotations.items()}
 
@@ -197,12 +199,15 @@ class CORE(PyroModule):
         self.annotations = annotations
         self.prior_penalty = prior_penalty
 
-        self.prior_scales = {
-            vn: torch.Tensor(
-                np.clip(vm.astype(np.float32) + self.prior_penalty, 1e-6, 1.0)
-            ).to(self.device)
-            for vn, vm in annotations.items()
-        }
+        prior_scales = None
+        if annotations is not None:
+            prior_scales = {
+                vn: torch.Tensor(
+                    np.clip(vm.astype(np.float32) + self.prior_penalty, 1e-6, 1.0)
+                ).to(self.device)
+                for vn, vm in annotations.items()
+            }
+        self.prior_scales = prior_scales
         return self.annotations
 
     def _setup_svi(

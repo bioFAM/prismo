@@ -1,8 +1,8 @@
 import anndata as ad
-import numpy as np
 import pandas as pd
-from anndata import AnnData
+import numpy as np
 from mudata import MuData
+from anndata import AnnData
 
 
 def load_mouse_fibroblasts() -> MuData:

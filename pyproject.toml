@@ -84,6 +84,7 @@ extend-include = ["*.ipynb"]
 [tool.ruff.format]
 docstring-code-format = true
 exclude = ["*.ipynb"]
+skip-magic-trailing-comma = true
 
 [tool.ruff.lint]
 select = [

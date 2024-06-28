@@ -1,6 +1,6 @@
 import pandas as pd
-from anndata import AnnData
 from mudata import MuData
+from anndata import AnnData
 
 
 def load_CLL() -> MuData:
@@ -33,7 +33,9 @@ def load_CLL() -> MuData:
     modalities["mrna"].var_names = cols
 
     # avoid duplicated names with the Mutations view
-    modalities["mutations"].var_names = [f"m_{x}" for x in modalities["mutations"].var_names]
+    modalities["mutations"].var_names = [
+        f"m_{x}" for x in modalities["mutations"].var_names
+    ]
 
     # Replace drug names
     # Create mapping from drug_id to name

@@ -1,8 +1,8 @@
 import anndata as ad
-import numpy as np
 import pandas as pd
-from anndata import AnnData
+import numpy as np
 from mudata import MuData
+from anndata import AnnData
 
 
 def load_mouse_fibroblasts() -> MuData:
@@ -46,6 +46,8 @@ def load_mouse_fibroblasts() -> MuData:
     adata_total = AnnData((c57 + cast).values, obs=obs, var=var)
     adata_c57 = AnnData(c57.values, obs=obs, var=var_c57)
     adata_cast = AnnData(cast.values, obs=obs, var=var_cast)
-    adata_allelic = ad.concat([adata_c57, adata_cast], axis=1, join="outer", merge="same")
+    adata_allelic = ad.concat(
+        [adata_c57, adata_cast], axis=1, join="outer", merge="same"
+    )
 
     return MuData({"mrna_allelic": adata_allelic, "mrna_total": adata_total})

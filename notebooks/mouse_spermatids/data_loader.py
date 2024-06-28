@@ -1,8 +1,8 @@
 import anndata as ad
-import numpy as np
 import pandas as pd
-from anndata import AnnData
+import numpy as np
 from mudata import MuData
+from anndata import AnnData
 from scipy.io import mmread
 
 
@@ -36,7 +36,9 @@ def load_mouse_spermatids() -> MuData:
 
     adata_alt = AnnData(X=alt, obs=metadata, var=genes_alt, dtype=np.float32)
     adata_ref = AnnData(X=ref, obs=metadata, var=genes_ref, dtype=np.float32)
-    adata_allelic = ad.concat([adata_alt, adata_ref], axis=1, join="outer", merge="same")
+    adata_allelic = ad.concat(
+        [adata_alt, adata_ref], axis=1, join="outer", merge="same"
+    )
     adata_total = AnnData(X=total, obs=metadata, var=genes, dtype=np.float32)
 
     mdata = MuData({"mrna_allelic": adata_allelic, "mrna_total": adata_total})

@@ -27,7 +27,9 @@ class GammaPoisson(dist.TorchDistribution):
 
     @lazy_property
     def _gamma(self):
-        return torch.distributions.Gamma(concentration=self.theta, rate=self.theta / self.mu, validate_args=False)
+        return torch.distributions.Gamma(
+            concentration=self.theta, rate=self.theta / self.mu, validate_args=False
+        )
 
     def sample(self, sample_shape=None):
         if sample_shape is None:

@@ -1,7 +1,7 @@
-import numpy as np
 import torch
-from scipy.optimize import linear_sum_assignment
+import numpy as np
 from scipy.stats import pearsonr
+from scipy.optimize import linear_sum_assignment
 
 
 def match(
@@ -23,7 +23,9 @@ def match(
     correlation = np.zeros([fixed.shape[-1], variable.shape[-1]])
     for i in range(fixed.shape[-1]):
         for j in range(variable.shape[-1]):
-            correlation[i, j] = pearsonr(fixed[..., i].flatten(), variable[..., j].flatten())[0]
+            correlation[i, j] = pearsonr(
+                fixed[..., i].flatten(), variable[..., j].flatten()
+            )[0]
     correlation = np.nan_to_num(correlation, 0)
 
     # find the permutation that maximizes the correlation

@@ -34,14 +34,21 @@ class ReinMaxBernoulli(_ReinMaxMixin, Bernoulli):
 
 class _ReinMaxGrad(torch.autograd.Function):
     @staticmethod
-    def setup_context(ctx: Any, inputs: tuple[torch.Tensor], output: torch.Tensor) -> None:
+    def setup_context(
+        ctx: Any, inputs: tuple[torch.Tensor], output: torch.Tensor
+    ) -> None:
         ctx.save_for_backward(*inputs)
 
     @staticmethod
     def forward(
-        probs: torch.Tensor, logits: torch.Tensor, temperature: torch.Tensor, sample: torch.Tensor
+        probs: torch.Tensor,
+        logits: torch.Tensor,
+        temperature: torch.Tensor,
+        sample: torch.Tensor,
     ) -> torch.Tensor:
-        return sample[:]  # we need the slice here, otherwise this doesn't play well with
+        return sample[
+            :
+        ]  # we need the slice here, otherwise this doesn't play well with
         # pyro.infer.inspect.get_dependencies and becomes an empty tensor
 
     @staticmethod
@@ -55,13 +62,22 @@ class _ReinMaxGrad(torch.autograd.Function):
         retgrad1, retgrad2 = None, None
         if ctx.needs_input_grad[0]:
             retgrad1 = (
-                torch.autograd.grad(logits, probs, grad1, materialize_grads=True, retain_graph=True)[0]
+                torch.autograd.grad(
+                    logits, probs, grad1, materialize_grads=True, retain_graph=True
+                )[0]
                 - 0.5 * grad_output
             )
         if ctx.needs_input_grad[1]:
             retgrad2 = (
                 grad1
-                - 0.5 * torch.autograd.grad(probs, logits, grad_output, materialize_grads=True, retain_graph=True)[0]
+                - 0.5
+                * torch.autograd.grad(
+                    probs,
+                    logits,
+                    grad_output,
+                    materialize_grads=True,
+                    retain_graph=True,
+                )[0]
             )
 
         return (retgrad1, retgrad2, None, None)

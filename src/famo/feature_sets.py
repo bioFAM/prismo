@@ -1,12 +1,17 @@
 # Highly inspired by https://github.com/krassowski/gsea-api
 import logging
+
 from collections import Counter
-from collections.abc import Collection, Iterable
+from collections.abc import Collection
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
+
 from sklearn.metrics import pairwise_distances
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +33,11 @@ class FeatureSet:
         redundant_features = None
 
         if len(features) != len(self.features):
-            redundant_features = {feature: count for feature, count in Counter(features).items() if count > 1}
+            redundant_features = {
+                feature: count
+                for feature, count in Counter(features).items()
+                if count > 1
+            }
 
             logger.warning(
                 f"FeatureSet {name!r} received a non-unique "
@@ -45,7 +54,9 @@ class FeatureSet:
         return len(self.features)
 
     def __repr__(self) -> str:
-        features = ": " + ", ".join(sorted(self.features)) if len(self.features) < 5 else ""
+        features = (
+            ": " + ", ".join(sorted(self.features)) if len(self.features) < 5 else ""
+        )
         return f"<FeatureSet {self.name!r} with {len(self)} features{features}>"
 
     def __iter__(self) -> Iterable[str]:
@@ -101,13 +112,17 @@ class FeatureSets:
         self.name = name
 
         if remove_empty:
-            feature_sets = {feature_set for feature_set in feature_sets if not feature_set.empty}
+            feature_sets = {
+                feature_set for feature_set in feature_sets if not feature_set.empty
+            }
 
         redundant_feature_sets = None
 
         if len(set(feature_sets)) != len(feature_sets):
             redundant_feature_sets = {
-                feature_set: count for feature_set, count in Counter(feature_sets).items() if count > 1
+                feature_set: count
+                for feature_set, count in Counter(feature_sets).items()
+                if count > 1
             }
 
             logger.warning(
@@ -145,9 +160,14 @@ class FeatureSets:
 
     def __repr__(self) -> str:
         feature_sets = (
-            ": " + ", ".join(sorted({fs.name for fs in self.feature_sets})) if len(self.feature_sets) < 5 else ""
+            ": " + ", ".join(sorted({fs.name for fs in self.feature_sets}))
+            if len(self.feature_sets) < 5
+            else ""
         )
-        return f"<FeatureSets {self.name!r} with {len(self)} " + f"feature sets{feature_sets}>"
+        return (
+            f"<FeatureSets {self.name!r} with {len(self)} "
+            + f"feature sets{feature_sets}>"
+        )
 
     def __eq__(self, other: "FeatureSets") -> bool:
         return self.feature_sets == other.feature_sets
@@ -184,7 +204,11 @@ class FeatureSets:
             Search results.
         """
         return FeatureSets(
-            {feature_set for feature_set in self.feature_sets if partial_name in feature_set.name},
+            {
+                feature_set
+                for feature_set in self.feature_sets
+                if partial_name in feature_set.name
+            },
             name=f"{self.name}:{partial_name}",
         )
 
@@ -197,7 +221,11 @@ class FeatureSets:
             Collection of feature set names.
         """
         return FeatureSets(
-            {feature_set for feature_set in self.feature_sets if feature_set.name not in names},
+            {
+                feature_set
+                for feature_set in self.feature_sets
+                if feature_set.name not in names
+            },
             name=self.name,
         )
 
@@ -210,11 +238,15 @@ class FeatureSets:
             Collection of feature set names.
         """
         return FeatureSets(
-            {feature_set for feature_set in self.feature_sets if feature_set.name in names},
+            {
+                feature_set
+                for feature_set in self.feature_sets
+                if feature_set.name in names
+            },
             name=self.name,
         )
 
-    def trim(self, min_count: int = 1, max_count: int | None = None):
+    def trim(self, min_count: int = 1, max_count: Optional[int] = None):
         """Trim feature sets by min/max size.
 
         Parameters
@@ -228,7 +260,9 @@ class FeatureSets:
             {
                 feature_set
                 for feature_set in self.feature_sets
-                if min_count <= len(feature_set.features) <= (max_count or len(feature_set.features))
+                if min_count
+                <= len(feature_set.features)
+                <= (max_count or len(feature_set.features))
             },
             name=self.name,
         )
@@ -251,8 +285,8 @@ class FeatureSets:
         features: Iterable[str],
         min_fraction: float = 0.5,
         min_count: int = 5,
-        max_count: int | None = None,
-        keep: Iterable[str] | None = None,
+        max_count: Optional[int] = None,
+        keep: Optional[Iterable[str]] = None,
         subset: bool = True,
     ):
         """Filter feature sets.
@@ -298,7 +332,11 @@ class FeatureSets:
             intersection = features & feature_set.features
             count = len(intersection)
             fraction = count / len(feature_set)
-            if count >= min_count and fraction >= min_fraction and (max_count is None or count <= max_count):
+            if (
+                count >= min_count
+                and fraction >= min_fraction
+                and (max_count is None or count <= max_count)
+            ):
                 feature_set_subset.add(feature_set)
 
         filtered_feature_sets = FeatureSets(feature_set_subset, name=self.name)
@@ -306,7 +344,9 @@ class FeatureSets:
             filtered_feature_sets = filtered_feature_sets.subset(features)
         return filtered_feature_sets
 
-    def to_mask(self, features: Iterable[str] | None = None, sort: bool = True) -> pd.DataFrame:
+    def to_mask(
+        self, features: Optional[Iterable[str]] = None, sort: bool = True
+    ) -> pd.DataFrame:
         """Convert feature sets to a mask.
 
         Parameters
@@ -327,12 +367,17 @@ class FeatureSets:
         if sort:
             feature_sets_list = sorted(feature_sets_list, key=lambda fs: fs.name)
         return pd.DataFrame(
-            [[feature in feature_set.features for feature in features_list] for feature_set in feature_sets_list],
+            [
+                [feature in feature_set.features for feature in features_list]
+                for feature_set in feature_sets_list
+            ],
             index=[feature_set.name for feature_set in feature_sets_list],
             columns=features_list,
         )
 
-    def similarity_to_feature_sets(self, other: "FeatureSets" = None, metric: str = "jaccard") -> pd.DataFrame:
+    def similarity_to_feature_sets(
+        self, other: "FeatureSets" = None, metric: str = "jaccard"
+    ) -> pd.DataFrame:
         """Compute similarity matrix between feature sets.
 
         Parameters
@@ -348,15 +393,19 @@ class FeatureSets:
             Similarity matrix as 1 minus distance matrix,
             may lead to negative values for some distance metrics.
         """
+
         if metric not in ["jaccard", "cosine"]:
             logger.warning(
-                f"Similarity matrix for `{metric}` might be negative. " "Recommended metrics are `jaccard` or `cosine`."
+                f"Similarity matrix for `{metric}` might be negative. "
+                "Recommended metrics are `jaccard` or `cosine`."
             )
 
         self_mask = self.to_mask()
         other_mask = other.to_mask() if other else self_mask
         return 1 - pd.DataFrame(
-            pairwise_distances(self_mask.to_numpy(), other_mask.to_numpy(), metric=metric),
+            pairwise_distances(
+                self_mask.to_numpy(), other_mask.to_numpy(), metric=metric
+            ),
             index=self_mask.index,
             columns=other_mask.index,
         )
@@ -381,15 +430,23 @@ class FeatureSets:
 
         dist_to_mean_dict = {}
         for feature_set in self.feature_sets:
-            col_subset = [col for col in observations.columns if col in feature_set.features]
+            col_subset = [
+                col for col in observations.columns if col in feature_set.features
+            ]
             if len(col_subset) == 0:
-                dist_to_mean_dict[feature_set.name] = pd.Series(np.nan, index=observations.index)
+                dist_to_mean_dict[feature_set.name] = pd.Series(
+                    np.nan, index=observations.index
+                )
                 continue
-            dist_to_mean_dict[feature_set.name] = observations.loc[:, col_subset].mean(axis=1) - obs_mean
+            dist_to_mean_dict[feature_set.name] = (
+                observations.loc[:, col_subset].mean(axis=1) - obs_mean
+            )
 
         return pd.DataFrame(dist_to_mean_dict).corr()
 
-    def _find_similar_pairs(self, sim_matrix: pd.DataFrame, similarity_threshold: float) -> set[tuple[str, str]]:
+    def _find_similar_pairs(
+        self, sim_matrix: pd.DataFrame, similarity_threshold: float
+    ) -> set[tuple[str, str]]:
         """Find similar pairs of feature sets.
 
         Parameters
@@ -404,6 +461,7 @@ class FeatureSets:
         set[tuple[str, str]]
             Similar pairs of feature sets.
         """
+
         pairs = set()
         visited = set()
 
@@ -426,7 +484,7 @@ class FeatureSets:
     def find_similar_pairs(
         self,
         observations: pd.DataFrame = None,
-        metric: str | None = None,
+        metric: Optional[str] = None,
         similarity_threshold: float = 0.8,
     ) -> set[tuple[str, str]]:
         """Find similar pairs of feature sets.
@@ -449,7 +507,10 @@ class FeatureSets:
             Similar pairs of feature sets.
         """
         if observations is None and metric is None:
-            logger.warning("Neither observations nor metric is provided," " using `metric=jaccard` as default.")
+            logger.warning(
+                "Neither observations nor metric is provided,"
+                " using `metric=jaccard` as default."
+            )
             metric = "jaccard"
 
         sim_matrix = []
@@ -461,7 +522,9 @@ class FeatureSets:
         if observations is not None and metric is not None:
             sim_matrix[0][sim_matrix[0] < 0] = 0.0
             sim_matrix[1][sim_matrix[1] < 0] = 0.0
-            sim_matrix = (2 * sim_matrix[0] * sim_matrix[1]) / (sim_matrix[0] + sim_matrix[1])
+            sim_matrix = (2 * sim_matrix[0] * sim_matrix[1]) / (
+                sim_matrix[0] + sim_matrix[1]
+            )
         else:
             sim_matrix = sim_matrix[0]
         return self._find_similar_pairs(sim_matrix.fillna(0.0), similarity_threshold)
@@ -495,11 +558,12 @@ class FeatureSets:
     def merge_similar(
         self,
         observations: pd.DataFrame = None,
-        metric: str | None = None,
+        metric: Optional[str] = None,
         similarity_threshold: float = 0.8,
         iteratively: bool = True,
     ):
         """Merge similar feature sets.
+
 
         Parameters
         ----------
@@ -520,6 +584,7 @@ class FeatureSets:
         FeatureSets
             Merged feature sets.
         """
+
         feature_sets = self
         while True:
             pairs = {
@@ -550,7 +615,12 @@ class FeatureSets:
         with open(path, "w") as f:
             for feature_set in self.feature_sets:
                 f.write(
-                    feature_set.name + "\t" + feature_set.description + "\t" + "\t".join(feature_set.features) + "\n"
+                    feature_set.name
+                    + "\t"
+                    + feature_set.description
+                    + "\t"
+                    + "\t".join(feature_set.features)
+                    + "\n"
                 )
 
     def to_dict(self) -> dict[str, Iterable[str]]:
@@ -564,7 +634,7 @@ class FeatureSets:
         return {fs.name: fs.features for fs in self.feature_sets}
 
 
-def from_gmt(path: Path, name: str | None = None, **kwargs) -> FeatureSets:
+def from_gmt(path: Path, name: Optional[str] = None, **kwargs) -> FeatureSets:
     """Create a FeatureSets object from a GMT file.
 
     Parameters
@@ -594,7 +664,7 @@ def from_gmt(path: Path, name: str | None = None, **kwargs) -> FeatureSets:
 
 def from_dict(
     d: dict[str, Iterable[str]],
-    name: str | None = None,
+    name: Optional[str] = None,
     **kwargs,
 ) -> FeatureSets:
     """Create a FeatureSets object from a dictionary.
@@ -618,10 +688,10 @@ def from_dict(
 
 def from_dataframe(
     df: pd.DataFrame,
-    name: str | None = None,
+    name: Optional[str] = None,
     name_col: str = "name",
     features_col: str = "features",
-    desc_col: str | None = None,
+    desc_col: Optional[str] = None,
     **kwargs,
 ) -> FeatureSets:
     """Create a FeatureSets object from a DataFrame.

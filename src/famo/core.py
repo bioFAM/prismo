@@ -13,6 +13,7 @@ from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.nn import PyroModule
 from pyro.optim import ClippedAdam
 import scipy.stats as stats
+from scipy.special import expit
 from sklearn.decomposition import PCA
 from addict import Dict
 
@@ -553,30 +554,96 @@ class CORE(PyroModule):
 
         return self._post_fit(save, save_path)
 
-    def _sort_factors(self, weights, factors):
-        def _r2(y_true, y_pred):
-            ss_res = np.nansum(np.square(y_true - y_pred))
-            ss_tot = np.nansum(np.square(y_true))
-            return 1.0 - (ss_res / ss_tot)
+    @staticmethod
+    def _Vprime(mu, nu2, nu1):
+        return 2 * nu2 * mu + nu1
 
+    @staticmethod
+    def _dV_square(a, b, nu2, nu1):
+        dVb = __class__._Vprime(b, nu2, nu1)
+        dVa = __class__._Vprime(a, nu2, nu1)
+        sVb = np.sqrt(1 + dVb**2)
+        sVa = np.sqrt(1 + dVa**2)
+        return 1 / (16 * nu2**2) * (np.log((dVb + sVb) / (dVa + sVa)) + dVb * sVb - dVa * sVa) ** 2
+
+    def _r2_impl(self, y_true, factor, weights, view_name):
+        # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
+        y_pred = factor.T @ weights
+        likelihood = self.likelihoods[view_name]
+
+        if likelihood == "Normal":
+            ss_res = np.nansum(np.square(y_true - y_pred))
+            ss_tot = np.nansum(np.square(y_true))  # data is centered
+        elif likelihood == "GammaPoisson":
+            y_pred = np.logaddexp(0, y_pred)  # softplus
+            nu2 = self._get_dispersion_from_guide(view_name)
+            ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, 1))
+
+            truemean = np.nanmean(y_true)
+            nu2 = (np.nanvar(y_true) - truemean) / truemean**2  # method of moments estimator
+            ss_tot = np.nansum(self._dV_square(y_true, truemean, nu2, 1))
+        elif likelihood == "Bernoulli":
+            y_pred = expit(y_pred)
+            ss_res = np.nansum(self._dV_square(y_true, y_pred, -1, 1))
+            ss_tot = np.nansum(self._dV_square(y_true, np.nanmean(y_true), -1, 1))
+        elif likelihood == "BetaBinomial":
+            y_pred = expit(y_pred)
+            obs_total = y_true[..., 1, :, :]
+            y_true = y_true[..., 0, :, :]
+            dispersion = self._get_dispersion_from_guide(view_name)
+            nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
+            ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, nu1))
+
+            pi = np.nansum(y_true) / np.nansum(obs_total)
+            truemean = obs_total * pi
+            truevar = obs_total * np.nanvar(y_true / obs_total)
+            dispersion = (obs_total * pi * (1 - pi) - truevar) / (
+                obs_total * (truevar - pi * (1 - pi))
+            )  # method of moments estimator
+            nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
+            ss_res = np.nansum(self._dV_square(y_true, truemean, nu2, nu1))
+        else:
+            raise NotImplementedError(likelihood)
+
+        return max(0.0, 1.0 - ss_res / ss_tot)
+
+    def _r2(self, y_true, factors, weights, view_name):
+        r2_full = self._r2_impl(y_true, factors, weights, view_name)
+        if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
+            print(f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs.")
+            return [0.0] * factors.shape[0]
+
+        r2s = []
+        if self.likelihoods[view_name] == "Normal":
+            for k in range(factors.shape[0]):
+                r2s.append(self._r2_impl(y_true, factors[None, k, :], weights[None, k, :], view_name))
+        else:
+            # For models with a link function that is not the identity, such as Bernoulli, calculating R2 of single
+            # factors leads to erroneous results, in the case of Bernoulli it can lead to every factor having negative
+            # R2 values. This is because an unimportant factor will not contribute much to the full model, but the zero
+            # prediction of this single factor will be mapped by the link function to a non-zero value, which can result
+            # in a worse prediction than the intercept-only null model. As a workaround, we therefore calculate R2 of
+            # a model with all factors except for one and subtract it from the R2 value of the full model to arrive at
+            # the R2 of the current factor.
+            for k in range(factors.shape[0]):
+                cfactors = np.delete(factors, k, 0)
+                cweights = np.delete(weights, k, 0)
+                cr2 = self._r2_impl(y_true, cfactors, cweights, view_name)
+                r2s.append(max(0.0, r2_full - cr2))
+        return r2s
+
+    def _sort_factors(self, weights, factors):
         # Loop over all groups
         dfs = {}
 
         for group_name, group_data in self.data.items():
             group_r2 = {}
             for view_name, view_data in group_data.items():
-                if self.likelihoods[view_name] == "Normal":
-                    group_r2[view_name] = []
-                    for k in range(factors[group_name].shape[0]):
-                        y_pred = np.outer(
-                            factors[group_name][k, :], weights[view_name][k, :]
-                        )
-                        group_r2[view_name].append(_r2(view_data.X, y_pred))
-
-                # TODO: Implement R2 for other likelihoods
-                else:
+                try:
+                    group_r2[view_name] = self._r2(view_data.X, factors[group_name], weights[view_name], view_name)
+                except NotImplementedError:
                     print(
-                        f"Skipping view {view_name} for group {group_name} as it does not have a Normal likelihood."
+                        f"R2 calculation for {self.likelihoods[view_name]} likelihood has not yet been implemented. Skipping view {view_name} for group {group_name}."
                     )
 
             if len(group_r2) == 0:
@@ -686,6 +753,16 @@ class CORE(PyroModule):
             for k in self.view_names:
                 weights[k] *= self.variational.expectation(f"s_w_{k}").detach()
         return {k: w.cpu().numpy().squeeze() for k, w in weights.items()}
+
+    def _get_dispersion_from_guide(self, view_name=None):
+        """Get all dispersions dispersion_x."""
+        self._check_if_trained()
+
+        return (
+            {k: self.variational.expectation(f"dispersion_{k}") for k in self.view_names}
+            if view_name is None
+            else self.variational.expectation(f"dispersion_{view_name}")
+        )
 
     def _setup_device(self, device):
         print("Setting up device...")

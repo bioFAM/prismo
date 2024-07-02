@@ -77,7 +77,7 @@ def plot_training_curve(model):
 
     train_loss_elbo = model._cache["train_loss_elbo"]
     df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
-    alt.Chart(df).mark_line().encode(x="Epoch", y="-ELBO").properties(
+    alt.Chart(df).mark_line().encode(alt.Y("-ELBO").scale(zero=False), x="Epoch").properties(
         title="Training Curve"
     ).display()
 

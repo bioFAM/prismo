@@ -1,11 +1,13 @@
-import pytest
 import os
 import shutil
-import torch
-import pyro
 from pathlib import Path
-from famo.utils_io import load_model
+
+import pyro
+import pytest
+import torch
+
 from famo.core import CORE
+from famo.utils.io import load_model
 
 
 @pytest.fixture
@@ -31,10 +33,7 @@ def test_save_load_model(setup_teardown):
     model.fit(
         n_factors=2,
         data=data,
-        likelihoods={
-            "view1": "Normal",
-            "view2": "Normal",
-        },
+        likelihoods={"view1": "Normal", "view2": "Normal"},
         factor_prior="Normal",
         weight_prior="Normal",
         lr=0.001,
@@ -63,15 +62,11 @@ def test_save_load_model(setup_teardown):
     loaded_model = load_model(dir_path=temp_dir)
 
     # Check if the model's parameter is correctly loaded
-    for original_param, loaded_param in zip(
-        prev_generator_params, loaded_model.parameters()
-    ):
+    for original_param, loaded_param in zip(prev_generator_params, loaded_model.parameters(), strict=False):
         assert torch.equal(original_param, loaded_param), "Model parameter mismatch"
 
     # Check if the param store parameter is correctly loaded
     for name in pyro.get_param_store().get_all_param_names():
         loaded_param = pyro.param(name)
         original_param = prev_param_store[name]
-        assert torch.equal(
-            original_param, loaded_param
-        ), f"Parameter store mismatch for {name}"
+        assert torch.equal(original_param, loaded_param), f"Parameter store mismatch for {name}"

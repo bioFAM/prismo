@@ -1,5 +1,5 @@
-from functools import reduce
 import logging
+from functools import reduce
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,7 @@ def cast_data(data):
         - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups)
 
     Returns
-    ----------
+    -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
@@ -31,14 +31,10 @@ def cast_data(data):
     if isinstance(data, MuData):
         data = {"group_1": {mod: data[mod] for mod in data.mod.keys()}}
 
-    elif isinstance(data, dict) and all(
-        [isinstance(v, AnnData) for v in data.values()]
-    ):
+    elif isinstance(data, dict) and all([isinstance(v, AnnData) for v in data.values()]):
         data = {"group_1": data.copy()}
 
-    elif isinstance(data, dict) and all(
-        [isinstance(v, torch.Tensor) for v in data.values()]
-    ):
+    elif isinstance(data, dict) and all([isinstance(v, torch.Tensor) for v in data.values()]):
         data = {"group_1": {k: AnnData(X=v.numpy()) for k, v in data.items()}}
 
     # multiple groups cases
@@ -48,31 +44,19 @@ def cast_data(data):
     elif (
         isinstance(data, dict)
         and all([isinstance(v, dict) for v in data.values()])
-        and all(
-            [all([isinstance(vv, AnnData) for vv in v.values()]) for v in data.values()]
-        )
+        and all([all([isinstance(vv, AnnData) for vv in v.values()]) for v in data.values()])
     ):
         pass
 
     elif (
         isinstance(data, dict)
         and all([isinstance(v, dict) for v in data.values()])
-        and all(
-            [
-                all([isinstance(vv, torch.Tensor) for vv in v.values()])
-                for v in data.values()
-            ]
-        )
+        and all([all([isinstance(vv, torch.Tensor) for vv in v.values()]) for v in data.values()])
     ):
-        data = {
-            k: {kk: AnnData(X=vv.numpy()) for kk, vv in v.items()}
-            for k, v in data.items()
-        }
+        data = {k: {kk: AnnData(X=vv.numpy()) for kk, vv in v.items()} for k, v in data.items()}
 
     else:
-        raise ValueError(
-            "Input data structure not recognized. Please refer to the documentation for allowed formats."
-        )
+        raise ValueError("Input data structure not recognized. Please refer to the documentation for allowed formats.")
 
     return data
 
@@ -99,22 +83,13 @@ def infer_likelihoods(data):
 
         try:
             # check if all values are close to 0 or 1
-            if torch.all(
-                torch.isclose(v_X, torch.zeros_like(v_X))
-                | torch.isclose(v_X, torch.ones_like(v_X))
-            ):
+            if torch.all(torch.isclose(v_X, torch.zeros_like(v_X)) | torch.isclose(v_X, torch.ones_like(v_X))):
                 likelihoods[k] = "Bernoulli"
 
             # check if all values are positive integers
-            elif torch.all(torch.isclose(v_X, torch.round(v_X))) and torch.all(
-                v_X >= 0.0
-            ):
+            elif torch.all(torch.isclose(v_X, torch.round(v_X))) and torch.all(v_X >= 0.0):
                 # check if every variable name exists twice with different suffixes
-                var_names_base = (
-                    v.var_names.str.rsplit("_", n=1, expand=True)
-                    .to_frame()
-                    .reset_index(drop=True)[0]
-                )
+                var_names_base = v.var_names.str.rsplit("_", n=1, expand=True).to_frame().reset_index(drop=True)[0]
                 if var_names_base.nunique() * 2 == len(var_names_base):
                     likelihoods[k] = "BetaBinomial"
 
@@ -148,34 +123,20 @@ def validate_likelihoods(data, likelihoods):
 
         if likelihoods[k] == "Bernoulli":
             # check if all values are close to 0 or 1
-            if not torch.all(
-                torch.isclose(v_X, torch.zeros_like(v_X))
-                | torch.isclose(v_X, torch.ones_like(v_X))
-            ):
-                raise ValueError(
-                    f"Bernoulli likelihood in view {k} must be used with binary data."
-                )
+            if not torch.all(torch.isclose(v_X, torch.zeros_like(v_X)) | torch.isclose(v_X, torch.ones_like(v_X))):
+                raise ValueError(f"Bernoulli likelihood in view {k} must be used with binary data.")
 
         elif likelihoods[k] in ["GammaPoisson", "BetaBinomial"]:
             # check if all values are positive integers
-            if not (
-                torch.all(torch.isclose(v_X, torch.round(v_X)))
-                and torch.all(v_X >= 0.0)
-            ):
+            if not (torch.all(torch.isclose(v_X, torch.round(v_X))) and torch.all(v_X >= 0.0)):
                 raise ValueError(
                     f"{likelihoods[k]} likelihood in view {k} must be used with (integer, non-negative) count data."
                 )
 
             if likelihoods[k] == "BetaBinomial":
-                var_names_base = (
-                    v.var_names.str.rsplit("_", n=1, expand=True)
-                    .to_frame()
-                    .reset_index(drop=True)[0]
-                )
+                var_names_base = v.var_names.str.rsplit("_", n=1, expand=True).to_frame().reset_index(drop=True)[0]
                 # check if all var_names appear twice with different suffixes
-                if (
-                    not var_names_base.nunique() * 2 == len(var_names_base)
-                ) or v.var_names.duplicated().any():
+                if (not var_names_base.nunique() * 2 == len(var_names_base)) or v.var_names.duplicated().any():
                     raise ValueError(
                         f"BetaBinomial likelihood in view {k} requires every var_name to exist twice with different suffixes."
                     )
@@ -211,9 +172,7 @@ def remove_constant_features(data, likelihoods):
             # suffixes and removal of one should also lead to removal of the other
             if likelihoods[k_views] == "BetaBinomial":
                 # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
-                split_var_names = pd.Series(v_views.var_names).str.rsplit(
-                    "_", n=1, expand=True
-                )
+                split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
                 split_var_names.columns = ["base", "suffix"]
                 suffix_indices = split_var_names.groupby("base").apply(
                     lambda x: pd.Series(x.index.values), include_groups=False
@@ -231,9 +190,7 @@ def remove_constant_features(data, likelihoods):
                 data[k_groups][k_views] = v_views[:, ~drop_mask]
 
                 print(f"- Removing constant features in {k_groups}/{k_views}.")
-                print(
-                    f"  - Removed {len(dropped_features_names)} features: {','.join(dropped_features_names)}"
-                )
+                print(f"  - Removed {len(dropped_features_names)} features: {','.join(dropped_features_names)}")
 
     return data
 
@@ -264,21 +221,15 @@ def get_feature_mean(data, likelihoods):
 
             if likelihoods[k_views] == "BetaBinomial":
                 # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
-                split_var_names = pd.Series(v_views.var_names).str.rsplit(
-                    "_", n=1, expand=True
-                )
+                split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
                 split_var_names.columns = ["base", "suffix"]
                 suffix_indices = split_var_names.groupby("base").apply(
                     lambda x: pd.Series(x.index.values), include_groups=False
                 )
 
                 # get values of first and second occurence of every feature
-                x_0 = v_views.X[
-                    :, suffix_indices.loc[split_var_names["base"]].values[:, 0]
-                ]
-                x_1 = v_views.X[
-                    :, suffix_indices.loc[split_var_names["base"]].values[:, 1]
-                ]
+                x_0 = v_views.X[:, suffix_indices.loc[split_var_names["base"]].values[:, 0]]
+                x_1 = v_views.X[:, suffix_indices.loc[split_var_names["base"]].values[:, 1]]
 
                 # compute mean of the ratio of the first occurence to the sum of both occurences
                 ratio = x_0 / (x_0 + x_1 + 1e-6)
@@ -335,7 +286,7 @@ def scale_data(data, likelihoods, scale_per_group=True):
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
     if scale_per_group:
-        for k_groups, v_groups in data.items():
+        for v_groups in data.values():
             for k_views, v_views in v_groups.items():
                 if likelihoods[k_views] == "Normal":
                     # scale by inverse std across all observations and features within the group
@@ -345,9 +296,7 @@ def scale_data(data, likelihoods, scale_per_group=True):
     else:
         for k_views in likelihoods.keys():
             if likelihoods[k_views] == "Normal":
-                X_all_groups = np.concatenate(
-                    [data[k_groups][k_views].X for k_groups in data.keys()]
-                )
+                X_all_groups = np.concatenate([data[k_groups][k_views].X for k_groups in data.keys()])
                 # scale by inverse std across all observations and features across all groups
                 std = np.nanstd(X_all_groups)
                 for k_groups in data.keys():
@@ -382,18 +331,14 @@ def align_obs(data, use_obs="union"):
 
         if use_obs == "intersection":
             # series of sorted obs_names that are present in all views
-            obs_names_intersection = pd.Series(
-                reduce(np.intersect1d, [v.obs_names for v in data[k_group].values()])
-            )
+            obs_names_intersection = pd.Series(reduce(np.intersect1d, [v.obs_names for v in data[k_group].values()]))
             # subset obs to intersection and sort by obs_names
             for k_view, v_view in data[k_group].items():
                 data_aligned[k_group][k_view] = v_view[obs_names_intersection, :].copy()
 
         if use_obs == "union":
             # series of sorted obs_names that are present in any view
-            obs_names_union = pd.Series(
-                reduce(np.union1d, [v.obs_names for v in data[k_group].values()])
-            )
+            obs_names_union = pd.Series(reduce(np.union1d, [v.obs_names for v in data[k_group].values()]))
 
             for k_view, v_view in data[k_group].items():
                 # use pandas data frames indices to expand obs
@@ -403,9 +348,7 @@ def align_obs(data, use_obs="union"):
                 ix = expanded.join(orig, how="right").ix.values
 
                 # expand data matrix
-                expanded_X = (
-                    np.ones(shape=(len(obs_names_union), v_view.shape[1])) * np.nan
-                )
+                expanded_X = np.ones(shape=(len(obs_names_union), v_view.shape[1])) * np.nan
                 expanded_X[ix, :] = v_view.X
 
                 # expand obs data frame
@@ -414,25 +357,14 @@ def align_obs(data, use_obs="union"):
                 # expand obsm matrices
                 expanded_obsm = {}
                 for obsm_k in v_view.obsm.keys():
-                    expanded_obsm[obsm_k] = (
-                        np.ones(
-                            shape=(len(obs_names_union), v_view.obsm[obsm_k].shape[1])
-                        )
-                        * np.nan
-                    )
+                    expanded_obsm[obsm_k] = np.ones(shape=(len(obs_names_union), v_view.obsm[obsm_k].shape[1])) * np.nan
                     expanded_obsm[obsm_k][ix, :] = v_view.obsm[obsm_k]
 
                 # expand layers matrices
                 expanded_layers = {}
                 for layer_k in v_view.layers.keys():
                     expanded_layers[layer_k] = (
-                        np.ones(
-                            shape=(
-                                len(obs_names_union),
-                                v_view.layers[layer_k].shape[1],
-                            )
-                        )
-                        * np.nan
+                        np.ones(shape=(len(obs_names_union), v_view.layers[layer_k].shape[1])) * np.nan
                     )
                     expanded_layers[layer_k][ix, :] = v_view.layers[layer_k]
 
@@ -496,47 +428,33 @@ def align_var(data, likelihoods, use_var="intersection"):
         raise ValueError("use_var must be either 'union' or 'intersection'.")
 
     group_names = data.keys()
-    view_names = reduce(
-        np.union1d, [list(v_groups.keys()) for v_groups in data.values()]
-    )
+    view_names = reduce(np.union1d, [list(v_groups.keys()) for v_groups in data.values()])
 
     data_aligned = {k_groups: {} for k_groups in group_names}
 
     for k_views in view_names:
         if use_var == "intersection":
             var_names_intersection = pd.Series(
-                reduce(
-                    np.intersect1d,
-                    [data[k_groups][k_views].var_names for k_groups in group_names],
-                )
+                reduce(np.intersect1d, [data[k_groups][k_views].var_names for k_groups in group_names])
             )
 
             if likelihoods[k_views] == "BetaBinomial":
                 # keep only var names that have a base that occurs twice with different suffixes
-                var_names_intersection_base = var_names_intersection.str.rsplit(
-                    "_", n=1, expand=True
-                )[0]
+                var_names_intersection_base = var_names_intersection.str.rsplit("_", n=1, expand=True)[0]
                 duplicated = var_names_intersection_base.duplicated(keep=False)
                 var_names_intersection = var_names_intersection[duplicated]
 
             for k_groups in group_names:
-                data_aligned[k_groups][k_views] = data[k_groups][k_views][
-                    :, var_names_intersection
-                ].copy()
+                data_aligned[k_groups][k_views] = data[k_groups][k_views][:, var_names_intersection].copy()
 
         if use_var == "union":
             var_names_union = pd.Series(
-                reduce(
-                    np.union1d,
-                    [data[k_groups][k_views].var_names for k_groups in group_names],
-                )
+                reduce(np.union1d, [data[k_groups][k_views].var_names for k_groups in group_names])
             )
 
             if likelihoods[k_views] == "BetaBinomial":
                 # keep only var names that have a base that occurs twice with different suffixes
-                var_names_union_base = var_names_union.str.rsplit(
-                    "_", n=1, expand=True
-                )[0]
+                var_names_union_base = var_names_union.str.rsplit("_", n=1, expand=True)[0]
                 duplicated = var_names_union_base.duplicated(keep=False)
                 var_names_union = np.sort(var_names_union[duplicated])
 
@@ -548,12 +466,7 @@ def align_var(data, likelihoods, use_var="intersection"):
                 ix = expanded.join(orig, how="right").ix.values
 
                 # expand data matrix
-                expanded_X = (
-                    np.ones(
-                        shape=(data[k_groups][k_views].shape[0], len(var_names_union))
-                    )
-                    * np.nan
-                )
+                expanded_X = np.ones(shape=(data[k_groups][k_views].shape[0], len(var_names_union))) * np.nan
                 expanded_X[:, ix] = data[k_groups][k_views].X
 
                 # expand var data frame
@@ -564,13 +477,7 @@ def align_var(data, likelihoods, use_var="intersection"):
                 expanded_varm = {}
                 for varm_k in data[k_groups][k_views].varm.keys():
                     expanded_varm[varm_k] = (
-                        np.ones(
-                            shape=(
-                                len(var_names_union),
-                                data[k_groups][k_views].varm[varm_k].shape[1],
-                            )
-                        )
-                        * np.nan
+                        np.ones(shape=(len(var_names_union), data[k_groups][k_views].varm[varm_k].shape[1])) * np.nan
                     )
                     expanded_varm[varm_k][ix] = data[k_groups][k_views].varm[varm_k]
 
@@ -578,17 +485,9 @@ def align_var(data, likelihoods, use_var="intersection"):
                 expanded_layers = {}
                 for layer_k in data[k_groups][k_views].layers.keys():
                     expanded_layers[layer_k] = (
-                        np.ones(
-                            shape=(
-                                data[k_groups][k_views].layers[layer_k].shape[0],
-                                len(var_names_union),
-                            )
-                        )
-                        * np.nan
+                        np.ones(shape=(data[k_groups][k_views].layers[layer_k].shape[0], len(var_names_union))) * np.nan
                     )
-                    expanded_layers[layer_k][:, ix] = data[k_groups][k_views].layers[
-                        layer_k
-                    ]
+                    expanded_layers[layer_k][:, ix] = data[k_groups][k_views].layers[layer_k]
 
                 # create new AnnData with expanded data
                 data_aligned[k_groups][k_views] = AnnData(
@@ -646,21 +545,15 @@ def get_sizes_and_names(data):
             if group_sample_names is None:
                 group_sample_names = v_views.obs_names.tolist()
             if group_sample_names != v_views.obs_names.tolist():
-                raise ValueError(
-                    "Error in preprocessing. Views do not have the same samples."
-                )
+                raise ValueError("Error in preprocessing. Views do not have the same samples.")
 
             if k_views not in feature_names:
                 feature_names[k_views] = v_views.var_names.tolist()
             if feature_names[k_views] != v_views.var_names.tolist():
-                raise ValueError(
-                    "Error in preprocessing. Groups do not have the same features."
-                )
+                raise ValueError("Error in preprocessing. Groups do not have the same features.")
 
             # check whether every feature appears twice with different suffix
-            var_names_base = pd.Series(v_views.var_names).str.rsplit(
-                "_", n=1, expand=True
-            )[0]
+            var_names_base = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)[0]
 
             if var_names_base.nunique() * 2 == len(var_names_base):
                 n_features[k_views] = len(feature_names[k_views]) // 2
@@ -675,13 +568,4 @@ def get_sizes_and_names(data):
         n_groups = len(group_names)
         n_views = len(view_names)
 
-    return (
-        group_names,
-        n_groups,
-        view_names,
-        n_views,
-        feature_names,
-        n_features,
-        sample_names,
-        n_samples,
-    )
+    return (group_names, n_groups, view_names, n_views, feature_names, n_features, sample_names, n_samples)

@@ -1,15 +1,11 @@
 import logging
-
 from typing import Union
-
 
 import numpy as np
 import pandas as pd
 import scipy
-
 from statsmodels.stats import multitest
 from tqdm import tqdm
-
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +51,12 @@ def test(
     adjust_p = p_adj_method is not None
 
     if not isinstance(view_name, (str, int)) and view_name != "all":
-        raise IndexError(
-            f"Invalid `view_name`, `{view_name}` must be a string or an integer."
-        )
+        raise IndexError(f"Invalid `view_name`, `{view_name}` must be a string or an integer.")
     if view_name not in model.view_names:
         raise IndexError(f"`{view_name}` not found in the view names.")
 
     if use_prior_mask and not model.annotations is not None:
-        raise ValueError(
-            "`feature_sets` is None, no feature sets provided for uninformed model."
-        )
+        raise ValueError("`feature_sets` is None, no feature sets provided for uninformed model.")
 
     sign = sign.lower().strip()
     allowed_signs = ["all", "pos", "neg"]
@@ -72,15 +64,10 @@ def test(
         raise ValueError(f"sign `{sign}` must be one of `{', '.join(allowed_signs)}`.")
 
     if use_prior_mask:
-        logger.warning(
-            "No feature sets provided, extracting feature sets from prior mask."
-        )
+        logger.warning("No feature sets provided, extracting feature sets from prior mask.")
         feature_sets = model.annotations[view_name]
         if not feature_sets.any(axis=None):
-            raise ValueError(
-                f"Empty `feature_sets`, view `{view_name}` "
-                "has not been informed prior to training."
-            )
+            raise ValueError(f"Empty `feature_sets`, view `{view_name}` " "has not been informed prior to training.")
 
     feature_sets = feature_sets.astype(bool)
     if not feature_sets.any(axis=None):
@@ -88,42 +75,24 @@ def test(
     feature_sets = feature_sets.loc[feature_sets.sum(axis=1) >= min_size, :]
 
     if not feature_sets.any(axis=None):
-        raise ValueError(
-            "Empty `feature_sets` after filtering feature sets "
-            f"of fewer than {min_size} features."
-        )
+        raise ValueError("Empty `feature_sets` after filtering feature sets " f"of fewer than {min_size} features.")
 
     feature_sets = feature_sets.loc[~(feature_sets.all(axis=1)), feature_sets.any()]
     if not feature_sets.any(axis=None):
-        raise ValueError(
-            "Empty `feature_sets` after filtering feature sets "
-            f"of fewer than {min_size} features."
-        )
+        raise ValueError("Empty `feature_sets` after filtering feature sets " f"of fewer than {min_size} features.")
 
     # subset available features only
-    feature_intersection = feature_sets.columns.intersection(
-        model.feature_names[view_name]
-    )
+    feature_intersection = feature_sets.columns.intersection(model.feature_names[view_name])
     feature_sets = feature_sets.loc[:, feature_intersection]
 
     if not feature_sets.any(axis=None):
-        raise ValueError(
-            "Empty `feature_sets` after feature intersection with the observations."
-        )
+        raise ValueError("Empty `feature_sets` after feature intersection with the observations.")
 
     y = pd.concat(
-        [
-            group_data[view_name].to_df().loc[:, feature_intersection].copy()
-            for _, group_data in model.data.items()
-        ],
+        [group_data[view_name].to_df().loc[:, feature_intersection].copy() for _, group_data in model.data.items()],
         axis=0,
     )
-    factor_loadings = (
-        model.get_weights(return_type="anndata")[view_name]
-        .to_df()
-        .loc[:, feature_intersection]
-        .copy()
-    )
+    factor_loadings = model.get_weights(return_type="anndata")[view_name].to_df().loc[:, feature_intersection].copy()
     factor_loadings /= np.max(np.abs(factor_loadings.to_numpy()))
 
     if "pos" in sign:
@@ -150,10 +119,7 @@ def test(
         df = n_in + n_out - 2.0
         mean_diff = features_in.mean(axis=1) - features_out.mean(axis=1)
         # why divide here by df and not denom later?
-        svar = (
-            (n_in - 1) * features_in.var(axis=1)
-            + (n_out - 1) * features_out.var(axis=1)
-        ) / df
+        svar = ((n_in - 1) * features_in.var(axis=1) + (n_out - 1) * features_out.var(axis=1)) / df
 
         vif = 1.0
         if corr_adjust:
@@ -176,9 +142,7 @@ def test(
     prob_df.fillna(1.0, inplace=True)
     if adjust_p:
         prob_adj_df = prob_df.apply(
-            lambda p: multitest.multipletests(p, method=p_adj_method)[1],
-            axis=1,
-            result_type="broadcast",
+            lambda p: multitest.multipletests(p, method=p_adj_method)[1], axis=1, result_type="broadcast"
         )
 
     if "all" not in sign:

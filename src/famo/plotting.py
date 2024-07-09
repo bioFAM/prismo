@@ -9,6 +9,20 @@ import seaborn as sns
 
 alt.data_transformers.enable("vegafusion")
 
+HEATMAP = "heatmap"
+MATRIXPLOT = "matrixplot"
+DOTPLOT = "dotplot"
+TRACKSPLOT = "tracksplot"
+VIOLIN = "violin"
+STACKED_VIOLIN = "stacked_violin"
+PL_TYPES = [HEATMAP, MATRIXPLOT, DOTPLOT, TRACKSPLOT, VIOLIN, STACKED_VIOLIN]
+
+STRIPPLOT = "stripplot"
+BOXPLOT = "boxplot"
+BOXENPLOT = "boxenplot"
+VIOLINPLOT = "violinplot"
+GROUP_PL_TYPES = [STRIPPLOT, BOXPLOT, BOXENPLOT, VIOLINPLOT]
+
 
 def plot_overview(data):
     missings = pd.DataFrame()
@@ -154,12 +168,6 @@ def plot_factor_correlation(model):
     final_chart.display()
 
 
-def _r2(y_true, y_pred):
-    ss_res = np.nansum(np.square(y_true - y_pred))
-    ss_tot = np.nansum(np.square(y_true))
-    return 1.0 - (ss_res / ss_tot)
-
-
 def plot_variance_explained(model):
     """Plot the variance explained by each factor in each view."""
     # Check if the model has been trained
@@ -261,7 +269,6 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
     """Plot the top nfeatures weights for a given factor and view."""
     model._check_if_trained()
 
-    # If factor is not a list, convert to list
     factor = [factor] if not isinstance(factor, list) else factor
 
     # We reduce the factor value by one, because we internally start counting at 0
@@ -335,95 +342,97 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
 
 
 def plot_weights(model, view, factor=1, top_n_features=10):
-    factor = factor - 1
+    factor = [factor] if not isinstance(factor, list) else factor
 
-    weights = model.get_weights(return_type="numpy")[view][factor]
-    feature_names = model.feature_names[view]
-    df_plot = pd.DataFrame({"weight": weights, "feature": feature_names})
-    df_plot = df_plot.sort_values("weight", ascending=False)
-    df_plot["rank"] = len(df_plot) - np.arange(len(df_plot))
+    # We reduce the factor value by one, because we internally start counting at 0
+    factor = [x - 1 for x in factor]
 
-    # Calculate x-axis limits with additional margin
-    x_min = df_plot["weight"].min()
-    x_max = df_plot["weight"].max()
-    x_margin = (x_max - x_min) * 0.1  # 10% margin on each side
+    weights = model._cache["weights"]
+    feature_names = model._cache["feature_names"][view]
 
-    # Select top n values with highest absolute weights
-    # and split by pos/neg because we want to label them on different sides
-    df_plot["abs_weight"] = np.abs(df_plot["weight"])
-    top_n = df_plot.nlargest(top_n_features, "abs_weight").copy()
-    top_n["sign"] = np.sign(top_n["weight"])
-    top_n_pos = top_n.query("sign > 0").copy()
-    top_n_neg = top_n.query("sign < 0").copy()
+    # Create an empty list to hold all the charts
+    charts = []
 
-    # Adjust positions for labels
-    # Create a unique y position for each label, invovles some manual tweaking
-    top_n_pos["label_x"] = x_max + x_margin
-    top_n_neg["label_x"] = x_min - x_margin
-    top_n_pos["label_y"] = top_n_pos["rank"]
-    top_n_neg["label_y"] = top_n_neg["rank"]
-    max_rank = df_plot["rank"].max()
-    top_n_pos["label_y"] = np.linspace(max_rank, 0.2 * max_rank, len(top_n_pos))
-    top_n_neg["label_y"] = np.linspace(0.2 * max_rank, 0.8 * max_rank, len(top_n_neg))
+    for f in factor:
+        weights = model.get_weights(return_type="numpy")[view][f]
+        feature_names = model.feature_names[view]
+        df_plot = pd.DataFrame({"weight": weights, "feature": feature_names})
+        df_plot = df_plot.sort_values("weight", ascending=False)
+        df_plot["rank"] = len(df_plot) - np.arange(len(df_plot))
 
-    # Make an altair plot showing weight on x axis, rank on y axis
-    points = (
-        alt.Chart(df_plot)
-        .mark_point(size=10)
-        .encode(
-            x=alt.X(
-                "weight:Q", title="Weight", scale=alt.Scale(domain=[x_min - x_margin * 2.5, x_max + x_margin * 2.5])
-            ),
-            y=alt.Y("rank:Q", title="Rank", axis=alt.Axis(labels=False, ticks=False)),
+        # Calculate x-axis limits with additional margin
+        x_min = df_plot["weight"].min()
+        x_max = df_plot["weight"].max()
+        x_margin = (x_max - x_min) * 0.1  # 10% margin on each side
+
+        # Select top n values with highest absolute weights
+        # and split by pos/neg because we want to label them on different sides
+        df_plot["abs_weight"] = np.abs(df_plot["weight"])
+        top_n = df_plot.nlargest(top_n_features, "abs_weight").copy()
+        top_n["sign"] = np.sign(top_n["weight"])
+        top_n_pos = top_n.query("sign > 0").copy()
+        top_n_neg = top_n.query("sign < 0").copy()
+
+        # Adjust positions for labels
+        # Create a unique y position for each label, invovles some manual tweaking
+        top_n_pos["label_x"] = x_max + x_margin
+        top_n_neg["label_x"] = x_min - x_margin
+        top_n_pos["label_y"] = top_n_pos["rank"]
+        top_n_neg["label_y"] = top_n_neg["rank"]
+        max_rank = df_plot["rank"].max()
+        top_n_pos["label_y"] = np.linspace(max_rank, 0.2 * max_rank, len(top_n_pos))
+        top_n_neg["label_y"] = np.linspace(0.2 * max_rank, 0.8 * max_rank, len(top_n_neg))
+
+        # Make an altair plot showing weight on x axis, rank on y axis
+        points = (
+            alt.Chart(df_plot)
+            .mark_point(size=10)
+            .encode(
+                x=alt.X(
+                    "weight:Q", title="Weight", scale=alt.Scale(domain=[x_min - x_margin * 2.5, x_max + x_margin * 2.5])
+                ),
+                y=alt.Y("rank:Q", title="Rank", axis=alt.Axis(labels=False, ticks=False)),
+            )
         )
+
+        # Add feature names as text labels
+        text_pos = (
+            alt.Chart(top_n_pos)
+            .mark_text(align="left", baseline="middle", dx=5)
+            .encode(x="label_x:Q", y="label_y:Q", text="feature:N")
+        )
+        text_neg = (
+            alt.Chart(top_n_neg)
+            .mark_text(align="right", baseline="middle", dx=-5)
+            .encode(x="label_x:Q", y="label_y:Q", text="feature:N")
+        )
+
+        # Add lines connecting points and labels
+        lines_pos = (
+            alt.Chart(top_n_pos)
+            .mark_rule(color="gray", strokeDash=[1, 1])
+            .encode(x="label_x:Q", y="label_y:Q", x2="weight:Q", y2="rank:Q")
+        )
+        lines_neg = (
+            alt.Chart(top_n_neg)
+            .mark_rule(color="gray", strokeDash=[1, 1])
+            .encode(x="label_x:Q", y="label_y:Q", x2="weight:Q", y2="rank:Q")
+        )
+
+        # Draw a vertical bar at 0
+        zero_line = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(x="x")
+
+        chart = (zero_line + points + text_pos + text_neg + lines_pos + lines_neg).properties(
+            title=f"Top {view} weights for factor {f+1}", width=650, height=400
+        )
+
+        charts.append(chart)
+
+    # Combine charts
+    combined_chart = (
+        alt.hconcat(*charts).configure_view(strokeWidth=0).configure_concat(spacing=5).configure_title(fontSize=14)
     )
-
-    # Add feature names as text labels
-    text_pos = (
-        alt.Chart(top_n_pos)
-        .mark_text(align="left", baseline="middle", dx=5)
-        .encode(x="label_x:Q", y="label_y:Q", text="feature:N")
-    )
-    text_neg = (
-        alt.Chart(top_n_neg)
-        .mark_text(align="right", baseline="middle", dx=-5)
-        .encode(x="label_x:Q", y="label_y:Q", text="feature:N")
-    )
-
-    # Add lines connecting points and labels
-    lines_pos = (
-        alt.Chart(top_n_pos)
-        .mark_rule(color="gray", strokeDash=[1, 1])
-        .encode(x="label_x:Q", y="label_y:Q", x2="weight:Q", y2="rank:Q")
-    )
-    lines_neg = (
-        alt.Chart(top_n_neg)
-        .mark_rule(color="gray", strokeDash=[1, 1])
-        .encode(x="label_x:Q", y="label_y:Q", x2="weight:Q", y2="rank:Q")
-    )
-
-    chart = (points + text_pos + text_neg + lines_pos + lines_neg).properties(
-        title=f"Top {view} weights for factor {factor}", width=600, height=400
-    )
-
-    chart.display()
-
-
-# TODO: muvi plotting
-HEATMAP = "heatmap"
-MATRIXPLOT = "matrixplot"
-DOTPLOT = "dotplot"
-TRACKSPLOT = "tracksplot"
-VIOLIN = "violin"
-STACKED_VIOLIN = "stacked_violin"
-PL_TYPES = [HEATMAP, MATRIXPLOT, DOTPLOT, TRACKSPLOT, VIOLIN, STACKED_VIOLIN]
-
-
-STRIPPLOT = "stripplot"
-BOXPLOT = "boxplot"
-BOXENPLOT = "boxenplot"
-VIOLINPLOT = "violinplot"
-GROUP_PL_TYPES = [STRIPPLOT, BOXPLOT, BOXENPLOT, VIOLINPLOT]
+    combined_chart.display()
 
 
 def plot_top_weights_muvi(model, factor_idx, view_idx="all", top=25, ranked=True, figsize=None, **kwargs):

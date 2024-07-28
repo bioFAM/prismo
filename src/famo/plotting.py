@@ -415,7 +415,7 @@ def plot_weights(model, view, factor=1, top_n_features=10):
     )
 
     chart = (points + text_pos + text_neg + lines_pos + lines_neg).properties(
-        title=f"Top {view} weights for factor {factor}", width=600, height=400
+        title=f"Top {view} weights for factor {factor + 1}", width=600, height=400
     )
 
     chart.display()

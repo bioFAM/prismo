@@ -1,5 +1,5 @@
-from functools import reduce
 import logging
+from functools import reduce
 
 import numpy as np
 import pandas as pd
@@ -8,12 +8,12 @@ from anndata import AnnData
 from mudata import MuData
 
 
-def cast_data(data):
-    """Convert data to a nested dictionary of AnnData objects with group names as keys and views as subkeys.
+def cast_data(data: dict | MuData) -> dict:
+    """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
 
     Parameters
     ----------
-    data: dict | MuData
+    data: dict or MuData
         Allowed input structures are:
         - MuData object (single group)
         - dict with view names as keys and AnnData objects as values (single group)
@@ -23,45 +23,41 @@ def cast_data(data):
         - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups)
 
     Returns
-    ----------
+    -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
     # single group cases
     if isinstance(data, MuData):
-        data = {"group_1": {mod: data[mod] for mod in data.mod.keys()}}
+        data = {"group_1": {mod: data[mod] for mod in data.mod}}
 
-    elif isinstance(data, dict) and all(
-        [isinstance(v, AnnData) for v in data.values()]
-    ):
+    elif isinstance(data, dict) and all(isinstance(v, AnnData) for v in data.values()):
         data = {"group_1": data.copy()}
 
     elif isinstance(data, dict) and all(
-        [isinstance(v, torch.Tensor) for v in data.values()]
+        isinstance(v, torch.Tensor) for v in data.values()
     ):
         data = {"group_1": {k: AnnData(X=v.numpy()) for k, v in data.items()}}
 
     # multiple groups cases
-    elif isinstance(data, dict) and all([isinstance(v, MuData) for v in data.values()]):
-        data = {k: {mod: v[mod] for mod in v.mod.keys()} for k, v in data.items()}
+    elif isinstance(data, dict) and all(isinstance(v, MuData) for v in data.values()):
+        data = {k: {mod: v[mod] for mod in v.mod} for k, v in data.items()}
 
     elif (
         isinstance(data, dict)
-        and all([isinstance(v, dict) for v in data.values()])
+        and all(isinstance(v, dict) for v in data.values())
         and all(
-            [all([isinstance(vv, AnnData) for vv in v.values()]) for v in data.values()]
+            all(isinstance(vv, AnnData) for vv in v.values()) for v in data.values()
         )
     ):
         pass
 
     elif (
         isinstance(data, dict)
-        and all([isinstance(v, dict) for v in data.values()])
+        and all(isinstance(v, dict) for v in data.values())
         and all(
-            [
-                all([isinstance(vv, torch.Tensor) for vv in v.values()])
-                for v in data.values()
-            ]
+            all(isinstance(vv, torch.Tensor) for vv in v.values())
+            for v in data.values()
         )
     ):
         data = {
@@ -77,9 +73,8 @@ def cast_data(data):
     return data
 
 
-def infer_likelihoods(data):
-    """Infer likelihoods ("Normal", "Bernoulli", "BetaBinomial", "GammaPoisson") for each view
-    based on the data distribution.
+def infer_likelihoods(data: dict) -> dict:
+    """Infer likelihoods ("Normal", "Bernoulli", "BetaBinomial", "GammaPoisson") for each view based on the data distribution.
 
     Parameters
     ----------
@@ -131,9 +126,8 @@ def infer_likelihoods(data):
     return likelihoods
 
 
-def validate_likelihoods(data, likelihoods):
-    """Validate likelihoods ("Normal", "Bernoulli", "BetaBinomial", "GammaPoisson") for each view
-    based on the data distribution.
+def validate_likelihoods(data: dict, likelihoods: dict) -> dict:
+    """Validate likelihoods ("Normal", "Bernoulli", "BetaBinomial", "GammaPoisson") for each view based on the data distribution.
 
     Parameters
     ----------
@@ -181,7 +175,7 @@ def validate_likelihoods(data, likelihoods):
                     )
 
 
-def remove_constant_features(data, likelihoods):
+def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     """Remove features with constant values.
 
     Parameters
@@ -238,9 +232,8 @@ def remove_constant_features(data, likelihoods):
     return data
 
 
-def get_feature_mean(data, likelihoods):
-    """Compute the mean of each feature across all observations in a group. For BetaBinomial data, the mean is
-    computed from the ratio of the first occurence of a feature to the sum of both occurences.
+def get_feature_mean(data: dict, likelihoods: dict) -> dict:
+    """Compute the mean of each feature across all observations in a group. For BetaBinomial data, the mean is computed from the ratio of the first occurence of a feature to the sum of both occurences.
 
     Parameters
     ----------
@@ -287,7 +280,9 @@ def get_feature_mean(data, likelihoods):
     return means
 
 
-def center_data(data, likelihoods, nmf):
+def center_data(
+    data: dict, likelihoods: dict, nonnegative_weights: dict, nonnegative_factors: dict
+) -> dict:
     """Center features to have zero mean in each group individually.
 
     Parameters
@@ -296,6 +291,10 @@ def center_data(data, likelihoods, nmf):
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     likelihoods: dict
         Dictionary with view names as keys and likelihoods as values.
+    nonnegative_weights: dict
+        Dictionary with view names as keys and boolean values indicating whether weights should be non-negative.
+    nonnegative_factors: dict
+        Dictionary with view names as keys and boolean values indicating whether factors should be non-negative.
 
     Returns
     -------
@@ -305,19 +304,20 @@ def center_data(data, likelihoods, nmf):
     for k_groups, v_groups in data.items():
         for k_views, v_views in v_groups.items():
             if likelihoods[k_views] == "Normal":
-                if not nmf[k_views]:
-                    print(f"- Centering {k_groups}/{k_views}...")
-                    mean_values = np.nanmean(v_views.X, axis=0)
-                    v_views.X -= mean_values
-                else:
+                # only if both weights and factors are non-negative, data may not be negative
+                if nonnegative_weights[k_views] and nonnegative_factors[k_groups]:
                     print(f"- Anchoring {k_groups}/{k_views}...")
                     min_values = np.nanmin(v_views.X, axis=0)
                     v_views.X -= min_values
+                else:
+                    print(f"- Centering {k_groups}/{k_views}...")
+                    mean_values = np.nanmean(v_views.X, axis=0)
+                    v_views.X -= mean_values
 
     return data
 
 
-def scale_data(data, likelihoods, scale_per_group=True):
+def scale_data(data: dict, likelihoods: dict, scale_per_group: bool = True) -> dict:
     """Scale each view to have unit variance in every group or across all groups.
 
     Parameters
@@ -356,9 +356,8 @@ def scale_data(data, likelihoods, scale_per_group=True):
     return data
 
 
-def align_obs(data, use_obs="union"):
-    """Align observations across views. After alignment, each view will have the same set of observations
-    (with nans for missings) and observations will be sorted alphabetically according to their obs_names.
+def align_obs(data: dict, use_obs: str = "union", cov_key: str = "x") -> dict:
+    """Align observations across views. After alignment, each view will have the same set of observations (with nans for missings) and observations will be sorted alphabetically according to their obs_names.
 
     Parameters
     ----------
@@ -384,7 +383,7 @@ def align_obs(data, use_obs="union"):
             # series of sorted obs_names that are present in all views
             obs_names_intersection = pd.Series(
                 reduce(np.intersect1d, [v.obs_names for v in data[k_group].values()])
-            )
+            ).sort_values()
             # subset obs to intersection and sort by obs_names
             for k_view, v_view in data[k_group].items():
                 data_aligned[k_group][k_view] = v_view[obs_names_intersection, :].copy()
@@ -393,8 +392,9 @@ def align_obs(data, use_obs="union"):
             # series of sorted obs_names that are present in any view
             obs_names_union = pd.Series(
                 reduce(np.union1d, [v.obs_names for v in data[k_group].values()])
-            )
+            ).sort_values()
 
+            obsm_cov = None
             for k_view, v_view in data[k_group].items():
                 # use pandas data frames indices to expand obs
                 orig = v_view.obs.loc[:, []].copy()
@@ -414,13 +414,30 @@ def align_obs(data, use_obs="union"):
                 # expand obsm matrices
                 expanded_obsm = {}
                 for obsm_k in v_view.obsm.keys():
-                    expanded_obsm[obsm_k] = (
-                        np.ones(
-                            shape=(len(obs_names_union), v_view.obsm[obsm_k].shape[1])
+                    if obsm_k != cov_key:
+                        expanded_obsm[obsm_k] = (
+                            np.ones(
+                                shape=(
+                                    len(obs_names_union),
+                                    v_view.obsm[obsm_k].shape[1],
+                                )
+                            )
+                            * np.nan
                         )
-                        * np.nan
-                    )
-                    expanded_obsm[obsm_k][ix, :] = v_view.obsm[obsm_k]
+                        expanded_obsm[obsm_k][ix, :] = v_view.obsm[obsm_k]
+                    else:
+                        # if this is the covariate, we don't want nan values but instead just merge all covariate values across views
+                        if obsm_cov is None:
+                            obsm_cov = (
+                                np.ones(
+                                    shape=(
+                                        len(obs_names_union),
+                                        v_view.obsm[obsm_k].shape[1],
+                                    )
+                                )
+                                * np.nan
+                            )
+                        obsm_cov[ix, :] = v_view.obsm[obsm_k]
 
                 # expand layers matrices
                 expanded_layers = {}
@@ -447,11 +464,17 @@ def align_obs(data, use_obs="union"):
                     uns=v_view.uns,
                 )
 
+            # set the merged covariate values across views
+            for k_view, v_view in data[k_group].items():
+                for obsm_k in v_view.obsm.keys():
+                    if obsm_k == cov_key:
+                        data_aligned[k_group][k_view].obsm[cov_key] = obsm_cov
+
     return data_aligned
 
 
-def extract_metadata(data):
-    """Extract metadata from AnnData objects.
+def extract_obs(data: dict) -> dict:
+    """Extract obs DataFrames from AnnData objects.
 
     Parameters
     ----------
@@ -473,7 +496,7 @@ def extract_metadata(data):
     return metadata
 
 
-def align_var(data, likelihoods, use_var="intersection"):
+def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> dict:
     """Align features across groups.
 
     Parameters
@@ -509,7 +532,7 @@ def align_var(data, likelihoods, use_var="intersection"):
                     np.intersect1d,
                     [data[k_groups][k_views].var_names for k_groups in group_names],
                 )
-            )
+            ).sort_values()
 
             if likelihoods[k_views] == "BetaBinomial":
                 # keep only var names that have a base that occurs twice with different suffixes
@@ -530,7 +553,7 @@ def align_var(data, likelihoods, use_var="intersection"):
                     np.union1d,
                     [data[k_groups][k_views].var_names for k_groups in group_names],
                 )
-            )
+            ).sort_values()
 
             if likelihoods[k_views] == "BetaBinomial":
                 # keep only var names that have a base that occurs twice with different suffixes
@@ -602,86 +625,30 @@ def align_var(data, likelihoods, use_var="intersection"):
     return data_aligned
 
 
-def get_sizes_and_names(data):
-    """Validate alignment of observations and features across views and groups and
-    get sizes and names of obs and vars.
+def extract_covariate(data: dict, cov_key: dict) -> dict:
+    """Extract covariate data from AnnData objects.
 
     Parameters
     ----------
     data: dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+    cov_key: dict
+        Dictionary with group names as keys and covariate keys as values.
 
     Returns
     -------
-    group_names: list
-        List of group names.
-    n_groups: int
-        Number of groups.
-    view_names: list
-        List of view names.
-    n_views: int
-        Number of views.
-    feature_names: dict
-        Dictionary with view names as keys and lists of feature names as values.
-    n_features: dict
-        Dictionary with view names as keys and number of features as values.
-    sample_names: dict
-        Dictionary with group names as keys and lists of sample names as values.
-    n_samples: dict
-        Dictionary with group names as keys and number of samples as values.
+    dict
+        Dictionary of Tensors with group names as keys.
     """
-    group_names = []
-    view_names = []
-    feature_names = {}
-    n_features = {}
-    sample_names = {}
-    n_samples = {}
+    covariate = {}
 
-    for k_groups, v_groups in data.items():
-        group_names.append(k_groups)
-        group_sample_names = None
-        for k_views, v_views in v_groups.items():
-            view_names.append(k_views)
+    for gn, gv in data.items():
+        for _, vv in gv.items():
+            if cov_key[gn] not in vv.obsm:
+                raise (ValueError(f"Covariate {cov_key[gn]} not found in group {gn}."))
+            x = torch.tensor(vv.obsm[cov_key[gn]], dtype=torch.float)
+            if gn in covariate and (x != covariate[gn]).all():
+                raise (ValueError(f"Multiple covariates found in group {gn}."))
+            covariate[gn] = x
 
-            if group_sample_names is None:
-                group_sample_names = v_views.obs_names.tolist()
-            if group_sample_names != v_views.obs_names.tolist():
-                raise ValueError(
-                    "Error in preprocessing. Views do not have the same samples."
-                )
-
-            if k_views not in feature_names:
-                feature_names[k_views] = v_views.var_names.tolist()
-            if feature_names[k_views] != v_views.var_names.tolist():
-                raise ValueError(
-                    "Error in preprocessing. Groups do not have the same features."
-                )
-
-            # check whether every feature appears twice with different suffix
-            var_names_base = pd.Series(v_views.var_names).str.rsplit(
-                "_", n=1, expand=True
-            )[0]
-
-            if var_names_base.nunique() * 2 == len(var_names_base):
-                n_features[k_views] = len(feature_names[k_views]) // 2
-                feature_names[k_views] = var_names_base.unique()
-
-            else:
-                n_features[k_views] = len(feature_names[k_views])
-
-        sample_names[k_groups] = group_sample_names
-        n_samples[k_groups] = len(group_sample_names)
-
-        n_groups = len(group_names)
-        n_views = len(view_names)
-
-    return (
-        group_names,
-        n_groups,
-        view_names,
-        n_views,
-        feature_names,
-        n_features,
-        sample_names,
-        n_samples,
-    )
+    return covariate

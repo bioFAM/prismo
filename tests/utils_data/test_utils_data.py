@@ -268,7 +268,10 @@ def test_center_data():
     }
 
     data_c = utils_data.center_data(
-        data, likelihoods, nmf={k: False for k in likelihoods}
+        data,
+        likelihoods,
+        nonnegative_weights={k: False for k in likelihoods},
+        nonnegative_factors={k: False for k in likelihoods},
     )
 
     assert np.allclose(data_c["group1"]["view1"].X.mean(axis=0), 0)

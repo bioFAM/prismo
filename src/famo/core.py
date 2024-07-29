@@ -864,9 +864,7 @@ class CORE(PyroModule):
                 ).detach()
 
             else:
-                factors[gn] = self.variational.expectation(
-                    f"z_{gn}", covariates[gn]
-                ).detach()
+                factors[gn] = self.variational.expectation(f"z_{gn}").detach()
 
             if self.generative.factor_prior == "ARD_Spike_and_Slab":
                 factors[gn] *= self.variational.expectation(f"s_z_{gn}").detach()

@@ -230,7 +230,7 @@ class CORE(PyroModule):
         # Fill cache
         self._cache = {
             "weights": self.get_weights(return_type="anndata"),
-            "factors": self.get_factors(return_type="anndata"),
+            "factors": self.get_factors(return_type="anndata", covariates=covariates),
             "train_loss_elbo": self.train_loss_elbo,
             # "intercepts": intercepts,
             "df_r2": df_r2,
@@ -555,6 +555,9 @@ class CORE(PyroModule):
         tensor_dict = {}
         for k_groups, v_groups in self.data.items():
             tensor_dict[k_groups] = {}
+            if self.covariates is not None and self.covariates[k_groups] is not None:
+                tensor_dict[k_groups]["covariates"] = self.covariates[k_groups]
+
             for k_views, v_views in v_groups.items():
                 tensor_dict[k_groups][k_views] = torch.from_numpy(v_views.X)
 
@@ -575,6 +578,7 @@ class CORE(PyroModule):
                 tensor_dict[group_name]["sample_idx"] = torch.arange(
                     self.n_samples[group_name]
                 )
+                tensor_dict["covariates"] = self.covariates[k_groups]
 
                 data_loaders.append(
                     DataLoader(
@@ -654,7 +658,7 @@ class CORE(PyroModule):
 
         self._is_trained = True
 
-        return self._post_fit(save, save_path)
+        return self._post_fit(save, save_path, self.covariates)
 
     @staticmethod
     def _Vprime(mu, nu2, nu1):
@@ -860,7 +864,9 @@ class CORE(PyroModule):
                 ).detach()
 
             else:
-                factors[gn] = self.variational.expectation(f"z_{gn}").detach()
+                factors[gn] = self.variational.expectation(
+                    f"z_{gn}", covariates[gn]
+                ).detach()
 
             if self.generative.factor_prior == "ARD_Spike_and_Slab":
                 factors[gn] *= self.variational.expectation(f"s_z_{gn}").detach()

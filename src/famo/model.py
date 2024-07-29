@@ -447,12 +447,12 @@ class Variational(PyroModule):
         gp_sites = []
 
         for gn in n_samples.keys():
-            if self.generative.factor_prior == "Horseshoe":
+            if self.generative.factor_prior[gn] == "Horseshoe":
                 name_to_shape[f"global_scale_z_{gn}"] = (1,)
                 name_to_shape[f"inter_scale_z_{gn}"] = (n_factors, 1, 1)
                 name_to_shape[f"local_scale_z_{gn}"] = (n_factors, 1, n_samples[gn])
                 name_to_shape[f"caux_z_{gn}"] = (n_factors, 1, n_samples[gn])
-            if self.generative.factor_prior == "ARD_Spike_and_Slab":
+            if self.generative.factor_prior[gn] == "ARD_Spike_and_Slab":
                 name_to_shape[f"alpha_z_{gn}"] = (n_factors, 1, 1)
                 name_to_shape[f"theta_z_{gn}"] = (n_factors, 1, 1)
                 name_to_shape[f"s_z_{gn}"] = (n_factors, 1, n_samples[gn])
@@ -477,12 +477,12 @@ class Variational(PyroModule):
             beta_sites.extend([f"theta_z_{gn}"])
 
         for vn in n_features.keys():
-            if self.generative.weight_prior == "Horseshoe":
+            if self.generative.weight_prior[vn] == "Horseshoe":
                 name_to_shape[f"global_scale_w_{vn}"] = (1,)
                 name_to_shape[f"inter_scale_w_{vn}"] = (n_factors, 1, 1)
                 name_to_shape[f"local_scale_w_{vn}"] = (n_factors, n_features[vn], 1)
                 name_to_shape[f"caux_w_{vn}"] = (n_factors, n_features[vn], 1)
-            if self.generative.weight_prior == "ARD_Spike_and_Slab":
+            if self.generative.weight_prior[vn] == "ARD_Spike_and_Slab":
                 name_to_shape[f"alpha_w_{vn}"] = (n_factors, 1, 1)
                 name_to_shape[f"theta_w_{vn}"] = (n_factors, 1, 1)
                 name_to_shape[f"s_w_{vn}"] = (n_factors, n_features[vn], 1)

@@ -61,7 +61,6 @@ def test_save_load_model(setup_teardown):
 
     # Load the model and its parameters
     loaded_model = load_model(dir_path=temp_dir)
-
     # Check if the model's parameter is correctly loaded
     for original_param, loaded_param in zip(
         prev_generator_params, loaded_model.parameters()
@@ -70,6 +69,7 @@ def test_save_load_model(setup_teardown):
 
     # Check if the param store parameter is correctly loaded
     for name in pyro.get_param_store().get_all_param_names():
+
         loaded_param = pyro.param(name)
         original_param = prev_param_store[name]
         assert torch.equal(

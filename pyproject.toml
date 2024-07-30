@@ -35,7 +35,8 @@ dependencies = [
     "tensordict",
     "addict",
     "altair",
-    "ipython"
+    "ipython",
+    "gpytorch",
 ]
 
 [project.optional-dependencies]

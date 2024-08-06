@@ -54,6 +54,12 @@ class Generative(PyroModule):
         self.device = device
         self.to(self.device)
 
+        if isinstance(self.prior_scales, dict):
+            self.prior_scales = {
+                vn: torch.Tensor(ps).to(self.device)
+                for vn, ps in self.prior_scales.items()
+            }
+
         self._setup_samplers()
 
         self.sample_dict: dict[str, torch.Tensor] = {}
@@ -146,7 +152,7 @@ class Generative(PyroModule):
                     caux = self._sample(
                         f"caux_{site_name}",
                         dist.InverseGamma(
-                            self._ones((1,)) * 0.5, self._ones((1,)) * 0.5
+                            0.5 * self._ones((1,)), 0.5 * self._ones((1,))
                         ),
                     )
                     c = torch.sqrt(caux)
@@ -156,7 +162,7 @@ class Generative(PyroModule):
 
                 return self._sample(
                     site_name,
-                    dist.Normal(self._zeros((1,)), self._ones((1,)) * local_scale),
+                    dist.Normal(self._zeros((1,)), local_scale),
                 )
 
     def _sample_component_ard_spike_and_slab(

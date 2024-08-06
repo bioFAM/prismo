@@ -132,37 +132,78 @@ class CORE(PyroModule):
         return likelihoods
 
     def _setup_annotations(self, n_factors, annotations, prior_penalty):
-        if n_factors is None and annotations is None:
-            raise ValueError("`n_factors` or `annotations` must be provided.")
+
+        informed = annotations is not None and len(annotations) > 0
+        valid_n_factors = n_factors is not None and n_factors > 0
+
+        if not informed and not valid_n_factors:
+            raise ValueError(
+                "Invalid latent configuration, "
+                "please provide either a collection of prior masks, "
+                "or set `n_factors` to a positive integer."
+            )
+
+        n_dense_factors = 0
+        n_informed_factors = 0
+
+        factor_names = []
 
         if n_factors is not None:
-            self.n_factors = n_factors
+            n_dense_factors = n_factors
+            factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
         if annotations is not None:
             # TODO: annotations need to be processed if not aligned or full
-            self.n_factors = annotations[self.view_names[0]].shape[0]
+            n_informed_factors = annotations[self.view_names[0]].shape[0]
+            if isinstance(annotations[self.view_names[0]], pd.DataFrame):
+                factor_names += annotations[self.view_names[0]].index.tolist()
+            else:
+                factor_names += [
+                    f"Factor {k + 1}"
+                    for k in range(
+                        n_dense_factors, n_dense_factors + n_informed_factors
+                    )
+                ]
 
-        self._factor_names = pd.Index(
-            [f"Factor {k + 1}" for k in range(self.n_factors)]
-        )
-        if annotations is not None and isinstance(
-            annotations[self.view_names[0]], pd.DataFrame
-        ):
-            self._factor_names = pd.Index(annotations[self.view_names[0]].index)
-            annotations = {vn: vm.values for vn, vm in annotations.items()}
-
-        self._factor_order = np.arange(self.n_factors)
-        self.annotations = annotations
-        self.prior_penalty = prior_penalty
-
-        prior_scales = None
-        if annotations is not None:
-            prior_scales = {
-                vn: torch.Tensor(
-                    np.clip(vm.astype(np.float32) + self.prior_penalty, 1e-6, 1.0)
-                ).to(self.device)
+        # keep only numpy arrays
+        prior_masks = {
+            vn: (
+                vm.to_numpy().astype(bool)
+                if isinstance(vm, pd.DataFrame)
+                else vm.astype(bool)
+            )
+            for vn, vm in annotations.items()
+        }
+        # add dense factors if necessary
+        if n_dense_factors > 0:
+            prior_masks = {
+                vn: np.concatenate(
+                    [vm, np.ones((n_dense_factors, self.n_features[vn])).astype(bool)],
+                    axis=0,
+                )
                 for vn, vm in annotations.items()
             }
+
+        prior_scales = {
+            vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0)
+            for vn, vm in prior_masks.items()
+        }
+
+        if n_dense_factors > 0:
+            dense_scale = 1.0
+            for vn in self.view_names:
+                prior_scales[vn][n_informed_factors:, :] = dense_scale
+
+        self.n_dense_factors = n_dense_factors
+        self.n_informed_factors = n_informed_factors
+        self.n_factors = n_dense_factors + n_informed_factors
+
+        self._factor_names = pd.Index(factor_names)
+        self._factor_order = np.arange(self.n_factors)
+
+        self.annotations = prior_masks
+        self.prior_penalty = prior_penalty
+        self.prior_masks = prior_masks
         self.prior_scales = prior_scales
         return self.annotations
 
@@ -642,23 +683,28 @@ class CORE(PyroModule):
             percentage=True,
         )
         start_timer = time.time()
-        for i in range(max_epochs):
-            # import ipdb; ipdb.set_trace()
-            loss = step_fn()
-            self.train_loss_elbo.append(loss)
 
-            if i % print_every == 0:
-                print(
-                    f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}"
-                )
+        try:
+            for i in range(max_epochs):
+                # import ipdb; ipdb.set_trace()
+                loss = step_fn()
+                self.train_loss_elbo.append(loss)
 
-            if earlystopper.step(loss):
-                print(f"Training finished after {i} steps.")
-                break
+                if i % print_every == 0:
+                    print(
+                        f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}"
+                    )
+
+                if earlystopper.step(loss):
+                    print(f"Training finished after {i} steps.")
+                    break
+
+        except KeyboardInterrupt:
+            print("Keyboard interrupt, stopping training and saving progress...")
 
         self._is_trained = True
 
-        return self._post_fit(save, save_path, self.covariates)
+        # return self._post_fit(save, save_path, self.covariates)
 
     @staticmethod
     def _Vprime(mu, nu2, nu1):
@@ -750,16 +796,26 @@ class CORE(PyroModule):
                 r2s.append(max(0.0, r2_full - cr2))
         return r2s
 
-    def _sort_factors(self, weights, factors):
+    def _sort_factors(self, weights, factors, subsample=1000):
         # Loop over all groups
         dfs = {}
 
         for group_name, group_data in self.data.items():
+            n_samples = self.n_samples[group_name]
+
+            sample_idx = np.arange(n_samples)
+
+            if subsample is not None and subsample > 0 and subsample < n_samples:
+                sample_idx = np.random.choice(sample_idx, subsample, replace=False)
+
             group_r2 = {}
             for view_name, view_data in group_data.items():
                 try:
                     group_r2[view_name] = self._r2(
-                        view_data.X, factors[group_name], weights[view_name], view_name
+                        view_data.X[sample_idx, :],
+                        factors[group_name][:, sample_idx],
+                        weights[view_name],
+                        view_name,
                     )
                 except NotImplementedError:
                     print(

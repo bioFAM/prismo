@@ -152,6 +152,9 @@ class CORE(PyroModule):
             n_dense_factors = n_factors
             factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
+        prior_masks = None
+        prior_scales = None
+
         if annotations is not None:
             # TODO: annotations need to be processed if not aligned or full
             n_informed_factors = annotations[self.view_names[0]].shape[0]
@@ -165,34 +168,39 @@ class CORE(PyroModule):
                     )
                 ]
 
-        # keep only numpy arrays
-        prior_masks = {
-            vn: (
-                vm.to_numpy().astype(bool)
-                if isinstance(vm, pd.DataFrame)
-                else vm.astype(bool)
-            )
-            for vn, vm in annotations.items()
-        }
-        # add dense factors if necessary
-        if n_dense_factors > 0:
+            # keep only numpy arrays
             prior_masks = {
-                vn: np.concatenate(
-                    [vm, np.ones((n_dense_factors, self.n_features[vn])).astype(bool)],
-                    axis=0,
+                vn: (
+                    vm.to_numpy().astype(bool)
+                    if isinstance(vm, pd.DataFrame)
+                    else vm.astype(bool)
                 )
                 for vn, vm in annotations.items()
             }
+            # add dense factors if necessary
+            if n_dense_factors > 0:
+                prior_masks = {
+                    vn: np.concatenate(
+                        [
+                            vm,
+                            np.ones((n_dense_factors, self.n_features[vn])).astype(
+                                bool
+                            ),
+                        ],
+                        axis=0,
+                    )
+                    for vn, vm in annotations.items()
+                }
 
-        prior_scales = {
-            vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0)
-            for vn, vm in prior_masks.items()
-        }
+            prior_scales = {
+                vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0)
+                for vn, vm in prior_masks.items()
+            }
 
-        if n_dense_factors > 0:
-            dense_scale = 1.0
-            for vn in self.view_names:
-                prior_scales[vn][n_informed_factors:, :] = dense_scale
+            if n_dense_factors > 0:
+                dense_scale = 1.0
+                for vn in self.view_names:
+                    prior_scales[vn][n_informed_factors:, :] = dense_scale
 
         self.n_dense_factors = n_dense_factors
         self.n_informed_factors = n_informed_factors
@@ -201,7 +209,7 @@ class CORE(PyroModule):
         self._factor_names = pd.Index(factor_names)
         self._factor_order = np.arange(self.n_factors)
 
-        self.annotations = prior_masks
+        self.annotations = annotations
         self.prior_penalty = prior_penalty
         self.prior_masks = prior_masks
         self.prior_scales = prior_scales

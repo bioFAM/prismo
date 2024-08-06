@@ -60,6 +60,8 @@ class CORE(PyroModule):
         self.likelihoods = {}
         self.nmf = {}
         self.prior_penalty = None
+        self.prior_masks = None
+        self.prior_scales = None
 
         # Training settings
         self.init_tensor = None
@@ -712,7 +714,7 @@ class CORE(PyroModule):
 
         self._is_trained = True
 
-        # return self._post_fit(save, save_path, self.covariates)
+        return self._post_fit(save, save_path, self.covariates)
 
     @staticmethod
     def _Vprime(mu, nu2, nu1):

@@ -192,7 +192,7 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     """
     for k_groups, v_groups in data.items():
         for k_views, v_views in v_groups.items():
-            v_views.X = v_views.X.astype(float)
+            v_views.X = v_views.X.astype(np.float32)
 
             # compute variance of each feature
             variances = np.var(v_views.X, axis=0)
@@ -222,12 +222,14 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
 
             if drop_mask.any():
                 dropped_features_names = list(v_views.var_names[drop_mask])
-                data[k_groups][k_views] = v_views[:, ~drop_mask]
+                data[k_groups][k_views] = v_views[:, ~drop_mask].copy()
 
                 print(f"- Removing constant features in {k_groups}/{k_views}.")
                 print(
                     f"  - Removed {len(dropped_features_names)} features: {','.join(dropped_features_names)}"
                 )
+
+    data.update()
 
     return data
 
@@ -314,6 +316,7 @@ def center_data(
                     mean_values = np.nanmean(v_views.X, axis=0)
                     v_views.X -= mean_values
 
+    data.update()
     return data
 
 
@@ -353,6 +356,7 @@ def scale_data(data: dict, likelihoods: dict, scale_per_group: bool = True) -> d
                 for k_groups in data.keys():
                     data[k_groups][k_views].X /= std
 
+    data.update()
     return data
 
 

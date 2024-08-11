@@ -192,7 +192,7 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     """
     for k_groups, v_groups in data.items():
         for k_views, v_views in v_groups.items():
-            v_views.X = v_views.X.astype(np.float32)
+            # v_views.X = v_views.X.astype(np.float32)
 
             # compute variance of each feature
             variances = np.var(v_views.X, axis=0)

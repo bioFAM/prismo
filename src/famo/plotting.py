@@ -178,8 +178,8 @@ def plot_factor_correlation(model):
             alt.Chart(corr_df)
             .mark_rect()
             .encode(
-                x=alt.X("Factor1:O", title="Factor"),
-                y=alt.Y("Factor2:O", title="Factor"),
+                x=alt.X("Factor1:O", title="Factor", sort=None),
+                y=alt.Y("Factor2:O", title="Factor", sort=None),
                 color=alt.Color(
                     "Correlation:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))
                 ),
@@ -212,11 +212,12 @@ def plot_variance_explained(model):
     # Loop over all groups
     for group_name in model.group_names:
         # Get the variance explained DataFrame for the current group
-        r2_df = df_r2[group_name]
+        r2_df = df_r2[group_name].copy()
 
         # Convert the DataFrame to long format
         r2_df.index = model.factor_names
         r2_df["index"] = model.factor_names
+        r2_df = r2_df.iloc[::-1, :]
         r2_df = r2_df.melt("index")
         r2_df.columns = ["Factor", "View", "Variance Explained"]
 
@@ -226,7 +227,7 @@ def plot_variance_explained(model):
             .mark_rect()
             .encode(
                 x=alt.X("View:O", title="View"),
-                y=alt.Y("Factor:O", title="Factor", sort="descending"),
+                y=alt.Y("Factor:O", title="Factor", sort=None),
                 color=alt.Color(
                     "Variance Explained:Q",
                     scale=alt.Scale(
@@ -236,7 +237,7 @@ def plot_variance_explained(model):
                 ),
                 tooltip=["Factor", "View", "Variance Explained"],
             )
-            .properties(title=group_name, width=750, height=350)
+            .properties(title=group_name, width=400, height=600)
         )
 
         # Add the chart to the list of charts

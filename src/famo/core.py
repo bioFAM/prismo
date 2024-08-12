@@ -186,10 +186,10 @@ class CORE(PyroModule):
                 prior_masks = {
                     vn: np.concatenate(
                         [
-                            vm,
                             np.ones((n_dense_factors, self.n_features[vn])).astype(
                                 bool
                             ),
+                            vm,
                         ],
                         axis=0,
                     )

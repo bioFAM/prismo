@@ -269,6 +269,74 @@ def plot_factor(model, factor=1):
     final_chart.display()
 
 
+def plot_factor_covariate(model, factor=1):
+    """Plot factor values against the covariate (1D or 2D)."""
+    model._check_if_trained()
+
+    # We reduce the factor value by one, because we internally start counting at 0
+    factor -= 1
+
+    # Create an empty list to hold all the charts
+    charts = []
+
+    factors = model._cache["factors"]
+    covariates = model.covariates
+
+    for group_name in model.group_names:
+        z = factors[group_name].X.squeeze()
+        df = pd.DataFrame(z)
+        for i in range(covariates[group_name].shape[-1]):
+            df[f"covariate_{i}"] = covariates[group_name][:, i]
+        # Convert column names to strings
+        df.columns = df.columns.astype(str)
+
+        if covariates[group_name].shape[-1] == 1:
+            # Create the scatter plot chart
+            scatter_plot = (
+                alt.Chart(df)
+                .mark_point(filled=True)
+                .encode(
+                    x=alt.X("covariate_0:O", title="", axis=alt.Axis(labels=False)),
+                    y=alt.Y(f"{factor}:Q", title=f"Factor {factor+1}"),
+                    color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
+                    tooltip=["id", f"{factor}"],
+                )
+                .properties(width=600, height=300)
+                .interactive()
+            )
+
+            # Add a horizontal rule at y=0
+            rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
+
+            # Combine the scatter plot and rule
+            final_plot = scatter_plot + rule
+
+        if covariates[group_name].shape[-1] == 2:
+            # Create the scatter plot chart
+            scatter_plot = (
+                alt.Chart(df)
+                .mark_point(filled=True)
+                .encode(
+                    x=alt.X("covariate_0:O", title="", axis=alt.Axis(labels=False)),
+                    y=alt.Y("covariate_1:O", title="", axis=alt.Axis(labels=False)),
+                    color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
+                )
+                .properties(width=600, height=300)
+                .interactive()
+            )
+
+            final_plot = scatter_plot
+
+        # Add the chart to the list of charts
+        charts.append(final_plot)
+
+    # Concatenate all the charts vertically
+    final_chart = alt.vconcat(*charts)
+
+    # Display the chart
+    final_chart.display()
+
+
 def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizontal"):
     """Plot the top nfeatures weights for a given factor and view."""
     model._check_if_trained()

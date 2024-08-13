@@ -31,3 +31,9 @@ __pycache__/
 # Files
 *.pkl
 *.save
+notebooks/mefisto_scnmt/data/scnmt_sample_metadata.txt
+notebooks/mefisto_scnmt/data/scnmt_data.txt
+notebooks/mefisto_microbiome/microbiome_features_metadata.csv
+notebooks/mefisto_microbiome/microbiome_data.csv
+notebooks/mefisto_evodevo/data/evodevo.RData
+notebooks/mefisto_evodevo/data/evodevo.csv

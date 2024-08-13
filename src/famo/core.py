@@ -212,8 +212,9 @@ class CORE(PyroModule):
 
         self._factor_names = pd.Index(factor_names)
         self._factor_order = np.arange(self.n_factors)
-
-        self.annotations = annotations
+        
+        # storing prior_masks as full annotations instead of partial annotations
+        self.annotations = prior_masks
         self.prior_penalty = prior_penalty
         self.prior_masks = prior_masks
         self.prior_scales = prior_scales

@@ -699,7 +699,6 @@ class CORE(PyroModule):
 
         try:
             for i in range(max_epochs):
-                # import ipdb; ipdb.set_trace()
                 loss = step_fn()
                 self.train_loss_elbo.append(loss)
 

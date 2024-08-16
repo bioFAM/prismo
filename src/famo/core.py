@@ -2,28 +2,27 @@ import time
 from collections import defaultdict
 from functools import reduce
 
+import anndata as ad
 import numpy as np
 import pandas as pd
-import anndata as ad
-from mudata import MuData
 import pyro
+import scipy.stats as stats
 import torch
-from torch.utils.data import DataLoader
-from tensordict import TensorDict
+from addict import Dict
+from mudata import MuData
 from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.nn import PyroModule
 from pyro.optim import ClippedAdam
-import scipy.stats as stats
 from scipy.special import expit
 from sklearn.decomposition import PCA
-from addict import Dict
+from tensordict import TensorDict
+from torch.utils.data import DataLoader
 
+from famo import gp, utils_data
 from famo.model import Generative, Variational
-from famo import utils_data, gp
-from famo.utils_training import EarlyStopper
-from famo.utils_io import save_model
 from famo.plotting import plot_overview
-
+from famo.utils_io import save_model
+from famo.utils_training import EarlyStopper
 
 # Set 16bit cuda float as default
 # torch.set_default_dtype(torch.float32)
@@ -236,9 +235,7 @@ class CORE(PyroModule):
         self.gps = {}
         for group_name in self.group_names:
             if factor_prior[group_name] == "GP":
-                self.gps[group_name] = gp.GP(
-                    inducing_points[group_name], self.n_factors
-                ).to(self.device)
+                self.gps[group_name] = gp.GP(inducing_points[group_name], self.n_factors).to(self.device)
 
         self.generative = Generative(
             n_samples=self.n_samples,
@@ -268,9 +265,7 @@ class CORE(PyroModule):
             model=pyro.poutine.scale(self.generative, scale=1.0 / total_n_samples),
             guide=pyro.poutine.scale(self.variational, scale=1.0 / total_n_samples),
             optim=self._optimizer,
-            loss=TraceMeanField_ELBO(
-                retain_graph=True, num_particles=n_particles, vectorize_particles=True
-            ),
+            loss=TraceMeanField_ELBO(retain_graph=True, num_particles=n_particles, vectorize_particles=True),
         )
 
         return self._svi
@@ -297,35 +292,27 @@ class CORE(PyroModule):
             print("Saving results...")
             save_model(self, save_path)
 
-    def _initialize_factors(
-        self, init_factors="random", init_scale=1.0, impute_missings=True
-    ):
+    def _initialize_factors(self, init_factors="random", init_scale=1.0, impute_missings=True):
         init_tensor = Dict()
         print(f"Initializing factors using `{init_factors}` method...")
 
         # Initialize factors
         if init_factors == "random":
             for group_name, n in self.n_samples.items():
-                init_tensor[group_name]["loc"] = torch.rand(
-                    size=(n, self.n_factors), device=self.device
-                )
+                init_tensor[group_name]["loc"] = torch.rand(size=(n, self.n_factors), device=self.device)
         elif init_factors == "orthogonal":
             for group_name, n in self.n_samples.items():
                 # Compute PCA of random vectors
                 pca = PCA(n_components=self.n_factors, whiten=True)
                 pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.n_factors)).T)
-                init_tensor[group_name]["loc"] = torch.tensor(
-                    pca.components_.T, device=self.device
-                )
+                init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T, device=self.device)
         elif init_factors == "pca":
-            for group_name, n in self.n_samples.items():
+            for group_name in self.n_samples.keys():
                 pca = PCA(n_components=self.n_factors, whiten=True)
                 # Combine all views
                 concat_data = torch.cat(
                     [
-                        torch.tensor(
-                            self.data[group_name][view_name].X, dtype=torch.float
-                        )
+                        torch.tensor(self.data[group_name][view_name].X, dtype=torch.float)
                         for view_name in self.view_names
                     ],
                     dim=-1,
@@ -337,17 +324,13 @@ class CORE(PyroModule):
 
                         imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
                         imp.fit(concat_data)
-                        concat_data = torch.tensor(
-                            imp.transform(concat_data), dtype=torch.float
-                        )
+                        concat_data = torch.tensor(imp.transform(concat_data), dtype=torch.float)
                     else:
                         raise ValueError(
                             "Data has missing values. Please impute missings or set `impute_missings=True`."
                         )
                 pca.fit(concat_data)
-                init_tensor[group_name]["loc"] = torch.tensor(
-                    pca.transform(concat_data), device=self.device
-                )
+                init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data), device=self.device)
 
         else:
             raise ValueError(
@@ -357,32 +340,20 @@ class CORE(PyroModule):
         for group_name, n in self.n_samples.items():
             # scale factor values from -1 to 1 (per factor)
             q = init_tensor[group_name]["loc"]
-            q = (
-                2.0
-                * (q - torch.min(q, dim=0)[0])
-                / (torch.max(q, dim=0)[0] - torch.min(q, dim=0)[0])
-                - 1
-            )
+            q = 2.0 * (q - torch.min(q, dim=0)[0]) / (torch.max(q, dim=0)[0] - torch.min(q, dim=0)[0]) - 1
 
             # Add artifical dimension at dimension -2 for broadcasting
             init_tensor[group_name]["loc"] = q.T.unsqueeze(-2).float()
             init_tensor[group_name]["scale"] = (
-                init_scale
-                * torch.ones(size=(n, self.n_factors), device=self.device)
-                .T.unsqueeze(-2)
-                .float()
+                init_scale * torch.ones(size=(n, self.n_factors), device=self.device).T.unsqueeze(-2).float()
             )
 
         self.init_tensor = init_tensor
 
     def fit(
         self,
-        data: (
-            MuData
-            | dict[str, ad.AnnData]
-            | dict[str, MuData]
-            | dict[str, dict[str, ad.AnnData]]
-        ),
+        data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]],
+        group_by: str | list[str] | dict[str] | dict[list[str]] | None = None,
         n_factors: int = None,
         annotations=None,
         weight_prior: dict[str, str] | str = None,
@@ -417,12 +388,17 @@ class CORE(PyroModule):
         ----------
         data : MuData | dict[str, ad.AnnData] | dict[str, MuData] | dict[str, dict[str, ad.AnnData]]
             can be any of:
-            - MuData object (single group)
-            - dict with view names as keys and AnnData objects as values (single group)
-            - dict with view names as keys and torch.Tensor objects as values (single group)
-            - dict with group names as keys and MuData objects as values (multiple groups)
-            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups)
-            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups)
+            - MuData object
+            - dict with view names as keys and AnnData objects as values
+            - dict with view names as keys and torch.Tensor objects as values (single group only)
+            - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
+            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
+            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+        group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
+            - String or list of strings. This will be applied to the MuData object or to all AnnData objects
+            - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
+              is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
+              in the corresponding `group_by` element.
         n_factors : int
             Number of latent factors.
         annotations : dict
@@ -479,7 +455,7 @@ class CORE(PyroModule):
         print("Fitting model...")
 
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
-        self.data = utils_data.cast_data(data)
+        self.data = utils_data.cast_data(data, group_by)
 
         # extract group and view names / numbers from data
         self.group_names = list(self.data.keys())
@@ -488,36 +464,24 @@ class CORE(PyroModule):
         self.n_views = len(self.view_names)
 
         # convert input arguments to dictionaries if necessary
-        weight_prior = (
-            {k: weight_prior for k in self.view_names}
-            if type(weight_prior) is str
-            else weight_prior
-        )
-        factor_prior = (
-            {k: factor_prior for k in self.group_names}
-            if type(factor_prior) is str
-            else factor_prior
-        )
+        weight_prior = {k: weight_prior for k in self.view_names} if isinstance(weight_prior, str) else weight_prior
+        factor_prior = {k: factor_prior for k in self.group_names} if isinstance(factor_prior, str) else factor_prior
         covariates_key = (
-            {k: covariates_key for k in self.group_names}
-            if type(covariates_key) is str
-            else covariates_key
+            {k: covariates_key for k in self.group_names} if isinstance(covariates_key, str) else covariates_key
         )
         gp_n_inducing = (
-            {k: gp_n_inducing for k in self.group_names}
-            if type(gp_n_inducing) is int
-            else gp_n_inducing
+            {k: gp_n_inducing for k in self.group_names} if isinstance(gp_n_inducing, int) else gp_n_inducing
         )
 
         self.nonnegative_weights = (
             {k: nonnegative_weights for k in self.view_names}
-            if type(nonnegative_weights) is bool
+            if isinstance(nonnegative_weights, bool)
             else nonnegative_weights
         )
 
         self.nonnegative_factors = (
             {k: nonnegative_factors for k in self.group_names}
-            if type(nonnegative_factors) is bool
+            if isinstance(nonnegative_factors, bool)
             else nonnegative_factors
         )
 
@@ -528,10 +492,7 @@ class CORE(PyroModule):
         self.data = utils_data.remove_constant_features(self.data, self.likelihoods)
         self.data = utils_data.scale_data(self.data, self.likelihoods, scale_per_group)
         self.data = utils_data.center_data(
-            self.data,
-            self.likelihoods,
-            self.nonnegative_weights,
-            self.nonnegative_factors,
+            self.data, self.likelihoods, self.nonnegative_weights, self.nonnegative_factors
         )
 
         # align observations across views and variables across groups
@@ -541,28 +502,18 @@ class CORE(PyroModule):
         # obtain observations DataFrame and covariates
         self.metadata = utils_data.extract_obs(self.data)
         self.covariates = (
-            utils_data.extract_covariate(self.data, covariates_key)
-            if covariates_key is not None
-            else None
+            utils_data.extract_covariate(self.data, covariates_key) if covariates_key is not None else None
         )
 
         # extract feature and samples names / numbers from data
-        self.feature_names = {
-            k: self.data[list(self.data.keys())[0]][k].var_names.tolist()
-            for k in self.view_names
-        }
+        self.feature_names = {k: self.data[list(self.data.keys())[0]][k].var_names.tolist() for k in self.view_names}
         self.n_features = {k: len(v) for k, v in self.feature_names.items()}
-        self.sample_names = {
-            k: self.data[k][list(self.data[k].keys())[0]].obs_names.tolist()
-            for k in self.group_names
-        }
+        self.sample_names = {k: self.data[k][list(self.data[k].keys())[0]].obs_names.tolist() for k in self.group_names}
         self.n_samples = {k: len(v) for k, v in self.sample_names.items()}
 
         for view_name in self.view_names:
             if self.likelihoods[view_name] == "BetaBinomial":
-                feature_names_base = pd.Series(
-                    self.feature_names[view_name]
-                ).str.rsplit("_", n=1, expand=True)[0]
+                feature_names_base = pd.Series(self.feature_names[view_name]).str.rsplit("_", n=1, expand=True)[0]
                 if feature_names_base.nunique() == len(feature_names_base) // 2:
                     self.n_features[view_name] = self.n_features[view_name] // 2
                     self.feature_names[view_name] = feature_names_base.unique()
@@ -572,13 +523,7 @@ class CORE(PyroModule):
 
         # GP inducing point locations
         inducing_points = (
-            gp.setup_inducing_points(
-                factor_prior,
-                self.covariates,
-                gp_n_inducing,
-                n_factors,
-                device=self.device,
-            )
+            gp.setup_inducing_points(factor_prior, self.covariates, gp_n_inducing, n_factors, device=self.device)
             if self.covariates is not None
             else None
         )
@@ -623,23 +568,16 @@ class CORE(PyroModule):
 
             for group_name in self.group_names:
                 tensor_dict[group_name] = TensorDict(
-                    {
-                        view_name: tensor_dict[group_name][view_name]
-                        for view_name in self.view_names
-                    },
+                    {view_name: tensor_dict[group_name][view_name] for view_name in self.view_names},
                     batch_size=[self.n_samples[group_name]],
                 )
-                tensor_dict[group_name]["sample_idx"] = torch.arange(
-                    self.n_samples[group_name]
-                )
+                tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
                 tensor_dict["covariates"] = self.covariates[k_groups]
 
                 data_loaders.append(
                     DataLoader(
                         tensor_dict[group_name],
-                        batch_size=max(
-                            1, int(batch_fraction * self.n_samples[group_name])
-                        ),
+                        batch_size=max(1, int(batch_fraction * self.n_samples[group_name])),
                         shuffle=True,
                         num_workers=0,
                         collate_fn=lambda x: x,
@@ -651,14 +589,9 @@ class CORE(PyroModule):
             def step_fn():
                 epoch_loss = 0
 
-                for group_batch in zip(*data_loaders):
+                for group_batch in zip(*data_loaders, strict=False):
                     epoch_loss += self._svi.step(
-                        dict(
-                            zip(
-                                self.group_names,
-                                (batch.to(self.device) for batch in group_batch),
-                            )
-                        )
+                        dict(zip(self.group_names, (batch.to(self.device) for batch in group_batch), strict=False))
                     )
 
                 return epoch_loss
@@ -689,12 +622,7 @@ class CORE(PyroModule):
 
         # Train
         self.train_loss_elbo = []
-        earlystopper = EarlyStopper(
-            mode="min",
-            min_delta=0.1,
-            patience=early_stopper_patience,
-            percentage=True,
-        )
+        earlystopper = EarlyStopper(mode="min", min_delta=0.1, patience=early_stopper_patience, percentage=True)
         start_timer = time.time()
 
         try:
@@ -728,11 +656,7 @@ class CORE(PyroModule):
         dVa = __class__._Vprime(a, nu2, nu1)
         sVb = np.sqrt(1 + dVb**2)
         sVa = np.sqrt(1 + dVa**2)
-        return (
-            1
-            / (16 * nu2**2)
-            * (np.log((dVb + sVb) / (dVa + sVa)) + dVb * sVb - dVa * sVa) ** 2
-        )
+        return 1 / (16 * nu2**2) * (np.log((dVb + sVb) / (dVa + sVa)) + dVb * sVb - dVa * sVa) ** 2
 
     def _r2_impl(self, y_true, factor, weights, view_name):
         # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
@@ -748,9 +672,7 @@ class CORE(PyroModule):
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, 1))
 
             truemean = np.nanmean(y_true)
-            nu2 = (
-                np.nanvar(y_true) - truemean
-            ) / truemean**2  # method of moments estimator
+            nu2 = (np.nanvar(y_true) - truemean) / truemean**2  # method of moments estimator
             ss_tot = np.nansum(self._dV_square(y_true, truemean, nu2, 1))
         elif likelihood == "Bernoulli":
             y_pred = expit(y_pred)
@@ -780,19 +702,13 @@ class CORE(PyroModule):
     def _r2(self, y_true, factors, weights, view_name):
         r2_full = self._r2_impl(y_true, factors, weights, view_name)
         if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
-            print(
-                f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
-            )
+            print(f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs.")
             return [0.0] * factors.shape[0]
 
         r2s = []
         if self.likelihoods[view_name] == "Normal":
             for k in range(factors.shape[0]):
-                r2s.append(
-                    self._r2_impl(
-                        y_true, factors[None, k, :], weights[None, k, :], view_name
-                    )
-                )
+                r2s.append(self._r2_impl(y_true, factors[None, k, :], weights[None, k, :], view_name))
         else:
             # For models with a link function that is not the identity, such as Bernoulli, calculating R2 of single
             # factors leads to erroneous results, in the case of Bernoulli it can lead to every factor having negative
@@ -842,9 +758,7 @@ class CORE(PyroModule):
             # Sort by mean R2
             sorted_r2_means = dfs[group_name].mean(axis=1).sort_values(ascending=False)
             # Resort index according to sorted mean R2
-            dfs[group_name] = (
-                dfs[group_name].loc[sorted_r2_means.index].reset_index(drop=True)
-            )
+            dfs[group_name] = dfs[group_name].loc[sorted_r2_means.index].reset_index(drop=True)
 
         # TODO: As of now, we only pick the sorting accoring to the last group...
         try:
@@ -864,25 +778,16 @@ class CORE(PyroModule):
         if return_type == "numpy":
             component = {k: v.values for k, v in component.items()}
         if return_type == "torch":
-            component = {
-                k: torch.tensor(v.values, dtype=torch.float).clone().detach()
-                for k, v in component.items()
-            }
+            component = {k: torch.tensor(v.values, dtype=torch.float).clone().detach() for k, v in component.items()}
         if return_type == "anndata":
             component = {k: ad.AnnData(v) for k, v in component.items()}
 
         return component
 
-    def get_factors(
-        self, return_type="pandas", covariates: dict[str, torch.Tensor] = None
-    ):
+    def get_factors(self, return_type="pandas", covariates: dict[str, torch.Tensor] = None):
         """Get all factor matrices, z_x."""
         factors = {
-            k: pd.DataFrame(
-                v[self.factor_order, :].T,
-                index=self.sample_names[k],
-                columns=self.factor_names,
-            )
+            k: pd.DataFrame(v[self.factor_order, :].T, index=self.sample_names[k], columns=self.factor_names)
             for k, v in self._get_factors_from_guide(covariates).items()
         }
 
@@ -897,11 +802,7 @@ class CORE(PyroModule):
     def get_weights(self, return_type="pandas"):
         """Get all weight matrices, w_x."""
         weights = {
-            k: pd.DataFrame(
-                v[self.factor_order, :],
-                index=self.factor_names,
-                columns=self.feature_names[k],
-            )
+            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
             for k, v in self._get_weights_from_guide().items()
         }
 
@@ -910,11 +811,7 @@ class CORE(PyroModule):
     def get_annotations(self, return_type="pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
-            k: pd.DataFrame(
-                v[self.factor_order, :],
-                index=self.factor_names,
-                columns=self.feature_names[k],
-            )
+            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
             for k, v in self.annotations.items()
         }
 
@@ -927,9 +824,7 @@ class CORE(PyroModule):
         factors = {}
         for gn in self.group_names:
             if self.generative.factor_prior == "GP":
-                factors[gn] = self.variational.expectation(
-                    f"z_{gn}", covariates[gn]
-                ).detach()
+                factors[gn] = self.variational.expectation(f"z_{gn}", covariates[gn]).detach()
 
             else:
                 factors[gn] = self.variational.expectation(f"z_{gn}").detach()
@@ -943,9 +838,7 @@ class CORE(PyroModule):
         """Get all weight matrices, w_x."""
         self._check_if_trained()
 
-        weights = {
-            k: self.variational.expectation(f"w_{k}").detach() for k in self.view_names
-        }
+        weights = {k: self.variational.expectation(f"w_{k}").detach() for k in self.view_names}
         if self.generative.weight_prior == "ARD_Spike_and_Slab":
             for k in self.view_names:
                 weights[k] *= self.variational.expectation(f"s_w_{k}").detach()
@@ -956,10 +849,7 @@ class CORE(PyroModule):
         self._check_if_trained()
 
         return (
-            {
-                k: self.variational.expectation(f"dispersion_{k}")
-                for k in self.view_names
-            }
+            {k: self.variational.expectation(f"dispersion_{k}") for k in self.view_names}
             if view_name is None
             else self.variational.expectation(f"dispersion_{view_name}")
         )
@@ -984,9 +874,7 @@ class CORE(PyroModule):
                     )
                     device = f"cuda:{torch.cuda.current_device()}"
             else:
-                print(
-                    f"- No device id given. Using default device: {torch.cuda.current_device()}"
-                )
+                print(f"- No device id given. Using default device: {torch.cuda.current_device()}")
                 device = f"cuda:{torch.cuda.current_device()}"
 
             # Set all cuda operations to specific cuda device

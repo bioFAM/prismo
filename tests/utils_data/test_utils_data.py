@@ -86,7 +86,7 @@ def test_cast_data():
     )
 
     for data in datasets:
-        data_c = utils_data.cast_data(data)
+        data_c = utils_data.cast_data(data, None)
         assert isinstance(data_c, dict)
         assert all([isinstance(v, dict) for v in data_c.values()])
         assert all(
@@ -346,10 +346,7 @@ def test_align_obs_var():
     data = {
         "group1": {
             "view1": create_adata(
-                np.random.randn(
-                    len(g1_v1_obs_names),
-                    len(g1_v1_var_names),
-                ),
+                np.random.randn(len(g1_v1_obs_names), len(g1_v1_var_names)),
                 obs_names=g1_v1_obs_names,
                 var_names=g1_v1_var_names,
             ),

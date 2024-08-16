@@ -9,13 +9,7 @@ class EarlyStopper:
     Adapted from https://gist.github.com/stefanonardo.
     """
 
-    def __init__(
-        self,
-        mode: str = "min",
-        min_delta: float = 0.0,
-        patience: int = 10,
-        percentage: bool = False,
-    ):
+    def __init__(self, mode: str = "min", min_delta: float = 0.0, patience: int = 10, percentage: bool = False):
         """Initialize the EarlyStopper."""
         self.mode = mode
         self.min_delta = min_delta

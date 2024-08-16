@@ -9,17 +9,12 @@ from gpytorch.variational import CholeskyVariationalDistribution, VariationalStr
 class GP(ApproximateGP):
     """Gaussian Process model with RBF kernel."""
 
-    def __init__(
-        self,
-        inducing_points: torch.Tensor,
-        n_factors: int,
-    ):
+    def __init__(self, inducing_points: torch.Tensor, n_factors: int):
         variational_strategy = VariationalStrategy(
             self,
             inducing_points,
             variational_distribution=CholeskyVariationalDistribution(
-                num_inducing_points=inducing_points.shape[-2],
-                batch_shape=[n_factors, 1],
+                num_inducing_points=inducing_points.shape[-2], batch_shape=[n_factors, 1]
             ),
         )
 
@@ -38,9 +33,7 @@ class GP(ApproximateGP):
         return MultivariateNormal(mean, covar)
 
 
-def setup_inducing_points(
-    factor_prior: dict, covariates: dict, n_inducing: dict, n_factors: int, device: str
-):
+def setup_inducing_points(factor_prior: dict, covariates: dict, n_inducing: dict, n_factors: int, device: str):
     """Randomly initialize inducing points from the covariates.
 
     Parameters
@@ -56,9 +49,7 @@ def setup_inducing_points(
     inducing_points = {}
     for gn, gv in factor_prior.items():
         if gv == "GP":
-            inducing_points[gn] = torch.zeros(
-                [n_factors, 1, n_inducing[gn], covariates[gn].shape[-1]], device=device
-            )
+            inducing_points[gn] = torch.zeros([n_factors, 1, n_inducing[gn], covariates[gn].shape[-1]], device=device)
             for factor in range(n_factors):
                 inducing_points[gn][factor, 0] = covariates[gn][
                     torch.randint(0, covariates[gn].shape[-2], (n_inducing[gn],))

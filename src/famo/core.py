@@ -133,7 +133,6 @@ class CORE(PyroModule):
         return likelihoods
 
     def _setup_annotations(self, n_factors, annotations, prior_penalty):
-
         informed = annotations is not None and len(annotations) > 0
         valid_n_factors = n_factors is not None and n_factors > 0
 
@@ -176,13 +175,7 @@ class CORE(PyroModule):
             # add dense factors if necessary
             if n_dense_factors > 0:
                 prior_masks = {
-                    vn: np.concatenate(
-                        [
-                            np.ones((n_dense_factors, self.n_features[vn])).astype(bool),
-                            vm,
-                        ],
-                        axis=0,
-                    )
+                    vn: np.concatenate([np.ones((n_dense_factors, self.n_features[vn])).astype(bool), vm], axis=0)
                     for vn, vm in annotations.items()
                 }
 
@@ -482,10 +475,7 @@ class CORE(PyroModule):
         self.data = utils_data.remove_constant_features(self.data, self.likelihoods)
         self.data = utils_data.scale_data(self.data, self.likelihoods, scale_per_group)
         self.data = utils_data.center_data(
-            self.data,
-            self.likelihoods,
-            self.nonnegative_weights,
-            self.nonnegative_factors,
+            self.data, self.likelihoods, self.nonnegative_weights, self.nonnegative_factors
         )
 
         # align observations across views and variables across groups
@@ -516,13 +506,7 @@ class CORE(PyroModule):
 
         # GP inducing point locations
         inducing_points = (
-            gp.setup_inducing_points(
-                factor_prior,
-                self.covariates,
-                gp_n_inducing,
-                n_factors,
-                device=self.device,
-            )
+            gp.setup_inducing_points(factor_prior, self.covariates, gp_n_inducing, n_factors, device=self.device)
             if self.covariates is not None
             else None
         )
@@ -590,13 +574,7 @@ class CORE(PyroModule):
 
                 for group_batch in zip(*data_loaders, strict=False):
                     epoch_loss += self._svi.step(
-                        dict(
-                            zip(
-                                self.group_names,
-                                (batch.to(self.device) for batch in group_batch),
-                                strict=False,
-                            )
-                        )
+                        dict(zip(self.group_names, (batch.to(self.device) for batch in group_batch), strict=False))
                     )
 
                 return epoch_loss
@@ -743,10 +721,7 @@ class CORE(PyroModule):
             for view_name, view_data in group_data.items():
                 try:
                     group_r2[view_name] = self._r2(
-                        view_data.X[sample_idx, :],
-                        factors[group_name][:, sample_idx],
-                        weights[view_name],
-                        view_name,
+                        view_data.X[sample_idx, :], factors[group_name][:, sample_idx], weights[view_name], view_name
                     )
                 except NotImplementedError:
                     print(
@@ -790,11 +765,7 @@ class CORE(PyroModule):
     def get_factors(self, return_type="pandas", covariates: dict[str, torch.Tensor] = None):
         """Get all factor matrices, z_x."""
         factors = {
-            k: pd.DataFrame(
-                v[self.factor_order, :].T,
-                index=self.sample_names[k],
-                columns=self.factor_names,
-            )
+            k: pd.DataFrame(v[self.factor_order, :].T, index=self.sample_names[k], columns=self.factor_names)
             for k, v in self._get_factors_from_guide(covariates).items()
         }
 
@@ -809,11 +780,7 @@ class CORE(PyroModule):
     def get_weights(self, return_type="pandas"):
         """Get all weight matrices, w_x."""
         weights = {
-            k: pd.DataFrame(
-                v[self.factor_order, :],
-                index=self.factor_names,
-                columns=self.feature_names[k],
-            )
+            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
             for k, v in self._get_weights_from_guide().items()
         }
 
@@ -822,11 +789,7 @@ class CORE(PyroModule):
     def get_annotations(self, return_type="pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
-            k: pd.DataFrame(
-                v[self.factor_order, :],
-                index=self.factor_names,
-                columns=self.feature_names[k],
-            )
+            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
             for k, v in self.annotations.items()
         }
 

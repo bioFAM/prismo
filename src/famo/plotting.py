@@ -68,23 +68,9 @@ def lined_heatmap(data, figsize=None, hlines=None, vlines=None, **kwargs):
     fig, g = plt.subplots(figsize=figsize)
     g = sns.heatmap(data, ax=g, **kwargs)
     if hlines is not None:
-        _lines(
-            g,
-            hlines,
-            *sorted(g.get_xlim()),
-            horizontal=True,
-            lw=1.0,
-            linestyles="dashed",
-        )
+        _lines(g, hlines, *sorted(g.get_xlim()), horizontal=True, lw=1.0, linestyles="dashed")
     if vlines is not None:
-        _lines(
-            g,
-            vlines,
-            *sorted(g.get_ylim()),
-            horizontal=False,
-            lw=1.0,
-            linestyles="dashed",
-        )
+        _lines(g, vlines, *sorted(g.get_ylim()), horizontal=False, lw=1.0, linestyles="dashed")
     return g
 
 
@@ -97,9 +83,9 @@ def plot_training_curve(model, figsize=(600, 400)):
 
     train_loss_elbo = model._cache["train_loss_elbo"]
     df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
-    alt.Chart(df).mark_line().encode(
-        alt.Y("-ELBO").scale(zero=False), x="Epoch"
-    ).properties(title="Training Curve", width=figsize[0], height=figsize[1]).display()
+    alt.Chart(df).mark_line().encode(alt.Y("-ELBO").scale(zero=False), x="Epoch").properties(
+        title="Training Curve", width=figsize[0], height=figsize[1]
+    ).display()
 
 
 def plot_all_weights(model, clip=(-1, 1)):
@@ -126,13 +112,8 @@ def plot_all_weights(model, clip=(-1, 1)):
             .mark_rect()
             .encode(
                 x="Factor:O",
-                y=alt.Y(
-                    "Feature:O",
-                    axis=alt.Axis(ticks=False, labels=False, title="Features"),
-                ),
-                color=alt.Color(
-                    "Weight:Q", scale=alt.Scale(scheme="redblue", domain=clip)
-                ),
+                y=alt.Y("Feature:O", axis=alt.Axis(ticks=False, labels=False, title="Features")),
+                color=alt.Color("Weight:Q", scale=alt.Scale(scheme="redblue", domain=clip)),
                 tooltip=["Feature", "Factor", "Weight"],
             )
             .properties(title=f"{k}", width=250, height=400)
@@ -142,10 +123,7 @@ def plot_all_weights(model, clip=(-1, 1)):
 
     # Combine charts
     combined_chart = (
-        alt.hconcat(*charts)
-        .configure_view(strokeWidth=0)
-        .configure_concat(spacing=5)
-        .configure_title(fontSize=14)
+        alt.hconcat(*charts).configure_view(strokeWidth=0).configure_concat(spacing=5).configure_title(fontSize=14)
     )
     combined_chart.display()
 
@@ -164,9 +142,7 @@ def plot_factor_correlation(model):
     for k, v in factors.items():
         # Calculate the correlation matrix
         # and melt the DataFrame to long format
-        corr_df = pd.DataFrame(
-            np.corrcoef(v.X.T), index=model.factor_names, columns=model.factor_names
-        )
+        corr_df = pd.DataFrame(np.corrcoef(v.X.T), index=model.factor_names, columns=model.factor_names)
         # Increase index by 1 to match the factor number and then melt the dataframe
 
         corr_df["index"] = model.factor_names
@@ -180,9 +156,7 @@ def plot_factor_correlation(model):
             .encode(
                 x=alt.X("Factor1:O", title="Factor", sort=None),
                 y=alt.Y("Factor2:O", title="Factor", sort=None),
-                color=alt.Color(
-                    "Correlation:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))
-                ),
+                color=alt.Color("Correlation:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))),
                 tooltip=["Factor1", "Factor2", "Correlation"],
             )
             .properties(title=k, width=400, height=400)
@@ -230,10 +204,7 @@ def plot_variance_explained(model):
                 y=alt.Y("Factor:O", title="Factor", sort=None),
                 color=alt.Color(
                     "Variance Explained:Q",
-                    scale=alt.Scale(
-                        scheme="blues",
-                        domain=(0, 1.5 * max(r2_df["Variance Explained"])),
-                    ),
+                    scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2_df["Variance Explained"]))),
                 ),
                 tooltip=["Factor", "View", "Variance Explained"],
             )
@@ -274,9 +245,7 @@ def plot_factor(model, factor=1):
             .encode(
                 x=alt.X("id:O", title="", axis=alt.Axis(labels=False)),
                 y=alt.Y(f"{factor}:Q", title=f"{factor}"),
-                color=alt.Color(
-                    f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)
-                ),
+                color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
                 tooltip=["id", f"{factor}"],
             )
             .properties(width=600, height=300)
@@ -284,11 +253,7 @@ def plot_factor(model, factor=1):
         )
 
         # Add a horizontal rule at y=0
-        rule = (
-            alt.Chart(pd.DataFrame({"y": [0]}))
-            .mark_rule(color="black", strokeDash=[5, 5])
-            .encode(y="y")
-        )
+        rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
 
         # Combine the scatter plot and rule
         final_plot = scatter_plot + rule
@@ -357,9 +322,7 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
         final_chart = alt.vconcat(*charts)
 
     # Create a legend
-    legend_data = pd.DataFrame(
-        {"Label": ["Negative", "Positive"], "Color": ["red", "blue"]}
-    )
+    legend_data = pd.DataFrame({"Label": ["Negative", "Positive"], "Color": ["red", "blue"]})
 
     legend_boxes = (
         alt.Chart(legend_data)
@@ -381,16 +344,13 @@ def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizonta
     legend = alt.hconcat(legend_boxes, legend_text).properties(title="Legend")
 
     # Add legend to the final chart
-    final_chart = alt.hconcat(final_chart, legend).configure_view(
-        stroke=None
-    )  # Removes the border from the text box
+    final_chart = alt.hconcat(final_chart, legend).configure_view(stroke=None)  # Removes the border from the text box
 
     # Display the chart
     final_chart.display()
 
 
 def plot_weights(model, view, factor=1, top_n_features=10):
-
     if isinstance(factor, int):
         factor = model.factor_names[factor - 1]
 
@@ -428,11 +388,7 @@ def plot_weights(model, view, factor=1, top_n_features=10):
         .mark_point(size=10)
         .encode(
             x=alt.X(
-                "weight:Q",
-                title="Weight",
-                scale=alt.Scale(
-                    domain=[x_min - x_margin * 2.5, x_max + x_margin * 2.5]
-                ),
+                "weight:Q", title="Weight", scale=alt.Scale(domain=[x_min - x_margin * 2.5, x_max + x_margin * 2.5])
             ),
             y=alt.Y("rank:Q", title="Rank", axis=alt.Axis(labels=False, ticks=False)),
         )
@@ -469,9 +425,7 @@ def plot_weights(model, view, factor=1, top_n_features=10):
     chart.display()
 
 
-def plot_top_weights_muvi(
-    model, factor_idx, view_idx="all", top=25, ranked=True, figsize=None, **kwargs
-):
+def plot_top_weights_muvi(model, factor_idx, view_idx="all", top=25, ranked=True, figsize=None, **kwargs):
     """Scatterplot of factor loadings for specific factors."""
     if isinstance(factor_idx, int):
         factor_idx = model.factor_names[factor_idx - 1]
@@ -549,22 +503,14 @@ def plot_top_weights_muvi(
             )
             if ranked:
                 g = sns.scatterplot(
-                    ax=g,
-                    data=data.iloc[:-top],
-                    x=rank_col,
-                    y=loading_col,
-                    s=10,
-                    legend=show_legend,
-                    **kwargs,
+                    ax=g, data=data.iloc[:-top], x=rank_col, y=loading_col, s=10, legend=show_legend, **kwargs
                 )
 
                 y_max = factor_loadings.max()
                 y_min = factor_loadings.min()
                 x_range = factor_loadings_rank.max()
 
-                labeled_data = (
-                    data.iloc[-top:].sort_values(loading_col, ascending=False).copy()
-                )
+                labeled_data = data.iloc[-top:].sort_values(loading_col, ascending=False).copy()
 
                 labeled_data["is_positive"] = labeled_data[loading_col] > 0
 
@@ -573,15 +519,11 @@ def plot_top_weights_muvi(
                 num = max(n_positive, n_negative)
 
                 labeled_data["x_arrow_pos"] = labeled_data[rank_col] + 0.02 * x_range
-                labeled_data["x_text_pos"] = (
-                    labeled_data["x_arrow_pos"] + 0.15 * x_range
-                )
+                labeled_data["x_text_pos"] = labeled_data["x_arrow_pos"] + 0.15 * x_range
                 labeled_data["y_arrow_pos"] = labeled_data[loading_col]
                 labeled_data["y_text_pos"] = (
                     np.linspace(y_max, 0.1 * y_max, num=num)[:n_positive].tolist()
-                    + np.linspace(y_min, -0.1 * y_min, num=num)[:n_negative][
-                        ::-1
-                    ].tolist()
+                    + np.linspace(y_min, -0.1 * y_min, num=num)[:n_negative][::-1].tolist()
                 )
 
                 for _, row in labeled_data.iterrows():
@@ -597,10 +539,7 @@ def plot_top_weights_muvi(
                         (row["x_arrow_pos"], row["y_arrow_pos"]),
                         xytext=(row["x_text_pos"], row["y_text_pos"]),
                         # bbox=dict(boxstyle="round", alpha=0.1),
-                        arrowprops={
-                            "arrowstyle": "simple,tail_width=0.01,head_width=0.15",
-                            "color": "black",
-                        },
+                        arrowprops={"arrowstyle": "simple,tail_width=0.01,head_width=0.15", "color": "black"},
                     )
 
             g.set_title(f"{factor_name} ({view_name})")
@@ -609,9 +548,7 @@ def plot_top_weights_muvi(
     return fig, axs
 
 
-def factor_activity(
-    true_w, approx_w, true_mask, noisy_mask, factor_idx=0, ylim=None, top=None, **kwargs
-):
+def factor_activity(true_w, approx_w, true_mask, noisy_mask, factor_idx=0, ylim=None, top=None, **kwargs):
     true_w_col = true_w[factor_idx, :]
     w_col = approx_w[factor_idx, :]
     true_mask_col = true_mask[factor_idx, :]
@@ -648,14 +585,9 @@ def factor_activity(
 
     assert (activity_df.loc[:, score_cols].values.sum(1) == 1).all()
     activity_df["state"] = (
-        activity_df.loc[:, score_cols]
-        .astype(np.int32)
-        .dot(activity_df.loc[:, score_cols].columns + "+")
-        .str[:-1]
+        activity_df.loc[:, score_cols].astype(np.int32).dot(activity_df.loc[:, score_cols].columns + "+").str[:-1]
     )
-    activity_df["true state"] = [
-        "on" if f > 0.5 else "off" for f in activity_df["true_mask"]
-    ]
+    activity_df["true state"] = ["on" if f > 0.5 else "off" for f in activity_df["true_mask"]]
     activity_df["idx"] = list(range(len(w_col)))
 
     g = sns.scatterplot(
@@ -712,14 +644,7 @@ def _subset_df(data, groupby, groups, include_rest=True):
     return data
 
 
-def _setup_legend(
-    g,
-    bbox_to_anchor=(1, 0.5),
-    loc="center left",
-    frameon=False,
-    remove_last=False,
-    fontsize=None,
-):
+def _setup_legend(g, bbox_to_anchor=(1, 0.5), loc="center left", frameon=False, remove_last=False, fontsize=None):
     kwargs = {"bbox_to_anchor": bbox_to_anchor, "loc": loc, "frameon": frameon}
 
     if remove_last:
@@ -739,11 +664,7 @@ def _get_color_dict(factor_adata, groupby, include_rest=True):
     if uns_colors_key not in factor_adata.uns:
         return None
     color_dict = dict(
-        zip(
-            factor_adata.obs[groupby].astype("category").cat.categories,
-            factor_adata.uns[uns_colors_key],
-            strict=False,
-        )
+        zip(factor_adata.obs[groupby].astype("category").cat.categories, factor_adata.uns[uns_colors_key], strict=False)
     )
     if include_rest:
         color_dict[include_rest] = "#D3D3D3"
@@ -752,7 +673,6 @@ def _get_color_dict(factor_adata, groupby, include_rest=True):
 
 # plot groups of observations against (subset of) factors
 def group(model, factor_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
-
     if isinstance(factor_idx, int):
         factor_idx = model.factor_names[factor_idx - 1]
     pl_type = pl_type.lower().strip()
@@ -775,20 +695,13 @@ def group(model, factor_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
     try:
         pl_fn = type_to_fn[pl_type]
     except KeyError as e:
-        raise ValueError(
-            f"`{pl_type}` is not valid. Select one of {','.join(PL_TYPES)}."
-        ) from e
+        raise ValueError(f"`{pl_type}` is not valid. Select one of {','.join(PL_TYPES)}.") from e
 
     factor_adata = model._cache["factors"]
     factor_adata = factor_adata[list(factor_adata.keys())[0]]
 
     return pl_fn(
-        factor_adata[
-            _subset_df(
-                factor_adata.obs.copy(), groupby, groups, include_rest=False
-            ).index,
-            :,
-        ],
+        factor_adata[_subset_df(factor_adata.obs.copy(), groupby, groups, include_rest=False).index, :],
         factor_idx,
         groupby,
         **kwargs,
@@ -818,24 +731,16 @@ def rank(model, n_factors=10, pl_type=None, sep_groups=True, **kwargs):
         STACKED_VIOLIN: sc.pl.rank_genes_groups_stacked_violin,
     }
 
-    n_groups = len(
-        factor_adata.obs[
-            factor_adata.uns["rank_genes_groups"]["params"]["groupby"]
-        ].unique()
-    )
+    n_groups = len(factor_adata.obs[factor_adata.uns["rank_genes_groups"]["params"]["groupby"]].unique())
     if "groups" in kwargs and kwargs["groups"] is not None:
         n_groups = len(kwargs["groups"])
 
-    positions = np.linspace(
-        n_factors, n_factors * n_groups, num=n_groups - 1, endpoint=False
-    )
+    positions = np.linspace(n_factors, n_factors * n_groups, num=n_groups - 1, endpoint=False)
 
     try:
         pl_fn = type_to_fn[pl_type]
     except KeyError as e:
-        raise ValueError(
-            f"`{pl_type}` is not valid. Select one of {', '.join(PL_TYPES)}."
-        ) from e
+        raise ValueError(f"`{pl_type}` is not valid. Select one of {', '.join(PL_TYPES)}.") from e
 
     if not sep_groups:
         return pl_fn(factor_adata, n_genes=n_factors, **kwargs)
@@ -893,19 +798,15 @@ def _groupplot(
     save: Union[bool, str, None] = None,
     **kwargs,
 ):
-
     if isinstance(factor_idx, int):
         factor_idx = model.factor_names[factor_idx - 1]
     factor_adata = model._cache["factors"]
     factor_adata = factor_adata[list(factor_adata.keys())[0]]
     if groupby not in factor_adata.obs.columns:
         raise ValueError(
-            f"`{groupby}` not found in the metadata, "
-            " add a new column onto `model._cache.factor_adata.obs`."
+            f"`{groupby}` not found in the metadata, " " add a new column onto `model._cache.factor_adata.obs`."
         )
-    data = pd.concat(
-        [factor_adata.to_df().loc[:, factor_idx], factor_adata.obs[groupby]], axis=1
-    )
+    data = pd.concat([factor_adata.to_df().loc[:, factor_idx], factor_adata.obs[groupby]], axis=1)
 
     data = pd.melt(data, id_vars=[groupby], var_name="Factor", value_name="Score")
 
@@ -915,19 +816,12 @@ def _groupplot(
         pl_type = STRIPPLOT
     pl_type = pl_type.lower().strip()
 
-    type_to_fn = {
-        STRIPPLOT: sns.stripplot,
-        BOXPLOT: sns.boxplot,
-        BOXENPLOT: sns.boxenplot,
-        VIOLINPLOT: sns.violinplot,
-    }
+    type_to_fn = {STRIPPLOT: sns.stripplot, BOXPLOT: sns.boxplot, BOXENPLOT: sns.boxenplot, VIOLINPLOT: sns.violinplot}
 
     try:
         pl_fn = type_to_fn[pl_type]
     except KeyError as e:
-        raise ValueError(
-            f"`{pl_type}` is not valid. Select one of {', '.join(GROUP_PL_TYPES)}."
-        ) from e
+        raise ValueError(f"`{pl_type}` is not valid. Select one of {', '.join(GROUP_PL_TYPES)}.") from e
 
     legend_fontsize = kwargs.pop("legend_fontsize", None)
 
@@ -936,17 +830,13 @@ def _groupplot(
         x="Factor",
         y="Score",
         hue=kwargs.pop("hue", groupby),
-        palette=kwargs.pop(
-            "palette", _get_color_dict(factor_adata, groupby, include_rest=include_rest)
-        ),
+        palette=kwargs.pop("palette", _get_color_dict(factor_adata, groupby, include_rest=include_rest)),
         **kwargs,
     )
     if rot is not None:
         for label in g.get_xticklabels():
             label.set_rotation(rot)
-    g = _setup_legend(
-        g, remove_last=groups is not None and include_rest, fontsize=legend_fontsize
-    )
+    g = _setup_legend(g, remove_last=groups is not None and include_rest, fontsize=legend_fontsize)
     savefig_or_show(pl_type, show=show, save=save)
     if not show:
         return g
@@ -1052,18 +942,7 @@ def violinplot(
     )
 
 
-def scatter(
-    model,
-    x,
-    y,
-    groupby=None,
-    groups=None,
-    include_rest=True,
-    style=None,
-    markers=True,
-    **kwargs,
-):
-
+def scatter(model, x, y, groupby=None, groups=None, include_rest=True, style=None, markers=True, **kwargs):
     if isinstance(x, int):
         x = model.factor_names[x - 1]
 
@@ -1077,9 +956,7 @@ def scatter(
     data = pd.concat([factor_adata.to_df(), factor_adata.obs.copy()], axis=1)
 
     data = _subset_df(data, groupby, groups, include_rest=include_rest)
-    palette = kwargs.pop(
-        "palette", _get_color_dict(factor_adata, groupby, include_rest=include_rest)
-    )
+    palette = kwargs.pop("palette", _get_color_dict(factor_adata, groupby, include_rest=include_rest))
 
     if style is None:
         factor_adata = factor_adata.copy()
@@ -1111,9 +988,7 @@ def scatter(
     )
 
     # getting as close as possible to scanpy plotting style
-    g = _setup_legend(
-        g, remove_last=groups is not None and include_rest, fontsize=legend_fontsize
-    )
+    g = _setup_legend(g, remove_last=groups is not None and include_rest, fontsize=legend_fontsize)
 
     g.set_title(groupby)
     savefig_or_show("scatter", show=show, save=save)
@@ -1127,19 +1002,14 @@ def scatter_rank(model, groups=None, **kwargs):
     try:
         groupby = factor_adata.uns["rank_genes_groups"]["params"]["groupby"]
     except KeyError as e:
-        raise ValueError(
-            "No group-wise ranking found, run `muvi.tl.rank first.`"
-        ) from e
+        raise ValueError("No group-wise ranking found, run `muvi.tl.rank first.`") from e
     group_df = sc.get.rank_genes_groups_df(factor_adata, group=groups)
     group_df["scores_abs"] = group_df["scores"].abs()
 
     relevant_factors_dict = {}
     for group in group_df["group"].unique():
         relevant_factors_dict[group] = (
-            group_df[group_df["group"] == group]
-            .sort_values("scores_abs", ascending=False)
-            .iloc[:2]["names"]
-            .tolist()
+            group_df[group_df["group"] == group].sort_values("scores_abs", ascending=False).iloc[:2]["names"].tolist()
         )
 
     show = kwargs.pop("show", None)
@@ -1147,15 +1017,7 @@ def scatter_rank(model, groups=None, **kwargs):
     gs = {}
 
     for group, relevant_factors in relevant_factors_dict.items():
-        g = scatter(
-            model,
-            *relevant_factors[:2],
-            groupby=groupby,
-            groups=groups,
-            show=False,
-            save=False,
-            **kwargs,
-        )
+        g = scatter(model, *relevant_factors[:2], groupby=groupby, groups=groups, show=False, save=False, **kwargs)
 
         g.set_title(f"{groupby} ({group})")
         savefig_or_show(f"scatter_rank_{group}", show=show, save=save)
@@ -1170,19 +1032,13 @@ def groupplot_rank(model, groups=None, pl_type=STRIPPLOT, top=1, **kwargs):
     try:
         groupby = factor_adata.uns["rank_genes_groups"]["params"]["groupby"]
     except KeyError as e:
-        raise ValueError(
-            "No group-wise ranking found, run `muvi.tl.rank first.`"
-        ) from e
+        raise ValueError("No group-wise ranking found, run `muvi.tl.rank first.`") from e
     group_df = sc.get.rank_genes_groups_df(factor_adata, group=groups)
     group_df["scores_abs"] = group_df["scores"].abs()
 
     relevant_factors = []
     for group in group_df["group"].unique():
-        rfs = (
-            group_df[group_df["group"] == group]
-            .sort_values("scores_abs", ascending=False)
-            .iloc[:top]["names"]
-        )
+        rfs = group_df[group_df["group"] == group].sort_values("scores_abs", ascending=False).iloc[:top]["names"]
         for rf in rfs:
             if rf not in relevant_factors:
                 relevant_factors.append(rf)
@@ -1191,12 +1047,5 @@ def groupplot_rank(model, groups=None, pl_type=STRIPPLOT, top=1, **kwargs):
     save = kwargs.pop("save", None)
 
     return relevant_factors, _groupplot(
-        model,
-        relevant_factors,
-        groupby,
-        pl_type=pl_type,
-        groups=groups,
-        show=show,
-        save=save,
-        **kwargs,
+        model, relevant_factors, groupby, pl_type=pl_type, groups=groups, show=show, save=save, **kwargs
     )

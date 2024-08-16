@@ -46,28 +46,21 @@ class Generative(PyroModule):
         self.view_scales = {vn: 1.0 for vn in n_features}
         if self.scale_elbo and n_views > 1:
             for vn, nf in n_features.items():
-                self.view_scales[vn] = (n_views / (n_views - 1)) * (
-                    1.0 - nf / sum(n_features.values())
-                )
+                self.view_scales[vn] = (n_views / (n_views - 1)) * (1.0 - nf / sum(n_features.values()))
         print(self.view_scales)
 
         self.device = device
         self.to(self.device)
 
         if isinstance(self.prior_scales, dict):
-            self.prior_scales = {
-                vn: torch.Tensor(ps).to(self.device)
-                for vn, ps in self.prior_scales.items()
-            }
+            self.prior_scales = {vn: torch.Tensor(ps).to(self.device) for vn, ps in self.prior_scales.items()}
 
         self._setup_samplers()
 
         self.sample_dict: dict[str, torch.Tensor] = {}
 
     def get_plate(self, site_name: str, **kwargs):
-        plate_kwargs = {
-            "factors": {"name": "plate_factors", "size": self.n_factors, "dim": -3}
-        }
+        plate_kwargs = {"factors": {"name": "plate_factors", "size": self.n_factors, "dim": -3}}
 
         for group_name, group_n_samples in self.n_samples.items():
             plate_kwargs[f"samples_{group_name}"] = {
@@ -97,107 +90,56 @@ class Generative(PyroModule):
             return pyro.sample(site_name, dist_fn)
 
     def _sample_vector_lognormal(self, site_name, plate, **kwargs):
-        return self._sample_vector(
-            site_name, plate, dist.LogNormal(self._zeros((1,)), self._ones((1,)))
-        )
+        return self._sample_vector(site_name, plate, dist.LogNormal(self._zeros((1,)), self._ones((1,))))
 
     def _sample_vector_gamma(self, site_name, plate, **kwargs):
-        return self._sample_vector(
-            site_name,
-            plate,
-            dist.Gamma(1e-10 * self._ones((1,)), 1e-10 * self._ones((1,))),
-        )
+        return self._sample_vector(site_name, plate, dist.Gamma(1e-10 * self._ones((1,)), 1e-10 * self._ones((1,))))
 
     def _sample_component_normal(self, site_name, outer_plate, inner_plate, **kwargs):
         return self._sample_component(
-            site_name,
-            outer_plate,
-            inner_plate,
-            dist.Normal(self._zeros((1,)), self._ones((1,))),
+            site_name, outer_plate, inner_plate, dist.Normal(self._zeros((1,)), self._ones((1,)))
         )
 
     def _sample_component_laplace(self, site_name, outer_plate, inner_plate, **kwargs):
         return self._sample_component(
-            site_name,
-            outer_plate,
-            inner_plate,
-            dist.Laplace(self._zeros((1,)), self._ones((1,))),
+            site_name, outer_plate, inner_plate, dist.Laplace(self._zeros((1,)), self._ones((1,)))
         )
 
     def _sample_component_horseshoe(
-        self,
-        site_name,
-        outer_plate,
-        inner_plate,
-        regularized=True,
-        prior_scales=None,
-        **kwargs,
+        self, site_name, outer_plate, inner_plate, regularized=True, prior_scales=None, **kwargs
     ):
         regularized |= prior_scales is not None
 
-        global_scale = self._sample(
-            f"global_scale_{site_name}", dist.HalfCauchy(self._ones((1,)))
-        )
+        global_scale = self._sample(f"global_scale_{site_name}", dist.HalfCauchy(self._ones((1,))))
         with outer_plate:
-            inter_scale = self._sample(
-                f"inter_scale_{site_name}", dist.HalfCauchy(self._ones((1,)))
-            )
+            inter_scale = self._sample(f"inter_scale_{site_name}", dist.HalfCauchy(self._ones((1,))))
             with inner_plate:
-                local_scale = self._sample(
-                    f"local_scale_{site_name}", dist.HalfCauchy(self._ones((1,)))
-                )
+                local_scale = self._sample(f"local_scale_{site_name}", dist.HalfCauchy(self._ones((1,))))
                 local_scale = local_scale * inter_scale * global_scale
 
                 if regularized:
                     caux = self._sample(
-                        f"caux_{site_name}",
-                        dist.InverseGamma(
-                            0.5 * self._ones((1,)), 0.5 * self._ones((1,))
-                        ),
+                        f"caux_{site_name}", dist.InverseGamma(0.5 * self._ones((1,)), 0.5 * self._ones((1,)))
                     )
                     c = torch.sqrt(caux)
                     if prior_scales is not None:
                         c = c * prior_scales.unsqueeze(-1)
                     local_scale = (c * local_scale) / torch.sqrt(c**2 + local_scale**2)
 
-                return self._sample(
-                    site_name,
-                    dist.Normal(self._zeros((1,)), local_scale),
-                )
+                return self._sample(site_name, dist.Normal(self._zeros((1,)), local_scale))
 
-    def _sample_component_ard_spike_and_slab(
-        self, site_name, outer_plate, inner_plate, **kwargs
-    ):
+    def _sample_component_ard_spike_and_slab(self, site_name, outer_plate, inner_plate, **kwargs):
         with outer_plate:
-            alpha = self._sample(
-                f"alpha_{site_name}",
-                dist.Gamma(1e-3 * self._ones((1,)), 1e-3 * self._ones((1,))),
-            )
-            theta = self._sample(
-                f"theta_{site_name}", dist.Beta(self._ones((1,)), self._ones((1,)))
-            )
+            alpha = self._sample(f"alpha_{site_name}", dist.Gamma(1e-3 * self._ones((1,)), 1e-3 * self._ones((1,))))
+            theta = self._sample(f"theta_{site_name}", dist.Beta(self._ones((1,)), self._ones((1,))))
             with inner_plate:
                 s = self._sample(f"s_{site_name}", dist.Bernoulli(theta))
-                return (
-                    self._sample(site_name, dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
-                )
+                return self._sample(site_name, dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
 
-    def _sample_component_gp(
-        self,
-        site_name,
-        outer_plate,
-        inner_plate,
-        covariates: torch.Tensor = None,
-        **kwargs,
-    ):
+    def _sample_component_gp(self, site_name, outer_plate, inner_plate, covariates: torch.Tensor = None, **kwargs):
         pyro.module(f"gp_{site_name[2:]}", self.gps[site_name[2:]])
         with outer_plate, inner_plate:
-            return pyro.sample(
-                site_name,
-                self.gps[site_name[2:]].pyro_model(
-                    covariates, name_prefix=site_name[2:]
-                ),
-            )
+            return pyro.sample(site_name, self.gps[site_name[2:]].pyro_model(covariates, name_prefix=site_name[2:]))
 
     def _setup_samplers(self):
         self.sample_factors = {}
@@ -212,15 +154,11 @@ class Generative(PyroModule):
             elif self.factor_prior[group_name] == "Horseshoe":
                 self.sample_factors[group_name] = self._sample_component_horseshoe
             elif self.factor_prior[group_name] == "ARD_Spike_and_Slab":
-                self.sample_factors[group_name] = (
-                    self._sample_component_ard_spike_and_slab
-                )
+                self.sample_factors[group_name] = self._sample_component_ard_spike_and_slab
             elif self.factor_prior[group_name] == "GP":
                 self.sample_factors[group_name] = self._sample_component_gp
             else:
-                raise ValueError(
-                    f"Invalid factor_prior: {self.factor_prior[group_name]}"
-                )
+                raise ValueError(f"Invalid factor_prior: {self.factor_prior[group_name]}")
 
         self.sample_weights = {}
         for view_name in self.n_features:
@@ -231,13 +169,9 @@ class Generative(PyroModule):
             elif self.weight_prior[view_name] == "Horseshoe":
                 self.sample_weights[view_name] = self._sample_component_horseshoe
             elif self.weight_prior[view_name] == "ARD_Spike_and_Slab":
-                self.sample_weights[view_name] = (
-                    self._sample_component_ard_spike_and_slab
-                )
+                self.sample_weights[view_name] = self._sample_component_ard_spike_and_slab
             else:
-                raise ValueError(
-                    f"Invalid weight_prior: {self.weight_prior[view_name]}"
-                )
+                raise ValueError(f"Invalid weight_prior: {self.weight_prior[view_name]}")
 
         # dispersion_prior
         self.sample_dispersion = self._sample_vector_gamma
@@ -257,9 +191,7 @@ class Generative(PyroModule):
 
         plates = {}
         for group_name in current_group_names:
-            plates[f"samples_{group_name}"] = self.get_plate(
-                f"samples_{group_name}", subsample=subsample[group_name]
-            )
+            plates[f"samples_{group_name}"] = self.get_plate(f"samples_{group_name}", subsample=subsample[group_name])
 
         for view_name in self.n_features:
             plates[f"features_{view_name}"] = self.get_plate(f"features_{view_name}")
@@ -274,31 +206,20 @@ class Generative(PyroModule):
             )
 
             if self.nonnegative_factors[group_name]:
-                self.sample_dict[f"z_{group_name}"] = self.pos_transform(
-                    self.sample_dict[f"z_{group_name}"]
-                )
+                self.sample_dict[f"z_{group_name}"] = self.pos_transform(self.sample_dict[f"z_{group_name}"])
 
         for view_name in self.n_features:
             prior_scales = None
             if self.prior_scales is not None:
                 prior_scales = self.prior_scales[view_name]
             self.sample_dict[f"w_{view_name}"] = self.sample_weights[view_name](
-                f"w_{view_name}",
-                plates["factors"],
-                plates[f"features_{view_name}"],
-                prior_scales=prior_scales,
+                f"w_{view_name}", plates["factors"], plates[f"features_{view_name}"], prior_scales=prior_scales
             )
 
             if self.nonnegative_weights[view_name]:
-                self.sample_dict[f"w_{view_name}"] = self.pos_transform(
-                    self.sample_dict[f"w_{view_name}"]
-                )
+                self.sample_dict[f"w_{view_name}"] = self.pos_transform(self.sample_dict[f"w_{view_name}"])
 
-            if self.likelihoods[view_name] in [
-                "Normal",
-                "GammaPoisson",
-                "BetaBinomial",
-            ]:
+            if self.likelihoods[view_name] in ["Normal", "GammaPoisson", "BetaBinomial"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(
                     f"dispersion_{view_name}", plates[f"features_{view_name}"]
                 )
@@ -320,17 +241,13 @@ class Generative(PyroModule):
 
                 if self.likelihoods[view_name] == "Normal":
                     precision = self.sample_dict[f"dispersion_{view_name}"]
-                    dist_parametrized = dist.Normal(
-                        loc * self._ones(1), self._ones(1) / (precision + EPS)
-                    )
+                    dist_parametrized = dist.Normal(loc * self._ones(1), self._ones(1) / (precision + EPS))
 
                 elif self.likelihoods[view_name] == "GammaPoisson":
                     dispersion = self.sample_dict[f"dispersion_{view_name}"]
                     # TODO: include intercept
                     rate = torch.nn.Softplus()(loc)
-                    dist_parametrized = dist.GammaPoisson(
-                        1 / dispersion, 1 / (rate * dispersion + EPS)
-                    )
+                    dist_parametrized = dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
 
                 elif self.likelihoods[view_name] == "Bernoulli":
                     # TODO: include intercept
@@ -339,9 +256,7 @@ class Generative(PyroModule):
                 elif self.likelihoods[view_name] == "BetaBinomial":
                     # pairs of features are sorted and thus can be reshaped to extra dimension
                     obs_reshaped = obs.reshape(obs.shape[0] // 2, 2, obs.shape[-1])
-                    obs_mask_reshaped = obs_mask.reshape(
-                        obs.shape[0] // 2, 2, obs_mask.shape[-1]
-                    )
+                    obs_mask_reshaped = obs_mask.reshape(obs.shape[0] // 2, 2, obs_mask.shape[-1])
                     obs_total = obs_reshaped.sum(dim=1)
                     obs = obs_reshaped[:, 0, :]  # equals success counts
 
@@ -363,9 +278,7 @@ class Generative(PyroModule):
                     plates[f"samples_{group_name}"],
                     plates[f"features_{view_name}"],
                 ):
-                    self.sample_dict[site_name] = pyro.sample(
-                        site_name, dist_parametrized, obs=obs
-                    )
+                    self.sample_dict[site_name] = pyro.sample(site_name, dist_parametrized, obs=obs)
 
         return self.sample_dict
 
@@ -471,12 +384,7 @@ class Variational(PyroModule):
                 normal_sites.extend([f"z_{gn}"])
 
             lognormal_sites.extend(
-                [
-                    f"global_scale_z_{gn}",
-                    f"inter_scale_z_{gn}",
-                    f"local_scale_z_{gn}",
-                    f"caux_z_{gn}",
-                ]
+                [f"global_scale_z_{gn}", f"inter_scale_z_{gn}", f"local_scale_z_{gn}", f"caux_z_{gn}"]
             )
             gamma_sites.extend([f"alpha_z_{gn}"])
             bernoulli_sites.extend([f"s_z_{gn}"])
@@ -530,51 +438,25 @@ class Variational(PyroModule):
                     scale_val = self.init_scale * torch.ones(site_shape)
 
                 deep_setattr(self.locs, site_name, PyroParam(loc_val, constraints.real))
-                deep_setattr(
-                    self.scales,
-                    site_name,
-                    PyroParam(scale_val, constraints.softplus_positive),
-                )
+                deep_setattr(self.scales, site_name, PyroParam(scale_val, constraints.softplus_positive))
             elif site_name in bernoulli_sites:
                 loc_prob_val = self.init_prob * torch.ones(site_shape)
-                deep_setattr(
-                    self.probs,
-                    site_name,
-                    PyroParam(loc_prob_val, constraints.unit_interval),
-                )
+                deep_setattr(self.probs, site_name, PyroParam(loc_prob_val, constraints.unit_interval))
             elif site_name in gamma_sites:
                 shape_val = self.init_shape * torch.ones(site_shape)
                 rate_val = self.init_rate * torch.ones(site_shape)
-                deep_setattr(
-                    self.shapes,
-                    site_name,
-                    PyroParam(shape_val, constraints.softplus_positive),
-                )
-                deep_setattr(
-                    self.rates,
-                    site_name,
-                    PyroParam(rate_val, constraints.softplus_positive),
-                )
+                deep_setattr(self.shapes, site_name, PyroParam(shape_val, constraints.softplus_positive))
+                deep_setattr(self.rates, site_name, PyroParam(rate_val, constraints.softplus_positive))
             else:
                 loc_alpha = self.init_alpha * torch.ones(site_shape)
                 loc_beta = self.init_beta * torch.ones(site_shape)
-                deep_setattr(
-                    self.alphas,
-                    site_name,
-                    PyroParam(loc_alpha, constraints.softplus_positive),
-                )
-                deep_setattr(
-                    self.betas,
-                    site_name,
-                    PyroParam(loc_beta, constraints.softplus_positive),
-                )
+                deep_setattr(self.alphas, site_name, PyroParam(loc_alpha, constraints.softplus_positive))
+                deep_setattr(self.betas, site_name, PyroParam(loc_beta, constraints.softplus_positive))
 
         return site_to_dist
 
     @torch.no_grad()
-    def expectation(
-        self, site_name: str, covariates: torch.Tensor = None, n_gp_samples: int = 100
-    ):
+    def expectation(self, site_name: str, covariates: torch.Tensor = None, n_gp_samples: int = 100):
         if self.site_to_dist[site_name] in ["Normal", "LogNormal"]:
             loc, scale = self._get_loc_and_scale(site_name)
             expectation = loc
@@ -655,13 +537,7 @@ class Variational(PyroModule):
                 return self._sample(site_name, index=index, dim=inner_plate.dim)
 
     def _sample_component_horseshoe(
-        self,
-        site_name,
-        outer_plate,
-        inner_plate,
-        regularized=True,
-        prior_scales=None,
-        **kwargs,
+        self, site_name, outer_plate, inner_plate, regularized=True, prior_scales=None, **kwargs
     ):
         regularized |= prior_scales is not None
 
@@ -669,18 +545,14 @@ class Variational(PyroModule):
         with outer_plate:
             self._sample(f"inter_scale_{site_name}")
             with inner_plate as index:
-                self._sample(
-                    f"local_scale_{site_name}", index=index, dim=inner_plate.dim
-                )
+                self._sample(f"local_scale_{site_name}", index=index, dim=inner_plate.dim)
 
                 if regularized:
                     self._sample(f"caux_{site_name}", index=index, dim=inner_plate.dim)
 
                 return self._sample(site_name, index=index, dim=inner_plate.dim)
 
-    def _sample_component_ard_spike_and_slab(
-        self, site_name, outer_plate, inner_plate, **kwargs
-    ):
+    def _sample_component_ard_spike_and_slab(self, site_name, outer_plate, inner_plate, **kwargs):
         with outer_plate:
             self._sample(f"alpha_{site_name}")
             self._sample(f"theta_{site_name}")
@@ -688,21 +560,9 @@ class Variational(PyroModule):
                 self._sample(f"s_{site_name}", index=index, dim=inner_plate.dim)
                 return self._sample(site_name, index=index, dim=inner_plate.dim)
 
-    def _sample_component_gp(
-        self,
-        site_name,
-        outer_plate,
-        inner_plate,
-        covariates: torch.Tensor = None,
-        **kwargs,
-    ):
+    def _sample_component_gp(self, site_name, outer_plate, inner_plate, covariates: torch.Tensor = None, **kwargs):
         with outer_plate, inner_plate:
-            pyro.sample(
-                site_name,
-                self.generative.gps[site_name[2:]].pyro_guide(
-                    covariates, name_prefix=site_name[2:]
-                ),
-            )
+            pyro.sample(site_name, self.generative.gps[site_name[2:]].pyro_guide(covariates, name_prefix=site_name[2:]))
 
     def _setup_samplers(self):
         # factor_prior
@@ -742,9 +602,7 @@ class Variational(PyroModule):
             )
 
         for view_name in self.generative.n_features:
-            plates[f"features_{view_name}"] = self.generative.get_plate(
-                f"features_{view_name}"
-            )
+            plates[f"features_{view_name}"] = self.generative.get_plate(f"features_{view_name}")
         plates["factors"] = self.generative.get_plate("factors")
 
         for group_name in current_group_names:
@@ -760,11 +618,7 @@ class Variational(PyroModule):
                 f"w_{view_name}", plates["factors"], plates[f"features_{view_name}"]
             )
 
-            if self.generative.likelihoods[view_name] in [
-                "Normal",
-                "GammaPoisson",
-                "BetaBinomial",
-            ]:
+            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson", "BetaBinomial"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(
                     f"dispersion_{view_name}", plates[f"features_{view_name}"]
                 )

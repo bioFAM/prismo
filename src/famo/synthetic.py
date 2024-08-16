@@ -130,11 +130,7 @@ class DataGenerator:
 
     @property
     def n_factors(self):
-        return (
-            self.n_fully_shared_factors
-            + self.n_partially_shared_factors
-            + self.n_private_factors
-        )
+        return self.n_fully_shared_factors + self.n_partially_shared_factors + self.n_private_factors
 
     def _to_matrix(self, matrix_list):
         return np.concatenate(matrix_list, axis=1)
@@ -166,9 +162,7 @@ class DataGenerator:
             logger.warning("Generate data first by calling `generate`.")
             return []
         if self.presence_masks is None:
-            logger.warning(
-                "Introduce missing data first by calling `generate_missingness`."
-            )
+            logger.warning("Introduce missing data first by calling `generate_missingness`.")
             return self.ys
 
         nan_masks = self._mask_to_nan()
@@ -197,21 +191,13 @@ class DataGenerator:
 
     def _generate_view_factor_mask(self, rng=None, all_combs=False):
         if all_combs and self.n_views == 1:
-            logger.warning(
-                "Single view dataset, "
-                "cannot generate factor combinations for a single view."
-            )
+            logger.warning("Single view dataset, " "cannot generate factor combinations for a single view.")
             all_combs = False
         if all_combs:
-            logger.warning(
-                "Generating all possible binary combinations of "
-                f"{self.n_views} variables."
-            )
+            logger.warning("Generating all possible binary combinations of " f"{self.n_views} variables.")
             self.n_fully_shared_factors = 1
             self.n_private_factors = self.n_views
-            self.n_partially_shared_factors = (
-                2**self.n_views - 2 - self.n_private_factors
-            )
+            self.n_partially_shared_factors = 2**self.n_views - 2 - self.n_private_factors
             logger.warning(
                 "New factor configuration: "
                 f"{self.n_fully_shared_factors} fully shared, "
@@ -219,9 +205,7 @@ class DataGenerator:
                 f"{self.n_private_factors} private factors."
             )
 
-            return np.array(
-                [list(i) for i in itertools.product([1, 0], repeat=self.n_views)]
-            )[:-1, :].T
+            return np.array([list(i) for i in itertools.product([1, 0], repeat=self.n_views)])[:-1, :].T
         if rng is None:
             rng = np.random.default_rng()
 
@@ -229,24 +213,17 @@ class DataGenerator:
 
         for factor_idx in range(self.n_fully_shared_factors, self.n_factors):
             # exclude view subsets for partially shared factors
-            if (
-                factor_idx
-                < self.n_fully_shared_factors + self.n_partially_shared_factors
-            ):
+            if factor_idx < self.n_fully_shared_factors + self.n_partially_shared_factors:
                 if self.n_views > 2:
                     exclude_view_subset_size = rng.integers(1, self.n_views - 1)
                 else:
                     exclude_view_subset_size = 0
 
-                exclude_view_subset = rng.choice(
-                    self.n_views, exclude_view_subset_size, replace=False
-                )
+                exclude_view_subset = rng.choice(self.n_views, exclude_view_subset_size, replace=False)
             # exclude all but one view for private factors
             else:
                 include_view_idx = rng.integers(self.n_views)
-                exclude_view_subset = [
-                    i for i in range(self.n_views) if i != include_view_idx
-                ]
+                exclude_view_subset = [i for i in range(self.n_views) if i != include_view_idx]
 
             for m in exclude_view_subset:
                 view_factor_mask[m, factor_idx] = 0
@@ -269,22 +246,14 @@ class DataGenerator:
     def sigmoid(self, x):
         return 1.0 / (1 + np.exp(-x))
 
-    def generate(
-        self,
-        seed: Optional[int] = None,
-        all_combs: bool = False,
-        overwrite: bool = False,
-    ) -> None:
+    def generate(self, seed: Optional[int] = None, all_combs: bool = False, overwrite: bool = False) -> None:
         rng = np.random.default_rng()
 
         if seed is not None:
             rng = np.random.default_rng(seed)
 
         if self.ys is not None and not overwrite:
-            logger.warning(
-                "Data has already been generated, "
-                "to generate new data please set `overwrite` to True."
-            )
+            logger.warning("Data has already been generated, " "to generate new data please set `overwrite` to True.")
             return rng
 
         view_factor_mask = self._generate_view_factor_mask(rng, all_combs)
@@ -294,13 +263,7 @@ class DataGenerator:
             # if fraction of active factors convert to int
             n_active_factors = int(n_active_factors * self.n_factors)
 
-        active_factor_indices = sorted(
-            rng.choice(
-                self.n_factors,
-                size=math.ceil(n_active_factors),
-                replace=False,
-            )
-        )
+        active_factor_indices = sorted(rng.choice(self.n_factors, size=math.ceil(n_active_factors), replace=False))
 
         # generate factor scores which lie in the latent space
         z = rng.standard_normal((self.n_samples, self.n_factors))
@@ -331,17 +294,11 @@ class DataGenerator:
 
             fraction_active_features = {
                 "gamma": (
-                    lambda shape, scale, n_features=n_features: (
-                        rng.gamma(shape, scale, self.n_factors) + 20
-                    )
+                    lambda shape, scale, n_features=n_features: (rng.gamma(shape, scale, self.n_factors) + 20)
                     / n_features
                 ),
-                "uniform": lambda low, high, n_features=n_features: rng.uniform(
-                    low, high, self.n_factors
-                ),
-            }[self.factor_size_dist](
-                self.factor_size_params[m][0], self.factor_size_params[m][1]
-            )
+                "uniform": lambda low, high, n_features=n_features: rng.uniform(low, high, self.n_factors),
+            }[self.factor_size_dist](self.factor_size_params[m][0], self.factor_size_params[m][1])
 
             for factor_idx, faft in enumerate(fraction_active_features):
                 if view_factor_mask[m, factor_idx] > 0:
@@ -402,9 +359,7 @@ class DataGenerator:
         if self.n_response > 0:
             self.response_w = rng.standard_normal((self.n_factors, self.n_response))
             self.response_sigma = 1.0 / np.sqrt(rng.gamma(10.0, 1.0, self.n_response))
-            self.response = rng.normal(
-                loc=np.matmul(z, self.response_w), scale=self.response_sigma
-            )
+            self.response = rng.normal(loc=np.matmul(z, self.response_w), scale=self.response_sigma)
 
         return rng
 
@@ -413,18 +368,14 @@ class DataGenerator:
             rng = np.random.default_rng()
 
         if informed_view_indices is None:
-            logger.warning(
-                "Parameter `informed_view_indices` set to None, "
-                "adding noise to all views."
-            )
+            logger.warning("Parameter `informed_view_indices` set to None, " "adding noise to all views.")
             informed_view_indices = list(range(self.n_views))
 
         noisy_w_masks = [np.array(mask, copy=True) for mask in self.w_masks]
 
         if len(informed_view_indices) == 0:
             logger.warning(
-                "Parameter `informed_view_indices` "
-                "set to an empty list, removing information from all views."
+                "Parameter `informed_view_indices` " "set to an empty list, removing information from all views."
             )
             self.noisy_w_masks = [np.ones_like(mask) for mask in noisy_w_masks]
             return self.noisy_w_masks
@@ -433,9 +384,7 @@ class DataGenerator:
             noisy_w_mask = noisy_w_masks[m]
 
             if m in informed_view_indices:
-                fraction_active_cells = (
-                    noisy_w_mask.mean(axis=1).sum() / self.view_factor_mask[0].sum()
-                )
+                fraction_active_cells = noisy_w_mask.mean(axis=1).sum() / self.view_factor_mask[0].sum()
                 for factor_idx in range(self.n_factors):
                     active_cell_indices = noisy_w_mask[factor_idx, :].nonzero()[0]
                     # if all features turned off
@@ -443,25 +392,17 @@ class DataGenerator:
                     if len(active_cell_indices) == 0:
                         logger.warning(
                             f"Factor {factor_idx} is completely off, inserting "
-                            f"{(100 * fraction_active_cells):.2f}%% false positives.",
+                            f"{(100 * fraction_active_cells):.2f}%% false positives."
                         )
                         active_cell_indices = rng.choice(
-                            self.n_features[m],
-                            int(self.n_features[m] * fraction_active_cells),
-                            replace=False,
+                            self.n_features[m], int(self.n_features[m] * fraction_active_cells), replace=False
                         )
 
-                    inactive_cell_indices = (
-                        noisy_w_mask[factor_idx, :] == 0
-                    ).nonzero()[0]
+                    inactive_cell_indices = (noisy_w_mask[factor_idx, :] == 0).nonzero()[0]
                     n_noisy_cells = int(noise_fraction * len(active_cell_indices))
                     swapped_indices = zip(
-                        rng.choice(
-                            len(active_cell_indices), n_noisy_cells, replace=False
-                        ),
-                        rng.choice(
-                            len(inactive_cell_indices), n_noisy_cells, replace=False
-                        ),
+                        rng.choice(len(active_cell_indices), n_noisy_cells, replace=False),
+                        rng.choice(len(inactive_cell_indices), n_noisy_cells, replace=False),
                     )
 
                     for on_idx, off_idx in swapped_indices:
@@ -491,9 +432,7 @@ class DataGenerator:
         n_partial_features = int(n_partial_features)
 
         sample_view_mask = np.ones((self.n_samples, self.n_views))
-        missing_sample_indices = rng.choice(
-            self.n_samples, n_partial_samples, replace=False
-        )
+        missing_sample_indices = rng.choice(self.n_samples, n_partial_samples, replace=False)
 
         # partially missing samples
         for ms_idx in missing_sample_indices:
@@ -501,23 +440,17 @@ class DataGenerator:
                 exclude_view_subset_size = rng.integers(1, self.n_views)
             else:
                 exclude_view_subset_size = 0
-            exclude_view_subset = rng.choice(
-                self.n_views, exclude_view_subset_size, replace=False
-            )
+            exclude_view_subset = rng.choice(self.n_views, exclude_view_subset_size, replace=False)
             sample_view_mask[ms_idx, exclude_view_subset] = 0
 
         mask = np.repeat(sample_view_mask, self.n_features, axis=1)
 
         # partially missing features
-        missing_feature_indices = rng.choice(
-            sum(self.n_features), n_partial_features, replace=False
-        )
+        missing_feature_indices = rng.choice(sum(self.n_features), n_partial_features, replace=False)
 
         for mf_idx in missing_feature_indices:
             random_sample_indices = rng.choice(
-                self.n_samples,
-                int(self.n_samples * missing_fraction_partial_features),
-                replace=False,
+                self.n_samples, int(self.n_samples * missing_fraction_partial_features), replace=False
             )
             mask[random_sample_indices, mf_idx] = 0
 
@@ -543,55 +476,37 @@ class DataGenerator:
 
     def permute_features(self, new_feature_order):
         if len(new_feature_order) != self.n_features:
-            raise ValueError(
-                "Length of new order list must equal the number of features."
-            )
+            raise ValueError("Length of new order list must equal the number of features.")
 
         if self.betas is not None:
             self.betas = self._permute_features(self.betas, new_feature_order)
         self.ws = self._permute_features(self.ws, new_feature_order)
         self.w_masks = self._permute_features(self.w_masks, new_feature_order)
         if self.noisy_w_masks is not None:
-            self.noisy_w_masks = self._permute_features(
-                self.noisy_w_masks, new_feature_order
-            )
+            self.noisy_w_masks = self._permute_features(self.noisy_w_masks, new_feature_order)
         self.sigmas = self._permute_features(self.sigmas, new_feature_order)
         self.ys = self._permute_features(self.ys, new_feature_order)
         if self.presence_masks is not None:
             self.missing_ys = self._permute_features(self.missing_ys, new_feature_order)
-            self.presence_masks = self._permute_features(
-                self.presence_masks, new_feature_order
-            )
+            self.presence_masks = self._permute_features(self.presence_masks, new_feature_order)
 
     def permute_factors(self, new_factor_order):
         if len(new_factor_order) != self.n_factors:
-            raise ValueError(
-                "Length of new order list must equal the number of factors."
-            )
+            raise ValueError("Length of new order list must equal the number of factors.")
 
         self.z = np.array(self.z[:, np.array(new_factor_order)], copy=True)
         self.ws = self._permute_factors(self.ws, new_factor_order)
         self.w_masks = self._permute_factors(self.w_masks, new_factor_order)
         if self.noisy_w_masks is not None:
-            self.noisy_w_masks = self._permute_factors(
-                self.noisy_w_masks, new_factor_order
-            )
-        self.view_factor_mask = [
-            self.view_factor_mask[m, np.array(new_factor_order)]
-            for m in range(self.n_views)
-        ]
-        self.active_factor_indices = np.array(
-            self.active_factor_indices[np.array(new_factor_order)], copy=True
-        )
+            self.noisy_w_masks = self._permute_factors(self.noisy_w_masks, new_factor_order)
+        self.view_factor_mask = [self.view_factor_mask[m, np.array(new_factor_order)] for m in range(self.n_views)]
+        self.active_factor_indices = np.array(self.active_factor_indices[np.array(new_factor_order)], copy=True)
 
     def to_mdata(self, noisy=False) -> mu.MuData:
         view_names = []
         ad_dict = {}
         for m in range(self.n_views):
-            adata = ad.AnnData(
-                self.ys[m],
-                dtype=np.float32,
-            )
+            adata = ad.AnnData(self.ys[m], dtype=np.float32)
             adata.var_names = f"feature_group_{m}:" + adata.var_names
             adata.varm["w"] = self.ws[m].T
             w_mask = self.w_masks[m].T

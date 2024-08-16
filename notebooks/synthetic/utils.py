@@ -57,21 +57,12 @@ def generate_data(
             lengthscales[group] = torch.rand([n_factors]).clamp(0.1, 0.8)
             cov_module.lengthscale = lengthscales[group]
             mean_module = ZeroMean(batch_shape=torch.Size([n_factors]))
-            z[group] = (
-                MultivariateNormal(
-                    mean_module(covariates[group]), cov_module(covariates[group])
-                )
-                .sample()
-                .T
-            )
+            z[group] = MultivariateNormal(mean_module(covariates[group]), cov_module(covariates[group])).sample().T
         else:
             lengthscales[group] = None
             z[group] = torch.randn(n_samples[group], n_factors)
         obs_names[group] = np.array(
-            [
-                "".join(random.choices(string.ascii_letters + string.digits, k=5))
-                for _ in range(n_samples[group])
-            ]
+            ["".join(random.choices(string.ascii_letters + string.digits, k=5)) for _ in range(n_samples[group])]
         )
 
     # weights
@@ -80,10 +71,7 @@ def generate_data(
     for view in n_features:
         w[view] = torch.randn(n_factors, n_features[view])
         var_names[view] = np.array(
-            [
-                "".join(random.choices(string.ascii_letters + string.digits, k=4))
-                for _ in range(n_features[view])
-            ]
+            ["".join(random.choices(string.ascii_letters + string.digits, k=4)) for _ in range(n_features[view])]
         )
 
     # observations
@@ -117,34 +105,19 @@ def generate_data(
 
             if likelihoods[view] == "Poisson":
                 rate = torch.exp(z[group][keep_obs_inds] @ w[view][:, keep_var_inds])
-                rate_scale = torch.distributions.Exponential(5.0).sample(
-                    [rate.shape[-1]]
-                )
+                rate_scale = torch.distributions.Exponential(5.0).sample([rate.shape[-1]])
                 obs = torch.distributions.Poisson(rate * rate_scale).sample()
 
                 data[group][view] = ad.AnnData(
                     X=obs.numpy(),
                     obs=pd.DataFrame(index=obs_names[group][keep_obs_inds]),
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
-                    obsm={
-                        "z": z[group][keep_obs_inds].numpy(),
-                    },
-                    varm={
-                        "w": w[view][:, keep_var_inds].numpy().T,
-                        "rate_scale": rate_scale.numpy(),
-                    },
-                    uns={
-                        "lengthscales": (
-                            lengthscales[group].numpy()
-                            if lengthscales[group] is not None
-                            else None
-                        )
-                    },
+                    obsm={"z": z[group][keep_obs_inds].numpy()},
+                    varm={"w": w[view][:, keep_var_inds].numpy().T, "rate_scale": rate_scale.numpy()},
+                    uns={"lengthscales": (lengthscales[group].numpy() if lengthscales[group] is not None else None)},
                 )
                 if covariates[group] is not None:
-                    data[group][view].obsm["covariates"] = covariates[group][
-                        keep_obs_inds
-                    ].numpy()
+                    data[group][view].obsm["covariates"] = covariates[group][keep_obs_inds].numpy()
 
             if likelihoods[view] == "Bernoulli":
                 logits = z[group][keep_obs_inds] @ w[view][:, keep_var_inds]
@@ -154,37 +127,21 @@ def generate_data(
                     X=obs.numpy(),
                     obs=pd.DataFrame(index=obs_names[group][keep_obs_inds]),
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
-                    obsm={
-                        "z": z[group][keep_obs_inds].numpy(),
-                    },
+                    obsm={"z": z[group][keep_obs_inds].numpy()},
                     varm={"w": w[view][:, keep_var_inds].numpy().T},
-                    uns={
-                        "lengthscales": (
-                            lengthscales[group].numpy()
-                            if lengthscales[group] is not None
-                            else None
-                        )
-                    },
+                    uns={"lengthscales": (lengthscales[group].numpy() if lengthscales[group] is not None else None)},
                 )
                 if covariates[group] is not None:
-                    data[group][view].obsm["covariates"] = covariates[group][
-                        keep_obs_inds
-                    ].numpy()
+                    data[group][view].obsm["covariates"] = covariates[group][keep_obs_inds].numpy()
 
             if likelihoods[view] == "Binomial":
-                loc = 1 / (
-                    1 + np.exp(-(z[group][keep_obs_inds] @ w[view][:, keep_var_inds]))
-                )
+                loc = 1 / (1 + np.exp(-(z[group][keep_obs_inds] @ w[view][:, keep_var_inds])))
 
                 obs_total = torch.distributions.Poisson(100).sample(loc.shape)
                 obs_allelic = torch.distributions.Binomial(obs_total, loc).sample()
 
-                var_names_ref = [
-                    f"{name}_ref" for name in var_names[view][keep_var_inds]
-                ]
-                var_names_alt = [
-                    f"{name}_alt" for name in var_names[view][keep_var_inds]
-                ]
+                var_names_ref = [f"{name}_ref" for name in var_names[view][keep_var_inds]]
+                var_names_alt = [f"{name}_alt" for name in var_names[view][keep_var_inds]]
 
                 adata_ref = ad.AnnData(
                     X=obs_allelic.numpy(),
@@ -201,9 +158,7 @@ def generate_data(
                 if covariates[group] is not None:
                     adata.obsm["covariates"] = covariates[group][keep_obs_inds].numpy()
                 adata.uns["w"] = w[view][:, keep_var_inds].numpy().T
-                adata.uns["lengthscale"] = (
-                    lengthscales[group] if lengthscales[group] is not None else None
-                )
+                adata.uns["lengthscale"] = lengthscales[group] if lengthscales[group] is not None else None
                 adata.uns["var_names"] = var_names[view][keep_var_inds]
                 data[group][view] = adata
 
@@ -211,9 +166,7 @@ def generate_data(
 
 
 def match(
-    reference: torch.Tensor | np.ndarray,
-    permutable: torch.Tensor | np.ndarray,
-    dim: int,
+    reference: torch.Tensor | np.ndarray, permutable: torch.Tensor | np.ndarray, dim: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Find the permutation and sign of permutable along one dimension to maximize correlation with reference.
 
@@ -250,9 +203,7 @@ def match(
     correlation = np.zeros([reference.shape[-1], permutable.shape[-1]])
     for i in range(reference.shape[-1]):
         for j in range(permutable.shape[-1]):
-            correlation[i, j] = pearsonr(
-                reference[..., i].flatten(), permutable[..., j].flatten()
-            )[0]
+            correlation[i, j] = pearsonr(reference[..., i].flatten(), permutable[..., j].flatten())[0]
     correlation = np.nan_to_num(correlation, 0)
 
     # find the permutation that maximizes the correlation

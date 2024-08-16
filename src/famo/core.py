@@ -479,8 +479,10 @@ class CORE(PyroModule):
         )
 
         # align observations across views and variables across groups
-        self.data = utils_data.align_obs(self.data, use_obs)
-        self.data = utils_data.align_var(self.data, self.likelihoods, use_var)
+        if use_obs is not None:
+            self.data = utils_data.align_obs(self.data, use_obs)
+        if use_var is not None:
+            self.data = utils_data.align_var(self.data, self.likelihoods, use_var)
 
         # obtain observations DataFrame and covariates
         self.metadata = utils_data.extract_obs(self.data)

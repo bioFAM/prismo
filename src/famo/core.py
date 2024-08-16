@@ -165,19 +165,12 @@ class CORE(PyroModule):
                 factor_names += annotations[self.view_names[0]].index.tolist()
             else:
                 factor_names += [
-                    f"Factor {k + 1}"
-                    for k in range(
-                        n_dense_factors, n_dense_factors + n_informed_factors
-                    )
+                    f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)
                 ]
 
             # keep only numpy arrays
             prior_masks = {
-                vn: (
-                    vm.to_numpy().astype(bool)
-                    if isinstance(vm, pd.DataFrame)
-                    else vm.astype(bool)
-                )
+                vn: (vm.to_numpy().astype(bool) if isinstance(vm, pd.DataFrame) else vm.astype(bool))
                 for vn, vm in annotations.items()
             }
             # add dense factors if necessary
@@ -185,9 +178,7 @@ class CORE(PyroModule):
                 prior_masks = {
                     vn: np.concatenate(
                         [
-                            np.ones((n_dense_factors, self.n_features[vn])).astype(
-                                bool
-                            ),
+                            np.ones((n_dense_factors, self.n_features[vn])).astype(bool),
                             vm,
                         ],
                         axis=0,
@@ -196,8 +187,7 @@ class CORE(PyroModule):
                 }
 
             prior_scales = {
-                vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0)
-                for vn, vm in prior_masks.items()
+                vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0) for vn, vm in prior_masks.items()
             }
 
             if n_dense_factors > 0:
@@ -211,7 +201,7 @@ class CORE(PyroModule):
 
         self._factor_names = pd.Index(factor_names)
         self._factor_order = np.arange(self.n_factors)
-        
+
         # storing prior_masks as full annotations instead of partial annotations
         self.annotations = prior_masks
         self.prior_penalty = prior_penalty
@@ -492,7 +482,10 @@ class CORE(PyroModule):
         self.data = utils_data.remove_constant_features(self.data, self.likelihoods)
         self.data = utils_data.scale_data(self.data, self.likelihoods, scale_per_group)
         self.data = utils_data.center_data(
-            self.data, self.likelihoods, self.nonnegative_weights, self.nonnegative_factors
+            self.data,
+            self.likelihoods,
+            self.nonnegative_weights,
+            self.nonnegative_factors,
         )
 
         # align observations across views and variables across groups
@@ -523,7 +516,13 @@ class CORE(PyroModule):
 
         # GP inducing point locations
         inducing_points = (
-            gp.setup_inducing_points(factor_prior, self.covariates, gp_n_inducing, n_factors, device=self.device)
+            gp.setup_inducing_points(
+                factor_prior,
+                self.covariates,
+                gp_n_inducing,
+                n_factors,
+                device=self.device,
+            )
             if self.covariates is not None
             else None
         )
@@ -591,7 +590,13 @@ class CORE(PyroModule):
 
                 for group_batch in zip(*data_loaders, strict=False):
                     epoch_loss += self._svi.step(
-                        dict(zip(self.group_names, (batch.to(self.device) for batch in group_batch), strict=False))
+                        dict(
+                            zip(
+                                self.group_names,
+                                (batch.to(self.device) for batch in group_batch),
+                                strict=False,
+                            )
+                        )
                     )
 
                 return epoch_loss
@@ -631,9 +636,7 @@ class CORE(PyroModule):
                 self.train_loss_elbo.append(loss)
 
                 if i % print_every == 0:
-                    print(
-                        f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}"
-                    )
+                    print(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
                 if earlystopper.step(loss):
                     print(f"Training finished after {i} steps.")
@@ -787,7 +790,11 @@ class CORE(PyroModule):
     def get_factors(self, return_type="pandas", covariates: dict[str, torch.Tensor] = None):
         """Get all factor matrices, z_x."""
         factors = {
-            k: pd.DataFrame(v[self.factor_order, :].T, index=self.sample_names[k], columns=self.factor_names)
+            k: pd.DataFrame(
+                v[self.factor_order, :].T,
+                index=self.sample_names[k],
+                columns=self.factor_names,
+            )
             for k, v in self._get_factors_from_guide(covariates).items()
         }
 
@@ -802,7 +809,11 @@ class CORE(PyroModule):
     def get_weights(self, return_type="pandas"):
         """Get all weight matrices, w_x."""
         weights = {
-            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
+            k: pd.DataFrame(
+                v[self.factor_order, :],
+                index=self.factor_names,
+                columns=self.feature_names[k],
+            )
             for k, v in self._get_weights_from_guide().items()
         }
 
@@ -811,7 +822,11 @@ class CORE(PyroModule):
     def get_annotations(self, return_type="pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
-            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
+            k: pd.DataFrame(
+                v[self.factor_order, :],
+                index=self.factor_names,
+                columns=self.feature_names[k],
+            )
             for k, v in self.annotations.items()
         }
 

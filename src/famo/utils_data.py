@@ -519,27 +519,45 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
     return data_aligned
 
 
-def extract_covariate(data: dict, cov_key: dict) -> dict:
+def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None) -> dict | None:
     """Extract covariate data from AnnData objects.
 
     Parameters
     ----------
     data: dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    cov_key: dict
-        Dictionary with group names as keys and covariate keys as values.
+    covariates_obs_key: dict
+        Dictionary with group names as keys and covariate obs keys as values.
+    covariates_obsm_key: dict
+        Dictionary with group names as keys and covariate obsm keys as values.
 
     Returns
     -------
-    dict
-        Dictionary of Tensors with group names as keys.
+    dict | None
+        Dictionary of Tensors with group names as keys or None if no covariate keys provided.
     """
-    covariates = {}
+    if covariates_obs_key is None and covariates_obsm_key is None:
+        return None
 
-    for group_name, group_dict in data.items():
-        group_covariates = []
-        for view_adata in group_dict.values():
-            group_covariates.append(torch.tensor(view_adata.obsm[cov_key[group_name]], dtype=torch.float))
-        covariates[group_name] = torch.stack(group_covariates, dim=0).nanmean(dim=0)
+    if covariates_obs_key is not None and covariates_obsm_key is not None:
+        raise ValueError("Please provide either covariates_obs_key or covariates_obsm_key, not both.")
 
-    return covariates
+    else:
+        covariates = {}
+
+        for group_name, group_dict in data.items():
+            group_covariates = []
+            for view_adata in group_dict.values():
+                if covariates_obs_key is not None and covariates_obs_key[group_name] is not None:
+                    group_covariates.append(
+                        torch.tensor(view_adata.obs[covariates_obs_key[group_name]], dtype=torch.float).unsqueeze(-1)
+                    )
+
+                if covariates_obsm_key is not None and covariates_obsm_key[group_name] is not None:
+                    group_covariates.append(
+                        torch.tensor(view_adata.obsm[covariates_obsm_key[group_name]], dtype=torch.float)
+                    )
+
+            covariates[group_name] = torch.stack(group_covariates, dim=0).nanmean(dim=0)
+
+        return covariates

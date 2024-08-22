@@ -26,8 +26,8 @@ alt.data_transformers.enable("vegafusion")
 
 
 def plot_overview(data):
-    missings = pd.DataFrame()
     for group_name, group_data in data.items():
+        missings = pd.DataFrame()
         for view_name, view_data in group_data.items():
             # Concatenate all data into one matrix
             missings = pd.concat(
@@ -45,12 +45,12 @@ def plot_overview(data):
                 axis=0,
             )
 
-    alt.Chart(missings).mark_rect().encode(
-        x=alt.X("obs_name", axis=alt.Axis(labels=False, title=None)),
-        y=alt.Y("view", axis=alt.Axis(title=None)),
-        color=alt.Color("missing:N", scale=alt.Scale(range=["#049DBF", "#023373"])),
-        facet=alt.Facet("group:N", columns=3, title=None),
-    ).properties(width=800, title="Missing Data Overview").display()
+        alt.Chart(missings).mark_rect().encode(
+            x=alt.X("obs_name", axis=alt.Axis(labels=False, title=None)),
+            y=alt.Y("view", axis=alt.Axis(title=None)),
+            color=alt.Color("missing:N", scale=alt.Scale(range=["#049DBF", "#023373"])),
+            facet=alt.Facet("group:N", columns=3, title=None),
+        ).properties(width=800, title="Missing Data Overview").display()
 
 
 def _lines(ax, positions, ymin, ymax, horizontal=False, **kwargs):
@@ -207,7 +207,7 @@ def plot_variance_explained(model):
                 ),
                 tooltip=["Factor", "View", "Variance Explained"],
             )
-            .properties(title=group_name, width=750, height=350)
+            .properties(title=group_name, width=150, height=200)
         )
 
         # Add the chart to the list of charts
@@ -296,20 +296,20 @@ def plot_factor_covariate(model, factor=1):
                 alt.Chart(df)
                 .mark_point(filled=True)
                 .encode(
-                    x=alt.X("covariate_0:O", title="", axis=alt.Axis(labels=False)),
+                    x=alt.X("covariate_0:O", title="Covariate", axis=alt.Axis(labels=False)),
                     y=alt.Y(f"{factor}:Q", title=f"Factor {factor+1}"),
                     color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
-                    tooltip=["id", f"{factor}"],
+                    tooltip=["covariate_0", f"{factor}"],
                 )
                 .properties(width=600, height=300)
                 .interactive()
             )
 
             # Add a horizontal rule at y=0
-            rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
+            # rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
 
             # Combine the scatter plot and rule
-            final_plot = scatter_plot + rule
+            final_plot = scatter_plot  # + rule
 
         if covariates[group_name].shape[-1] == 2:
             # Create the scatter plot chart
@@ -317,11 +317,11 @@ def plot_factor_covariate(model, factor=1):
                 alt.Chart(df)
                 .mark_point(filled=True)
                 .encode(
-                    x=alt.X("covariate_0:O", title="", axis=alt.Axis(labels=False)),
-                    y=alt.Y("covariate_1:O", title="", axis=alt.Axis(labels=False)),
+                    x=alt.X("covariate_0:O", title="Covariate dim 1", axis=alt.Axis(labels=False)),
+                    y=alt.Y("covariate_1:O", title="Covariate dim 2", axis=alt.Axis(labels=False)),
                     color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
                 )
-                .properties(width=600, height=300)
+                .properties(width=600, height=300, title=f"Factor {factor+1} with covariates")
                 .interactive()
             )
 

@@ -396,7 +396,7 @@ class CORE(PyroModule):
             Additional training arguments.
         """
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
-        self.data = utils_data.cast_data(data)
+        self.data = utils_data.cast_data(data, group_by=None)
         self.data = utils_data.anndata_to_dense(self.data)
 
         # extract group and view names / numbers from data

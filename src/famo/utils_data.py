@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from functools import reduce
 
 import numpy as np
@@ -9,7 +10,7 @@ from mudata import MuData
 from scipy.sparse._csr import csr_matrix
 
 
-def cast_data(data: dict | MuData) -> dict:
+def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None) -> dict:
     """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
 
     Parameters
@@ -35,16 +36,37 @@ def cast_data(data: dict | MuData) -> dict:
 
     # single group cases
     if isinstance(data, MuData):
-        data = {"group_1": {mod: data[mod] for mod in data.mod}}
+        if group_by is None:
+            data = {"group_1": data.mod}
+        else:
+            data = {
+                name: {modname: mod.copy()}
+                for name, idx in data.obs.groupby(group_by).indices.items()
+                for modname, mod in data[idx].mod.items()
+            }
 
     elif isinstance(data, dict) and all(isinstance(v, AnnData) for v in data.values()):
-        data = {"group_1": data.copy()}
+        if group_by is None:
+            data = {"group_1": data}
+        else:
+            data = defaultdict(dict)
+            for viewname, view in data.items():
+                if isinstance(group_by, dict):
+                    for name, idx in view.obs.groupby(group_by[viewname]).indices.items():
+                        data[name][viewname] = view[idx].copy()
+                else:
+                    for name, idx in view.obs.groupby(group_by).indices.items():
+                        data[name][viewname] = view[idx].copy()
 
     elif isinstance(data, dict) and all(isinstance(v, torch.Tensor) for v in data.values()):
+        if group_by is not None:
+            raise ValueError("`data` is dict of tensors but `group_by` is not `None`.")
         data = {"group_1": {k: AnnData(X=v.numpy()) for k, v in data.items()}}
 
     # multiple groups cases
     elif isinstance(data, dict) and all(isinstance(v, MuData) for v in data.values()):
+        if group_by is not None:
+            raise ValueError("`data` is dict of MuDatas but `group_by` is not `None`.")
         data = {k: {mod: v[mod] for mod in v.mod} for k, v in data.items()}
 
     elif (
@@ -52,13 +74,16 @@ def cast_data(data: dict | MuData) -> dict:
         and all(isinstance(v, dict) for v in data.values())
         and all(all(isinstance(vv, AnnData) for vv in v.values()) for v in data.values())
     ):
-        pass
+        if group_by is not None:
+            raise ValueError("`data` is nested dict of AnnDatas but `group_by` is not `None`.")
 
     elif (
         isinstance(data, dict)
         and all(isinstance(v, dict) for v in data.values())
         and all(all(isinstance(vv, torch.Tensor) for vv in v.values()) for v in data.values())
     ):
+        if group_by is not None:
+            raise ValueError("`data` is nested dict of tensors but `group_by` is not `None`.")
         data = {k: {kk: AnnData(X=vv.numpy()) for kk, vv in v.items()} for k, v in data.items()}
 
     else:
@@ -324,7 +349,7 @@ def scale_data(data: dict, likelihoods: dict, scale_per_group: bool = True) -> d
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
     if scale_per_group:
-        for _, v_groups in data.items():
+        for v_groups in data.values():
             for k_views, v_views in v_groups.items():
                 if likelihoods[k_views] == "Normal":
                     # scale by inverse std across all observations and features within the group

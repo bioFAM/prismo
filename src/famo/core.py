@@ -247,7 +247,7 @@ class CORE(PyroModule):
                 pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.n_factors)).T)
                 init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T, device=self.device)
         elif init_factors == "pca":
-            for group_name, _ in self.n_samples.items():
+            for group_name in self.n_samples.keys():
                 pca = PCA(n_components=self.n_factors, whiten=True)
                 # Combine all views
                 concat_data = torch.cat(
@@ -292,7 +292,8 @@ class CORE(PyroModule):
 
     def fit(
         self,
-        data: (MuData | dict[str, ad.AnnData] | dict[str, MuData] | dict[str, dict[str, ad.AnnData]]),
+        data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]],
+        group_by: str | list[str] | dict[str] | dict[list[str]] | None = None,
         n_factors: int = None,
         annotations=None,
         weight_prior: dict[str, str] | str = None,
@@ -328,12 +329,17 @@ class CORE(PyroModule):
         ----------
         data : MuData | dict[str, ad.AnnData] | dict[str, MuData] | dict[str, dict[str, ad.AnnData]]
             can be any of:
-            - MuData object (single group)
-            - dict with view names as keys and AnnData objects as values (single group)
-            - dict with view names as keys and torch.Tensor objects as values (single group)
-            - dict with group names as keys and MuData objects as values (multiple groups)
-            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups)
-            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups)
+            - MuData object
+            - dict with view names as keys and AnnData objects as values
+            - dict with view names as keys and torch.Tensor objects as values (single group only)
+            - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
+            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
+            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+        group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
+            - String or list of strings. This will be applied to the MuData object or to all AnnData objects
+            - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
+              is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
+              in the corresponding `group_by` element.
         n_factors : int
             Number of latent factors.
         annotations : dict

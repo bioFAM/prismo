@@ -389,10 +389,9 @@ class CORE(PyroModule):
         **kwargs
             Additional training arguments.
         """
-        print("Fitting model...")
-
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
         self.data = utils_data.cast_data(data)
+        self.data = utils_data.anndata_to_dense(self.data)
 
         # extract group and view names / numbers from data
         self.group_names = list(self.data.keys())
@@ -401,27 +400,29 @@ class CORE(PyroModule):
         self.n_views = len(self.view_names)
 
         # convert input arguments to dictionaries if necessary
-        weight_prior = {k: weight_prior for k in self.view_names} if weight_prior.isinstance(str) else weight_prior
-        factor_prior = {k: factor_prior for k in self.group_names} if factor_prior.isinstance(str) else factor_prior
+        weight_prior = {k: weight_prior for k in self.view_names} if isinstance(weight_prior, str) else weight_prior
+        factor_prior = {k: factor_prior for k in self.group_names} if isinstance(factor_prior, str) else factor_prior
         covariates_obs_key = (
             {k: covariates_obs_key for k in self.group_names}
-            if covariates_obs_key.isinstance(str) is str
+            if isinstance(covariates_obs_key, str) is str
             else covariates_obs_key
         )
         covariates_obsm_key = (
             {k: covariates_obsm_key for k in self.group_names}
-            if covariates_obsm_key.isinstance(str)
+            if isinstance(covariates_obsm_key, str)
             else covariates_obsm_key
         )
-        gp_n_inducing = {k: gp_n_inducing for k in self.group_names} if gp_n_inducing.isinstance(int) else gp_n_inducing
+        gp_n_inducing = (
+            {k: gp_n_inducing for k in self.group_names} if isinstance(gp_n_inducing, int) else gp_n_inducing
+        )
         self.nonnegative_weights = (
             {k: nonnegative_weights for k in self.view_names}
-            if nonnegative_weights.isinstance(bool)
+            if isinstance(nonnegative_weights, bool)
             else nonnegative_weights
         )
         self.nonnegative_factors = (
             {k: nonnegative_factors for k in self.group_names}
-            if nonnegative_factors.isinstance(bool)
+            if isinstance(nonnegative_factors, bool)
             else nonnegative_factors
         )
 

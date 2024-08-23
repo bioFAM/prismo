@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 from anndata import AnnData
 from mudata import MuData
+from scipy.sparse._csr import csr_matrix
 
 
 def cast_data(data: dict | MuData) -> dict:
@@ -15,18 +16,23 @@ def cast_data(data: dict | MuData) -> dict:
     ----------
     data: dict or MuData
         Allowed input structures are:
-        - MuData object (single group)
-        - dict with view names as keys and AnnData objects as values (single group)
-        - dict with view names as keys and torch.Tensor objects as values (single group)
-        - dict with group names as keys and MuData objects as values (multiple groups)
-        - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups)
-        - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups)
+        - Adata object (single group, single view)
+        - MuData object (single group, multiple views)
+        - dict with view names as keys and AnnData objects as values (single group, multiple views)
+        - dict with view names as keys and torch.Tensor objects as values (single group, multiple views)
+        - dict with group names as keys and MuData objects as values (multiple groups, multiple views)
+        - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
+        - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
 
     Returns
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
+    # single group, single view case
+    if isinstance(data, AnnData):
+        data = {"group_1": {"view_1": data.copy()}}
+
     # single group cases
     if isinstance(data, MuData):
         data = {"group_1": {mod: data[mod] for mod in data.mod}}
@@ -57,6 +63,36 @@ def cast_data(data: dict | MuData) -> dict:
 
     else:
         raise ValueError("Input data structure not recognized. Please refer to the documentation for allowed formats.")
+
+    return data
+
+
+def anndata_to_dense(data: dict) -> dict:
+    """Convert sparse arrays in AnnData objects to dense.
+
+    Parameters
+    ----------
+    data: dict
+        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+
+    Returns
+    -------
+    dict
+        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+    """
+    for _, v_groups in data.items():
+        for _, adata in v_groups.items():
+            if isinstance(adata.X, csr_matrix):
+                adata.X = adata.X.toarray()
+            for obsm_key in adata.obsm.keys():
+                if isinstance(adata.obsm[obsm_key], csr_matrix):
+                    adata.obsm[obsm_key] = adata.obsm[obsm_key].toarray()
+            for layer_key in adata.layers.keys():
+                if isinstance(adata.layers[layer_key], csr_matrix):
+                    adata.layers[layer_key] = adata.layers[layer_key].toarray()
+            for varm_key in adata.varm.keys():
+                if isinstance(adata.varm[varm_key], csr_matrix):
+                    adata.varm[varm_key] = adata.varm[varm_key].toarray()
 
     return data
 

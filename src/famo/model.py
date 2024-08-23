@@ -47,7 +47,6 @@ class Generative(PyroModule):
         if self.scale_elbo and n_views > 1:
             for vn, nf in n_features.items():
                 self.view_scales[vn] = (n_views / (n_views - 1)) * (1.0 - nf / sum(n_features.values()))
-        print(self.view_scales)
 
         self.device = device
         self.to(self.device)

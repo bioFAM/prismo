@@ -45,6 +45,9 @@ def generate_data(
     if covariates is None:
         covariates = {group: None for group in n_samples}
 
+    if factor_smoothness is None:
+        factor_smoothness = {group: [1.0] * n_factors for group in n_samples}
+
     # factors
     z = {}
     f = {}

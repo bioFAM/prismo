@@ -47,7 +47,6 @@ class Generative(PyroModule):
         if self.scale_elbo and n_views > 1:
             for vn, nf in n_features.items():
                 self.view_scales[vn] = (n_views / (n_views - 1)) * (1.0 - nf / sum(n_features.values()))
-        print(self.view_scales)
 
         self.device = device
         self.to(self.device)
@@ -137,9 +136,26 @@ class Generative(PyroModule):
                 return self._sample(site_name, dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
 
     def _sample_component_gp(self, site_name, outer_plate, inner_plate, covariates: torch.Tensor = None, **kwargs):
-        pyro.module(f"gp_{site_name[2:]}", self.gps[site_name[2:]])
+        group_name = site_name[2:]
+        gp = self.gps[group_name]
+        pyro.module(f"gp_{group_name}", gp)
+
+        # Inducing values p(u)
+        prior_distribution = gp.variational_strategy.prior_distribution
+        prior_distribution = prior_distribution.to_event(len(prior_distribution.batch_shape))
+        pyro.sample(f"gp_{group_name}.u", prior_distribution)
+
+        # Draw samples from p(f)
+        f_dist = gp(covariates, prior=True)
+        f_dist = dist.Normal(loc=f_dist.mean, scale=f_dist.stddev).to_event(len(f_dist.event_shape) - 1)
+
+        with pyro.plate("gp_batch_plate", dim=-2), inner_plate:
+            f = pyro.sample(f"gp_{group_name}.f", f_dist.mask(False)).unsqueeze(-2)
+
+        eta = gp.covar_module.outputscale.reshape(-1, 1, 1)
+
         with outer_plate, inner_plate:
-            return pyro.sample(site_name, self.gps[site_name[2:]].pyro_model(covariates, name_prefix=site_name[2:]))
+            return pyro.sample(site_name, dist.Normal(f, (1 - eta).clamp(1e-3, 1 - 1e-3)))
 
     def _setup_samplers(self):
         self.sample_factors = {}
@@ -380,17 +396,14 @@ class Variational(PyroModule):
 
             name_to_shape[f"z_{gn}"] = (n_factors, 1, n_samples[gn])
 
-            if self.generative.factor_prior[gn] == "GP":
-                gp_sites.extend([f"z_{gn}"])
-            else:
-                normal_sites.extend([f"z_{gn}"])
-
+            normal_sites.extend([f"z_{gn}"])
             lognormal_sites.extend(
                 [f"global_scale_z_{gn}", f"inter_scale_z_{gn}", f"local_scale_z_{gn}", f"caux_z_{gn}"]
             )
             gamma_sites.extend([f"alpha_z_{gn}"])
             bernoulli_sites.extend([f"s_z_{gn}"])
             beta_sites.extend([f"theta_z_{gn}"])
+            gp_sites.extend([f"f_{gn}"])
 
         for vn in n_features.keys():
             if self.generative.weight_prior[vn] == "Horseshoe":
@@ -490,13 +503,11 @@ class Variational(PyroModule):
             return expectation.clone()
 
         if self.site_to_dist[site_name] == "GP":
-            self.generative.gps[site_name[2:]].eval()
+            gp = self.generative.gps[site_name[2:]]
+            gp.eval()
+
             with torch.no_grad():
-                expectation = (
-                    self.generative.gps[site_name[2:]]
-                    .eval()(covariates.to(self.device))(torch.Size([n_gp_samples]))
-                    .mean(axis=0)
-                )
+                expectation = gp.eval()(covariates.to(self.device))(torch.Size([n_gp_samples])).mean(axis=0)
             return expectation.clone()
 
     def _sample(self, site_name, index=None, dim=0):
@@ -563,8 +574,24 @@ class Variational(PyroModule):
                 return self._sample(site_name, index=index, dim=inner_plate.dim)
 
     def _sample_component_gp(self, site_name, outer_plate, inner_plate, covariates: torch.Tensor = None, **kwargs):
+        group_name = site_name[2:]
+        gp = self.generative.gps[group_name]
+
+        # Inducing values q(u)
+        variational_distribution = gp.variational_strategy.variational_distribution
+        variational_distribution = variational_distribution.to_event(len(variational_distribution.batch_shape))
+        pyro.sample(f"gp_{group_name}.u", variational_distribution)
+
+        with pyro.plate("gp_batch_plate", dim=-2), inner_plate as index:
+            # Draw samples from q(f)
+            f_dist = gp(covariates[index], prior=False)
+            f_dist = dist.Normal(f_dist.mean, f_dist.stddev).to_event(len(f_dist.event_shape) - 1)
+
+            pyro.sample(f"gp_{group_name}.f", f_dist.mask(False))
+
+        z_loc, z_scale = self._get_loc_and_scale(site_name)
         with outer_plate, inner_plate:
-            pyro.sample(site_name, self.generative.gps[site_name[2:]].pyro_guide(covariates, name_prefix=site_name[2:]))
+            return pyro.sample(site_name, dist.Normal(z_loc, z_scale))
 
     def _setup_samplers(self):
         # factor_prior

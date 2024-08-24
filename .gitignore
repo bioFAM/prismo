@@ -32,3 +32,12 @@ __pycache__/
 # Files
 *.pkl
 *.save
+
+# Data directories
+notebooks/allelic_mouse_fibroblasts/data/**
+notebooks/allelic_mouse_spermatids/data/**
+notebooks/cll/data/**
+notebooks/mefisto_evodevo/data/**
+notebooks/mefisto_microbiome/data/**
+notebooks/mefisto_umap/data/**
+notebooks/mefisto_visium/data/**

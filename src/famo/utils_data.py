@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 from anndata import AnnData
 from mudata import MuData
+from scipy.sparse._csr import csr_matrix
 
 
 def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None) -> dict:
@@ -16,23 +17,23 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
     ----------
     data: dict or MuData
         Allowed input structures are:
-            - MuData object
-            - dict with view names as keys and AnnData objects as values
-            - dict with view names as keys and torch.Tensor objects as values (single group only)
-            - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
-            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
-            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
-    group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
-        - String or list of strings. This will be applied to the MuData object or to all AnnData objects
-        - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
-            is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
-            in the corresponding `group_by` element.
+        - Adata object (single group, single view)
+        - MuData object (single group, multiple views)
+        - dict with view names as keys and AnnData objects as values (single group, multiple views)
+        - dict with view names as keys and torch.Tensor objects as values (single group, multiple views)
+        - dict with group names as keys and MuData objects as values (multiple groups, multiple views)
+        - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
+        - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
 
     Returns
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
+    # single group, single view case
+    if isinstance(data, AnnData):
+        data = {"group_1": {"view_1": data.copy()}}
+
     # single group cases
     if isinstance(data, MuData):
         if group_by is None:
@@ -87,6 +88,36 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
 
     else:
         raise ValueError("Input data structure not recognized. Please refer to the documentation for allowed formats.")
+
+    return data
+
+
+def anndata_to_dense(data: dict) -> dict:
+    """Convert sparse arrays in AnnData objects to dense.
+
+    Parameters
+    ----------
+    data: dict
+        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+
+    Returns
+    -------
+    dict
+        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+    """
+    for _, v_groups in data.items():
+        for _, adata in v_groups.items():
+            if isinstance(adata.X, csr_matrix):
+                adata.X = adata.X.toarray()
+            for obsm_key in adata.obsm.keys():
+                if isinstance(adata.obsm[obsm_key], csr_matrix):
+                    adata.obsm[obsm_key] = adata.obsm[obsm_key].toarray()
+            for layer_key in adata.layers.keys():
+                if isinstance(adata.layers[layer_key], csr_matrix):
+                    adata.layers[layer_key] = adata.layers[layer_key].toarray()
+            for varm_key in adata.varm.keys():
+                if isinstance(adata.varm[varm_key], csr_matrix):
+                    adata.varm[varm_key] = adata.varm[varm_key].toarray()
 
     return data
 
@@ -553,30 +584,45 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
     return data_aligned
 
 
-def extract_covariate(data: dict, cov_key: dict) -> dict:
+def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None) -> dict | None:
     """Extract covariate data from AnnData objects.
 
     Parameters
     ----------
     data: dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    cov_key: dict
-        Dictionary with group names as keys and covariate keys as values.
+    covariates_obs_key: dict
+        Dictionary with group names as keys and covariate obs keys as values.
+    covariates_obsm_key: dict
+        Dictionary with group names as keys and covariate obsm keys as values.
 
     Returns
     -------
-    dict
-        Dictionary of Tensors with group names as keys.
+    dict | None
+        Dictionary of Tensors with group names as keys or None if no covariate keys provided.
     """
-    covariate = {}
+    if covariates_obs_key is None and covariates_obsm_key is None:
+        return None
 
-    for gn, gv in data.items():
-        for _, vv in gv.items():
-            if cov_key[gn] not in vv.obsm:
-                raise (ValueError(f"Covariate {cov_key[gn]} not found in group {gn}."))
-            x = torch.tensor(vv.obsm[cov_key[gn]], dtype=torch.float)
-            if gn in covariate and (x != covariate[gn]).all():
-                raise (ValueError(f"Multiple covariates found in group {gn}."))
-            covariate[gn] = x
+    if covariates_obs_key is not None and covariates_obsm_key is not None:
+        raise ValueError("Please provide either covariates_obs_key or covariates_obsm_key, not both.")
 
-    return covariate
+    else:
+        covariates = {}
+
+        for group_name, group_dict in data.items():
+            group_covariates = []
+            for view_adata in group_dict.values():
+                if covariates_obs_key is not None and covariates_obs_key[group_name] is not None:
+                    group_covariates.append(
+                        torch.tensor(view_adata.obs[covariates_obs_key[group_name]], dtype=torch.float).unsqueeze(-1)
+                    )
+
+                if covariates_obsm_key is not None and covariates_obsm_key[group_name] is not None:
+                    group_covariates.append(
+                        torch.tensor(view_adata.obsm[covariates_obsm_key[group_name]], dtype=torch.float)
+                    )
+
+            covariates[group_name] = torch.stack(group_covariates, dim=0).nanmean(dim=0)
+
+        return covariates

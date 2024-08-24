@@ -213,13 +213,13 @@ class CORE(PyroModule):
     def _post_fit(self, save, save_path, covariates: dict[str, torch.Tensor] = None):
         # Sort factors by explained variance
         weights = self._get_weights_from_guide()
-        factors = self._get_factors_from_guide(covariates)
+        factors = self._get_factors_from_guide()
         df_r2, self.factor_order = self._sort_factors(weights=weights, factors=factors)
 
         # Fill cache
         self._cache = {
             "weights": self.get_weights(return_type="anndata"),
-            "factors": self.get_factors(return_type="anndata", covariates=covariates),
+            "factors": self.get_factors(return_type="anndata"),
             "train_loss_elbo": self.train_loss_elbo,
             # "intercepts": intercepts,
             "df_r2": df_r2,
@@ -299,7 +299,8 @@ class CORE(PyroModule):
         weight_prior: dict[str, str] | str = None,
         factor_prior: dict[str, str] | str = None,
         likelihoods: dict[str, str] | str = None,
-        covariates_key: dict[str, str] | str = None,
+        covariates_obs_key: dict[str, str] | str = None,
+        covariates_obsm_key: dict[str, str] | str = None,
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
         prior_penalty: float = 0.01,
@@ -349,8 +350,10 @@ class CORE(PyroModule):
             Factor priors for each group (if dict) or for all groups (if str). Normal if None.
         likelihoods : dict | str
             Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None.
-        covariates_key : dict | str
-            Key of .obsm attribute of each AnnData object that contains covariates.
+        covariates_obs_key : dict | str
+            Key of .obs attribute of each AnnData object that contains covariate values.
+        covariates_obsm_key : dict | str
+            Key of .obsm attribute of each AnnData object that contains covariate values.
         nonnegative_weights : dict | bool
             Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
         nonnegative_factors : dict | bool
@@ -392,10 +395,9 @@ class CORE(PyroModule):
         **kwargs
             Additional training arguments.
         """
-        print("Fitting model...")
-
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
-        self.data = utils_data.cast_data(data, group_by)
+        self.data = utils_data.cast_data(data, group_by=None)
+        self.data = utils_data.anndata_to_dense(self.data)
 
         # extract group and view names / numbers from data
         self.group_names = list(self.data.keys())
@@ -406,19 +408,24 @@ class CORE(PyroModule):
         # convert input arguments to dictionaries if necessary
         weight_prior = {k: weight_prior for k in self.view_names} if isinstance(weight_prior, str) else weight_prior
         factor_prior = {k: factor_prior for k in self.group_names} if isinstance(factor_prior, str) else factor_prior
-        covariates_key = (
-            {k: covariates_key for k in self.group_names} if isinstance(covariates_key, str) else covariates_key
+        covariates_obs_key = (
+            {k: covariates_obs_key for k in self.group_names}
+            if isinstance(covariates_obs_key, str) is str
+            else covariates_obs_key
+        )
+        covariates_obsm_key = (
+            {k: covariates_obsm_key for k in self.group_names}
+            if isinstance(covariates_obsm_key, str)
+            else covariates_obsm_key
         )
         gp_n_inducing = (
             {k: gp_n_inducing for k in self.group_names} if isinstance(gp_n_inducing, int) else gp_n_inducing
         )
-
         self.nonnegative_weights = (
             {k: nonnegative_weights for k in self.view_names}
             if isinstance(nonnegative_weights, bool)
             else nonnegative_weights
         )
-
         self.nonnegative_factors = (
             {k: nonnegative_factors for k in self.group_names}
             if isinstance(nonnegative_factors, bool)
@@ -441,9 +448,7 @@ class CORE(PyroModule):
 
         # obtain observations DataFrame and covariates
         self.metadata = utils_data.extract_obs(self.data)
-        self.covariates = (
-            utils_data.extract_covariate(self.data, covariates_key) if covariates_key is not None else None
-        )
+        self.covariates = utils_data.extract_covariate(self.data, covariates_obs_key, covariates_obsm_key)
 
         # extract feature and samples names / numbers from data
         self.feature_names = {k: self.data[list(self.data.keys())[0]][k].var_names.tolist() for k in self.view_names}
@@ -462,10 +467,8 @@ class CORE(PyroModule):
         self.feature_means = utils_data.get_feature_mean(self.data, self.likelihoods)
 
         # GP inducing point locations
-        inducing_points = (
-            gp.setup_inducing_points(factor_prior, self.covariates, gp_n_inducing, n_factors, device=self.device)
-            if self.covariates is not None
-            else None
+        inducing_points = gp.setup_inducing_points(
+            factor_prior, self.covariates, gp_n_inducing, n_factors, device=self.device
         )
 
         if plot_data_overview:
@@ -512,7 +515,8 @@ class CORE(PyroModule):
                     batch_size=[self.n_samples[group_name]],
                 )
                 tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
-                tensor_dict["covariates"] = self.covariates[k_groups]
+                if self.covariates is not None and self.covariates[k_groups] is not None:
+                    tensor_dict["covariates"] = self.covariates[k_groups]
 
                 data_loaders.append(
                     DataLoader(
@@ -706,11 +710,11 @@ class CORE(PyroModule):
 
         return component
 
-    def get_factors(self, return_type="pandas", covariates: dict[str, torch.Tensor] = None):
+    def get_factors(self, return_type="pandas"):
         """Get all factor matrices, z_x."""
         factors = {
             k: pd.DataFrame(v[self.factor_order, :].T, index=self.sample_names[k], columns=self.factor_names)
-            for k, v in self._get_factors_from_guide(covariates).items()
+            for k, v in self._get_factors_from_guide().items()
         }
 
         factors = self._get_component(factors, return_type)
@@ -739,20 +743,16 @@ class CORE(PyroModule):
 
         return self._get_component(annotations, return_type)
 
-    def _get_factors_from_guide(self, covariates: dict = None):
+    def _get_factors_from_guide(self):
         """Get all factor matrices, z_x."""
         self._check_if_trained()
 
         factors = {}
         for gn in self.group_names:
-            if self.generative.factor_prior == "GP":
-                factors[gn] = self.variational.expectation(f"z_{gn}", covariates[gn]).detach()
-
+            if self.generative.factor_prior[gn] == "ARD_Spike_and_Slab":
+                factors[gn] *= self.variational.expectation(f"s_z_{gn}").detach()
             else:
                 factors[gn] = self.variational.expectation(f"z_{gn}").detach()
-
-            if self.generative.factor_prior == "ARD_Spike_and_Slab":
-                factors[gn] *= self.variational.expectation(f"s_z_{gn}").detach()
 
         return {gn: gv.cpu().numpy().squeeze() for gn, gv in factors.items()}
 

@@ -1,8 +1,3 @@
-import numpy as np
-import torch
-from scipy.optimize import linear_sum_assignment
-from scipy.stats import pearsonr
-
 import random
 import string
 
@@ -13,6 +8,8 @@ import torch
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.kernels import RBFKernel
 from gpytorch.means import ZeroMean
+from scipy.optimize import linear_sum_assignment
+from scipy.stats import pearsonr
 
 
 def generate_data(
@@ -21,6 +18,7 @@ def generate_data(
     n_factors: int,
     likelihoods: dict[str, float],
     covariates: dict[str, float] = None,
+    factor_smoothness: dict[str, list[float]] = None,
 ) -> dict:
     """Simulate data for experiments with synthetic data for model validation.
 
@@ -36,6 +34,8 @@ def generate_data(
         Likelihoods for each view.
     covariates : dict[str, float]
         Covariates for each group (if available).
+    factor_smoothness : dict[str, list[float]]
+        Smoothness of the factors for each group. Value between 0 (non-smooth) and 1 (smooth).
 
     Returns
     -------
@@ -45,8 +45,12 @@ def generate_data(
     if covariates is None:
         covariates = {group: None for group in n_samples}
 
+    if factor_smoothness is None:
+        factor_smoothness = {group: [1.0] * n_factors for group in n_samples}
+
     # factors
     z = {}
+    f = {}
     lengthscales = {}
     obs_names = {}
     for group in n_samples:
@@ -57,7 +61,10 @@ def generate_data(
             lengthscales[group] = torch.rand([n_factors]).clamp(0.1, 0.8)
             cov_module.lengthscale = lengthscales[group]
             mean_module = ZeroMean(batch_shape=torch.Size([n_factors]))
-            z[group] = MultivariateNormal(mean_module(covariates[group]), cov_module(covariates[group])).sample().T
+            f[group] = MultivariateNormal(mean_module(covariates[group]), cov_module(covariates[group])).sample().T
+            z[group] = torch.Tensor(factor_smoothness[group]) * f[group] + (
+                1 - torch.Tensor(factor_smoothness[group])
+            ) * torch.rand_like(f[group])
         else:
             lengthscales[group] = None
             z[group] = torch.randn(n_samples[group], n_factors)
@@ -93,6 +100,7 @@ def generate_data(
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
                 )
                 adata.obsm["z"] = z[group][keep_obs_inds].numpy()
+                adata.obsm["f"] = f[group][keep_obs_inds].numpy()
                 adata.varm["w"] = w[view][:, keep_var_inds].numpy().T
 
                 if lengthscales[group] is not None:
@@ -112,9 +120,7 @@ def generate_data(
                     X=obs.numpy(),
                     obs=pd.DataFrame(index=obs_names[group][keep_obs_inds]),
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
-                    obsm={
-                        "z": z[group][keep_obs_inds].numpy(),
-                    },
+                    obsm={"z": z[group][keep_obs_inds].numpy(), "f": f[group][keep_obs_inds].numpy()},
                     varm={"w": w[view][:, keep_var_inds].numpy().T, "rate_scale": rate_scale.numpy()},
                     uns={"lengthscales": lengthscales[group].numpy() if lengthscales[group] is not None else None},
                 )
@@ -129,9 +135,7 @@ def generate_data(
                     X=obs.numpy(),
                     obs=pd.DataFrame(index=obs_names[group][keep_obs_inds]),
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
-                    obsm={
-                        "z": z[group][keep_obs_inds].numpy(),
-                    },
+                    obsm={"z": z[group][keep_obs_inds].numpy(), "f": f[group][keep_obs_inds].numpy()},
                     varm={"w": w[view][:, keep_var_inds].numpy().T},
                     uns={"lengthscales": lengthscales[group].numpy() if lengthscales[group] is not None else None},
                 )
@@ -159,6 +163,7 @@ def generate_data(
                 )
                 adata = ad.concat([adata_ref, adata_alt], axis=1, merge="same")
                 adata.obsm["z"] = z[group][keep_obs_inds].numpy()
+                adata.obsm["f"] = f[group][keep_obs_inds].numpy()
                 if covariates[group] is not None:
                     adata.obsm["covariates"] = covariates[group][keep_obs_inds].numpy()
                 adata.uns["w"] = w[view][:, keep_var_inds].numpy().T
@@ -170,9 +175,7 @@ def generate_data(
 
 
 def match(
-    reference: torch.Tensor | np.ndarray,
-    permutable: torch.Tensor | np.ndarray,
-    dim: int,
+    reference: torch.Tensor | np.ndarray, permutable: torch.Tensor | np.ndarray, dim: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Find the permutation and sign of permutable along one dimension to maximize correlation with reference.
 

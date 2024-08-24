@@ -186,7 +186,7 @@ class CORE(PyroModule):
             if n_dense_factors > 0:
                 dense_scale = 1.0
                 for vn in self.view_names:
-                    prior_scales[vn][n_informed_factors:, :] = dense_scale
+                    prior_scales[vn][:n_dense_factors, :] = dense_scale
 
         self.n_dense_factors = n_dense_factors
         self.n_informed_factors = n_informed_factors

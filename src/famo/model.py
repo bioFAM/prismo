@@ -231,7 +231,7 @@ class Generative(PyroModule):
                 z = self.sample_dict[f"z_{group_name}"]
                 w = self.sample_dict[f"w_{view_name}"]
 
-                loc = torch.einsum("...kji,...kji->...ji", z, w)
+                loc = torch.einsum("...ijk,...ilj->...jlk", z, w)
 
                 site_name = f"x_{group_name}_{view_name}"
 
@@ -267,10 +267,12 @@ class Generative(PyroModule):
                     # TODO: include intercept
                     probs = torch.nn.Sigmoid()(loc)
                     dist_parametrized = dist.BetaBinomial(
-                        concentration1=(dispersion * probs).clamp(EPS),
-                        concentration0=(dispersion * (1 - probs)).clamp(EPS),
+                        concentration1=probs / dispersion,
+                        concentration0=(1 - probs) / dispersion,
                         total_count=obs_total,
                     )
+                else:
+                    raise ValueError(f"Invalid likelihood: {self.likelihoods[view_name]}")
 
                 with (
                     pyro.poutine.mask(mask=obs_mask),

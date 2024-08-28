@@ -511,15 +511,14 @@ class CORE(PyroModule):
         # compute feature means for intercept terms
         self.feature_means = utils_data.get_feature_mean(self.data, self.likelihoods)
 
-        # GP inducing point locations
-        inducing_points = gp.setup_inducing_points(
-            factor_prior, self.covariates, gp_n_inducing, n_factors, device=self.device
-        )
-
         if plot_data_overview:
             plot_overview(self.data)
 
         self._setup_annotations(n_factors, annotations, prior_penalty)
+        # GP inducing point locations
+        inducing_points = gp.setup_inducing_points(
+            factor_prior, self.covariates, gp_n_inducing, self.n_factors, device=self.device
+        )
         self._initialize_factors(init_factors, init_scale)
         n_samples_total = sum(self.n_samples.values())
         if batch_size is None or not (0 < batch_size <= n_samples_total):

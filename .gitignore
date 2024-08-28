@@ -1,4 +1,5 @@
 # Temp files
+.history/
 .DS_Store
 *~
 buck-out/

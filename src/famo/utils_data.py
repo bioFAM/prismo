@@ -609,12 +609,12 @@ def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_ob
         for group_name, group_dict in data.items():
             group_covariates = []
             for view_adata in group_dict.values():
-                if covariates_obs_key is not None and covariates_obs_key[group_name] is not None:
+                if isinstance(covariates_obs_key, dict) and covariates_obs_key[group_name] is not None:
                     group_covariates.append(
                         torch.tensor(view_adata.obs[covariates_obs_key[group_name]], dtype=torch.float).unsqueeze(-1)
                     )
 
-                if covariates_obsm_key is not None and covariates_obsm_key[group_name] is not None:
+                elif isinstance(covariates_obsm_key, dict) and covariates_obsm_key[group_name] is not None:
                     group_covariates.append(
                         torch.tensor(view_adata.obsm[covariates_obsm_key[group_name]], dtype=torch.float)
                     )

@@ -376,7 +376,7 @@ def plot_factor_covariate(model, factor=1):
     final_chart.display()
 
 
-def plot_factors_covariate_1d(model, covariate: str) -> None:
+def plot_factors_covariate_1d(model, covariate: str, color: str = None) -> None:
     """Plot every factor against a 1D covariate.
 
     Parameters
@@ -385,6 +385,8 @@ def plot_factors_covariate_1d(model, covariate: str) -> None:
         The FAMO model.
     covariate: str
         The name of the covariate to plot against (needs to be in .obs DataFrame of data).
+    color: list[str]
+        The obs column to color by.
 
     Returns
     -------
@@ -397,7 +399,15 @@ def plot_factors_covariate_1d(model, covariate: str) -> None:
         df_factors.append(
             pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
         )
-    df_factors = pd.concat(df_factors).T.drop_duplicates().T.drop(columns=["view"])
+    df_factors = pd.concat(df_factors).T.drop_duplicates().T
+    if "view" in df_factors.columns:
+        df_factors.drop(columns=["view"], inplace=True)
+    df_factors["identity"] = 1
+
+    if color is None:
+        color = alt.Color("identity", title=None)
+    else:
+        color = alt.Color(color, title=color)
 
     charts = []
 
@@ -408,7 +418,7 @@ def plot_factors_covariate_1d(model, covariate: str) -> None:
             .encode(
                 x=alt.X(covariate, title=covariate),
                 y=alt.Y("Factor " + str(factor + 1), title="Factor " + str(factor + 1)),
-                color=alt.Color("group", title="Group"),
+                color=color,
             )
             .properties(width=200, height=200)
             .interactive()
@@ -447,7 +457,9 @@ def plot_factors_scatter(model, x: int, y: int, color: list[str] = None) -> None
         df_factors.append(
             pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
         )
-    df_factors = pd.concat(df_factors).T.drop_duplicates().T.drop(columns=["view"])
+    df_factors = pd.concat(df_factors).T.drop_duplicates().T
+    if "view" in df_factors.columns:
+        df_factors.drop(columns=["view"], inplace=True)
     df_factors["identity"] = 1
 
     charts = []
@@ -456,18 +468,13 @@ def plot_factors_scatter(model, x: int, y: int, color: list[str] = None) -> None
         color = ["identity"]
 
     for color_name in color:
-        if color_name is None:
-            color = None
-        else:
-            color = alt.Color(color_name, title=color_name)
-
         scatter_plot = (
             alt.Chart(df_factors)
             .mark_point(filled=True)
             .encode(
                 x=alt.X("Factor " + str(x), title="Factor " + str(x)),
                 y=alt.Y("Factor " + str(y), title="Factor " + str(y)),
-                color=color,
+                color=alt.Color(color_name, title=color_name),
             )
             .properties(width=200, height=200)
             .interactive()
@@ -481,7 +488,7 @@ def plot_factors_scatter(model, x: int, y: int, color: list[str] = None) -> None
     final_chart.display()
 
 
-def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100) -> None:
+def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100, color: str = None) -> None:
     """Plot the GP posterior mean and 95% confidence interval for each factor in each group.
 
     Parameters
@@ -492,6 +499,8 @@ def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100) -> None:
         The input tensor to evaluate the GP at.
     n_samples : int
         The number of samples to draw from the GP.
+    color : str
+        The variable to color by.
 
     Returns
     -------
@@ -516,6 +525,12 @@ def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100) -> None:
         df_gps.append(df)
 
     df_gps = pd.concat(df_gps)
+    df_gps["identity"] = 1
+
+    if color is None:
+        color = alt.Color("identity", title=None)
+    else:
+        color = alt.Color(color, title=color)
 
     charts = []
 
@@ -526,7 +541,7 @@ def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100) -> None:
             .encode(
                 x=alt.X("x:Q", title="x"),
                 y=alt.Y(f"f_mean_factor_{factor+1}:Q", title=f"Factor {factor+1}"),
-                color=alt.Color("group", title="Group"),
+                color=color,
             )
         )
 

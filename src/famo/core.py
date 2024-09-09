@@ -410,7 +410,7 @@ class CORE(PyroModule):
         factor_prior = {k: factor_prior for k in self.group_names} if isinstance(factor_prior, str) else factor_prior
         covariates_obs_key = (
             {k: covariates_obs_key for k in self.group_names}
-            if isinstance(covariates_obs_key, str) is str
+            if isinstance(covariates_obs_key, str)
             else covariates_obs_key
         )
         covariates_obsm_key = (

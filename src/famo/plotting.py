@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import seaborn as sns
+import torch
 
 HEATMAP = "heatmap"
 MATRIXPLOT = "matrixplot"
@@ -172,49 +173,87 @@ def plot_factor_correlation(model):
     final_chart.display()
 
 
-def plot_variance_explained(model):
+def plot_variance_explained(model, groupby="group"):
     """Plot the variance explained by each factor in each view."""
     # Check if the model has been trained
     model._check_if_trained()
 
-    # Get the variance explained DataFrame from the model's cache
-    df_r2 = model._cache["df_r2"]
-
     # Create an empty list to hold all the charts
     charts = []
 
-    # Loop over all groups
-    for group_name in model.group_names:
-        # Get the variance explained DataFrame for the current group
-        r2_df = df_r2[group_name]
+    if groupby == "group":
+        # Get the variance explained DataFrame from the model's cache
+        df_r2 = model._cache["df_r2"]
 
-        # Convert the DataFrame to long format
-        r2_df = r2_df.reset_index().melt("index")
-        r2_df.columns = ["Factor", "View", "Variance Explained"]
-        # Increase Factor index by 1
-        r2_df["Factor"] = r2_df["Factor"] + 1
+        # Loop over all groups
+        for group_name in model.group_names:
+            # Get the variance explained DataFrame for the current group
+            r2_df = df_r2[group_name]
 
-        # Create the heatmap chart
-        heatmap = (
-            alt.Chart(r2_df)
-            .mark_rect()
-            .encode(
-                x=alt.X("View:O", title="View"),
-                y=alt.Y("Factor:O", title="Factor", sort="descending"),
-                color=alt.Color(
-                    "Variance Explained:Q",
-                    scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2_df["Variance Explained"]))),
-                ),
-                tooltip=["Factor", "View", "Variance Explained"],
+            # Convert the DataFrame to long format
+            r2_df = r2_df.reset_index().melt("index")
+            r2_df.columns = ["Factor", "View", "Variance Explained"]
+            # Increase Factor index by 1
+            r2_df["Factor"] = r2_df["Factor"] + 1
+
+            # Create the heatmap chart
+            heatmap = (
+                alt.Chart(r2_df)
+                .mark_rect()
+                .encode(
+                    x=alt.X("View:O", title="View"),
+                    y=alt.Y("Factor:O", title="Factor", sort="descending"),
+                    color=alt.Color(
+                        "Variance Explained:Q",
+                        scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2_df["Variance Explained"]))),
+                        title=None,
+                    ),
+                    tooltip=["Factor", "View", "Variance Explained"],
+                )
+                .properties(title=group_name, width=150, height=200)
             )
-            .properties(title=group_name, width=150, height=200)
-        )
 
-        # Add the chart to the list of charts
-        charts.append(heatmap)
+            # Add the chart to the list of charts
+            charts.append(heatmap)
+
+    elif groupby == "view":
+        # exchange dict keys (groups) and column names (views) in model cache df_r2
+        columns = list(next(iter(model._cache["df_r2"].values())).columns)
+        r2_df = {col: pd.concat({k: df[col] for k, df in model._cache["df_r2"].items()}, axis=1) for col in columns}
+
+        # Loop over all views
+        for view_name in model.view_names:
+            # Get the variance explained DataFrame for the current view
+            r2 = r2_df[view_name]
+
+            # Convert the DataFrame to long format
+            r2 = r2.reset_index().melt("index")
+            r2.columns = ["Factor", "Group", "Variance Explained"]
+            # Increase Factor index by 1
+            r2["Factor"] = r2["Factor"] + 1
+
+            # Create the heatmap chart
+            heatmap = (
+                alt.Chart(r2)
+                .mark_rect()
+                .encode(
+                    x=alt.X("Group:O", title="Group"),
+                    y=alt.Y("Factor:O", title="Factor", sort="descending"),
+                    color=alt.Color(
+                        "Variance Explained:Q",
+                        scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2["Variance Explained"]))),
+                        title=None,
+                    ),
+                    tooltip=["Factor", "Group", "Variance Explained"],
+                )
+                .properties(title=view_name, width=150, height=200)
+            )
+
+            # Add the chart to the list of charts
+            charts.append(heatmap)
 
     # Concatenate all the charts horizontally
-    final_chart = alt.hconcat(*charts).resolve_scale(color="independent")
+    final_chart = alt.hconcat(*charts).resolve_scale(color="shared")
 
     # Display the chart
     final_chart.display()
@@ -337,80 +376,242 @@ def plot_factor_covariate(model, factor=1):
     final_chart.display()
 
 
-def plot_top_weights(model, view, factor=1, nfeatures=10, orientation="horizontal"):
-    """Plot the top nfeatures weights for a given factor and view."""
+def plot_factors_covariate_1d(model, covariate: str) -> None:
+    """Plot every factor against a 1D covariate.
+
+    Parameters
+    ----------
+    model
+        The FAMO model.
+    covariate: str
+        The name of the covariate to plot against (needs to be in .obs DataFrame of data).
+
+    Returns
+    -------
+    None
+    """
     model._check_if_trained()
 
-    # If factor is not a list, convert to list
-    factor = [factor] if not isinstance(factor, list) else factor
+    df_factors = []
+    for group in model.group_names:
+        df_factors.append(
+            pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
+        )
+    df_factors = pd.concat(df_factors).T.drop_duplicates().T.drop(columns=["view"])
 
-    # We reduce the factor value by one, because we internally start counting at 0
-    factor = [x - 1 for x in factor]
-
-    weights = model._cache["weights"]
-    feature_names = model._cache["feature_names"][view]
-
-    # Create an empty list to hold all the charts
     charts = []
 
-    for k, f in enumerate(factor):
-        w = weights[view].X[f, :]
-        signs = np.sign(w)
-        w = np.abs(w)
-        df = pd.DataFrame({"Feature": feature_names, "Weight": w, "Sign": signs})
-        df = df.sort_values(by="Weight", ascending=False).head(nfeatures)
-        df["Color"] = df["Sign"].apply(lambda x: "red" if x < 0 else "blue")
-
-        if orientation == "horizontal":
-            bar_chart = (
-                alt.Chart(df)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Weight:Q", title="Abs. Weight"),
-                    y=alt.Y("Feature:O", title="Feature", sort="-x"),
-                    color=alt.Color("Color:N", scale=None),
-                    tooltip=["Feature", "Weight"],
-                )
-                .properties(title=f"Factor {k+1} | {view}", width=300, height=300)
+    for factor in range(model.n_factors):
+        scatter_plot = (
+            alt.Chart(df_factors)
+            .mark_point(filled=True)
+            .encode(
+                x=alt.X(covariate, title=covariate),
+                y=alt.Y("Factor " + str(factor + 1), title="Factor " + str(factor + 1)),
+                color=alt.Color("group", title="Group"),
             )
-        else:
-            raise NotImplementedError("Vertical orientation not yet implemented")
-
-        # Add the chart to the list of charts
-        charts.append(bar_chart)
-
-    # Concatenate all the charts horizontally or vertically based on the orientation
-    if orientation == "horizontal":
-        final_chart = alt.hconcat(*charts)
-    else:
-        final_chart = alt.vconcat(*charts)
-
-    # Create a legend
-    legend_data = pd.DataFrame({"Label": ["Negative", "Positive"], "Color": ["red", "blue"]})
-
-    legend_boxes = (
-        alt.Chart(legend_data)
-        .mark_square(size=100)
-        .encode(
-            y=alt.Y("Label:N", axis=alt.Axis(title=None, labels=False, ticks=False)),
-            color=alt.Color("Color:N", scale=None),
+            .properties(width=200, height=200)
+            .interactive()
         )
-        .properties(width=30, height=50)
-    )
 
-    legend_text = (
-        alt.Chart(legend_data)
-        .mark_text(align="left", dx=-100)
-        .encode(y=alt.Y("Label:N", axis=None), text="Label:N")
-        .properties(width=30, height=50)
-    )
+        rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
+        final_plot = scatter_plot + rule
+        charts.append(final_plot)
 
-    legend = alt.hconcat(legend_boxes, legend_text).properties(title="Legend")
+    final_chart = alt.hconcat(*charts)
+    final_chart.display()
 
-    # Add legend to the final chart
-    final_chart = alt.hconcat(final_chart, legend).configure_view(stroke=None)  # Removes the border from the text box
 
-    # Display the chart
+def plot_factors_scatter(model, x: int, y: int, color: list[str] = None) -> None:
+    """Plot two factors against each other and color by covariates.
+
+    Parameters
+    ----------
+    model
+        The FAMO model.
+    x : int
+        The factor to plot on the x-axis.
+    y : int
+        The factor to plot on the y-axis.
+    color : list[int]
+        The covariate name(s) to color by.
+
+    Returns
+    -------
+    None
+    """
+    model._check_if_trained()
+
+    df_factors = []
+    for group in model.group_names:
+        df_factors.append(
+            pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
+        )
+    df_factors = pd.concat(df_factors).T.drop_duplicates().T.drop(columns=["view"])
+    df_factors["identity"] = 1
+
+    charts = []
+
+    if color is None:
+        color = ["identity"]
+
+    for color_name in color:
+        if color_name is None:
+            color = None
+        else:
+            color = alt.Color(color_name, title=color_name)
+
+        scatter_plot = (
+            alt.Chart(df_factors)
+            .mark_point(filled=True)
+            .encode(
+                x=alt.X("Factor " + str(x), title="Factor " + str(x)),
+                y=alt.Y("Factor " + str(y), title="Factor " + str(y)),
+                color=color,
+            )
+            .properties(width=200, height=200)
+            .interactive()
+        )
+
+        rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
+        final_plot = scatter_plot + rule
+        charts.append(final_plot)
+
+    final_chart = alt.hconcat(*charts)
+    final_chart.display()
+
+
+def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100) -> None:
+    """Plot the GP posterior mean and 95% confidence interval for each factor in each group.
+
+    Parameters
+    ----------
+    model
+        The FAMO model.
+    x : torch.Tensor
+        The input tensor to evaluate the GP at.
+    n_samples : int
+        The number of samples to draw from the GP.
+
+    Returns
+    -------
+    None
+    """
+    model._check_if_trained()
+
+    df_gps = []
+    for group in model.group_names:
+        f_dist = model.gps[group](x.to(model.device))
+        f_samples = f_dist.sample(torch.Size([n_samples]))
+        f_mean = f_samples.mean(dim=0)
+        f_std = f_samples.std(dim=0)
+
+        df = pd.DataFrame({"x": x.cpu().numpy(), "group": group})
+
+        for factor in range(model.n_factors):
+            df[f"f_mean_factor_{factor+1}"] = f_mean[factor].cpu().numpy()
+            df[f"f_lower_factor_{factor+1}"] = f_mean[factor].cpu().numpy() - 2 * f_std[factor].cpu().numpy()
+            df[f"f_upper_factor_{factor+1}"] = f_mean[factor].cpu().numpy() + 2 * f_std[factor].cpu().numpy()
+
+        df_gps.append(df)
+
+    df_gps = pd.concat(df_gps)
+
+    charts = []
+
+    for factor in range(model.n_factors):
+        line = (
+            alt.Chart(df_gps)
+            .mark_line()
+            .encode(
+                x=alt.X("x:Q", title="x"),
+                y=alt.Y(f"f_mean_factor_{factor+1}:Q", title=f"Factor {factor+1}"),
+                color=alt.Color("group", title="Group"),
+            )
+        )
+
+        area = (
+            alt.Chart(df_gps)
+            .mark_area(opacity=0.4)
+            .encode(
+                x="x",
+                y="f_lower_factor_" + str(factor + 1),
+                y2="f_upper_factor_" + str(factor + 1),
+                color=alt.Color("group", title="Group"),
+            )
+        )
+
+        plot = alt.layer(line, area).properties(width=200, height=200).interactive()
+
+        rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
+        final_plot = plot + rule
+        charts.append(final_plot)
+
+    final_chart = alt.hconcat(*charts)
+    final_chart.display()
+
+
+def plot_smoothness(model) -> None:
+    """Plot the smoothness of the GP for each factor in each group.
+
+    Parameters
+    ----------
+    model
+        The FAMO model.
+
+    Returns
+    -------
+    None
+    """
+    model._check_if_trained()
+
+    charts = []
+
+    for group in model.group_names:
+        df = pd.DataFrame(index=np.arange(model.n_factors))
+        df["smoothness"] = model.gps[group].covar_module.outputscale.cpu().detach().numpy()
+        df["factor"] = [str(i + 1) for i in range(model.n_factors)]
+        bar_plot = (
+            alt.Chart(df)
+            .mark_bar()
+            .encode(y=alt.Y("factor", title="Factor"), x=alt.X("smoothness", title="Smoothness"))
+            .properties(width=200, height=200, title=group)
+        )
+        charts.append(bar_plot)
+
+    final_chart = alt.hconcat(*charts)
+    final_chart.display()
+
+
+def plot_top_weights(model, views: list[str] = None, n_features: int = 10):
+    model._check_if_trained()
+
+    if views is None:
+        views = model.view_names
+
+    charts = []
+
+    for view in views:
+        weights = model._cache["weights"][view].to_df()
+        weights = weights.iloc[:, weights.abs().max(axis=0).argsort()[-n_features:]]
+        weights_melted = weights.reset_index().melt("index")
+        weights_melted["value_abs"] = weights_melted["value"].abs()
+
+        heatmap = (
+            alt.Chart(weights_melted)
+            .mark_circle()
+            .encode(
+                x=alt.X("index", title="Factor"),
+                y=alt.Y("variable:O", title="Feature"),
+                color=alt.Color("value:Q", scale=alt.Scale(scheme="redblue", reverse=True), title="Weight"),
+                size=alt.Size("value_abs:Q", title="Abs. Weight"),
+            )
+            .properties(width=200, height=200, title=view)
+        )
+
+        charts.append(heatmap)
+
+    final_chart = alt.hconcat(*charts)
     final_chart.display()
 
 

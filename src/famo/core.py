@@ -661,7 +661,6 @@ class CORE(PyroModule):
         return r2s
 
     def _sort_factors(self, weights, factors):
-        # Loop over all groups
         dfs = {}
 
         for group_name, group_data in self.data.items():
@@ -670,26 +669,24 @@ class CORE(PyroModule):
                 try:
                     group_r2[view_name] = self._r2(view_data.X, factors[group_name], weights[view_name], view_name)
                 except NotImplementedError:
-                    print(
-                        f"R2 calculation for {self.likelihoods[view_name]} likelihood has not yet been implemented. Skipping view {view_name} for group {group_name}."
-                    )
-
-            if len(group_r2) == 0:
-                print(f"No R2 values found for group {group_name}. Skipping...")
-                continue
+                    "R2 not yet implemented."
 
             dfs[group_name] = pd.DataFrame(group_r2)
-            # Sort by mean R2
-            sorted_r2_means = dfs[group_name].mean(axis=1).sort_values(ascending=False)
-            # Resort index according to sorted mean R2
-            dfs[group_name] = dfs[group_name].loc[sorted_r2_means.index].reset_index(drop=True)
 
-        # TODO: As of now, we only pick the sorting accoring to the last group...
+        # sum the R2 values across all groups
+        df_concat = pd.concat(dfs.values())
+        df_sum = df_concat.groupby(df_concat.index).sum()
+
         try:
+            # sort factors according to mean R2 across all views
+            sorted_r2_means = df_sum.mean(axis=1).sort_values(ascending=False)
             factor_order = np.array(sorted_r2_means.index)
         except NameError:
             print("Sorting factors failed. Using default order.")
             factor_order = np.array(list(range(self.n_factors)))
+
+        for group_name in self.data.keys():
+            dfs[group_name] = dfs[group_name].loc[factor_order].reset_index(drop=True)
 
         return dfs, factor_order
 

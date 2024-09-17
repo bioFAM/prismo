@@ -28,9 +28,9 @@ from famo.utils_training import EarlyStopper
 # torch.set_default_dtype(torch.float32)
 
 
-class PRISMO(PyroModule):
+class CORE(PyroModule):
     def __init__(self, device):
-        super().__init__(name="PRISMO")
+        super().__init__(name="CORE")
         self.device = self._setup_device(device)
         self.to(self.device)
 

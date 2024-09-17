@@ -308,50 +308,24 @@ def plot_factor(model, factor=1):
     final_chart.display()
 
 
-def plot_factor_covariate(model, factor=1):
-    """Plot factor values against the covariate (1D or 2D)."""
+def plot_factors_covariate_2d(model, covariate: str):
+    """Plot every factor against a 2D covariate."""
     model._check_if_trained()
 
-    # We reduce the factor value by one, because we internally start counting at 0
-    factor -= 1
-
-    # Create an empty list to hold all the charts
-    charts = []
+    group_charts = []
 
     factors = model._cache["factors"]
     covariates = model.covariates
 
     for group_name in model.group_names:
+        factor_charts = []
         z = factors[group_name].X.squeeze()
         df = pd.DataFrame(z)
         for i in range(covariates[group_name].shape[-1]):
             df[f"covariate_{i}"] = covariates[group_name][:, i]
-        # Convert column names to strings
         df.columns = df.columns.astype(str)
 
-        if covariates[group_name].shape[-1] == 1:
-            # Create the scatter plot chart
-            scatter_plot = (
-                alt.Chart(df)
-                .mark_point(filled=True)
-                .encode(
-                    x=alt.X("covariate_0:O", title="Covariate", axis=alt.Axis(labels=False)),
-                    y=alt.Y(f"{factor}:Q", title=f"Factor {factor+1}"),
-                    color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
-                    tooltip=["covariate_0", f"{factor}"],
-                )
-                .properties(width=600, height=300)
-                .interactive()
-            )
-
-            # Add a horizontal rule at y=0
-            # rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
-
-            # Combine the scatter plot and rule
-            final_plot = scatter_plot  # + rule
-
-        if covariates[group_name].shape[-1] == 2:
-            # Create the scatter plot chart
+        for factor in range(model.n_factors):
             scatter_plot = (
                 alt.Chart(df)
                 .mark_point(filled=True)
@@ -360,17 +334,16 @@ def plot_factor_covariate(model, factor=1):
                     y=alt.Y("covariate_1:O", title="Covariate dim 2", axis=alt.Axis(labels=False)),
                     color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
                 )
-                .properties(width=600, height=300, title=f"Factor {factor+1} with covariates")
+                .properties(width=300, height=300, title=f"Factor {factor+1} with covariates")
                 .interactive()
             )
 
-            final_plot = scatter_plot
+            factor_charts.append(scatter_plot)
 
-        # Add the chart to the list of charts
-        charts.append(final_plot)
+        group_charts.append(alt.hconcat(*factor_charts))
 
     # Concatenate all the charts vertically
-    final_chart = alt.vconcat(*charts)
+    final_chart = alt.vconcat(*group_charts)
 
     # Display the chart
     final_chart.display()
@@ -598,16 +571,20 @@ def plot_smoothness(model) -> None:
     final_chart.display()
 
 
-def plot_top_weights(model, views: list[str] = None, n_features: int = 10):
+def plot_top_weights(model, views: list[str] = None, n_features: int = 10, factors: list[int] = None):
     model._check_if_trained()
 
     if views is None:
         views = model.view_names
 
+    if factors is None:
+        factors = list(range(model.n_factors))
+
     charts = []
 
     for view in views:
         weights = model._cache["weights"][view].to_df()
+        weights = weights.iloc[factors]
         weights = weights.iloc[:, weights.abs().max(axis=0).argsort()[-n_features:]]
         weights_melted = weights.reset_index().melt("index")
         weights_melted["value_abs"] = weights_melted["value"].abs()
@@ -621,7 +598,7 @@ def plot_top_weights(model, views: list[str] = None, n_features: int = 10):
                 color=alt.Color("value:Q", scale=alt.Scale(scheme="redblue", reverse=True), title="Weight"),
                 size=alt.Size("value_abs:Q", title="Abs. Weight"),
             )
-            .properties(width=200, height=200, title=view)
+            .properties(width=800, height=n_features * 15, title=view)
         )
 
         charts.append(heatmap)

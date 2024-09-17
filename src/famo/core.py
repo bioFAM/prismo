@@ -495,13 +495,13 @@ class CORE(PyroModule):
 
         # convert AnnData to torch.Tensor objects
         tensor_dict = {}
-        for k_groups, v_groups in self.data.items():
-            tensor_dict[k_groups] = {}
-            if self.covariates is not None and self.covariates[k_groups] is not None:
-                tensor_dict[k_groups]["covariates"] = self.covariates[k_groups]
+        for group_name, group_dict in self.data.items():
+            tensor_dict[group_name] = {}
+            if self.covariates is not None and self.covariates[group_name] is not None:
+                tensor_dict[group_name]["covariates"] = self.covariates[group_name]
 
-            for k_views, v_views in v_groups.items():
-                tensor_dict[k_groups][k_views] = torch.from_numpy(v_views.X)
+            for view_name, view_adata in group_dict.items():
+                tensor_dict[group_name][view_name] = torch.from_numpy(view_adata.X)
 
         if batch_size < n_samples_total:
             batch_fraction = batch_size / n_samples_total
@@ -511,12 +511,10 @@ class CORE(PyroModule):
 
             for group_name in self.group_names:
                 tensor_dict[group_name] = TensorDict(
-                    {view_name: tensor_dict[group_name][view_name] for view_name in self.view_names},
+                    {key: tensor_dict[group_name][key] for key in tensor_dict[group_name].keys()},
                     batch_size=[self.n_samples[group_name]],
                 )
                 tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
-                if self.covariates is not None and self.covariates[k_groups] is not None:
-                    tensor_dict["covariates"] = self.covariates[k_groups]
 
                 data_loaders.append(
                     DataLoader(
@@ -749,7 +747,7 @@ class CORE(PyroModule):
 
         factors = {}
         for gn in self.group_names:
-            if self.generative.factor_prior[gn] == "ARD_Spike_and_Slab":
+            if self.generative.factor_prior[gn] == "SnS":
                 factors[gn] *= self.variational.expectation(f"s_z_{gn}").detach()
             else:
                 factors[gn] = self.variational.expectation(f"z_{gn}").detach()
@@ -761,7 +759,7 @@ class CORE(PyroModule):
         self._check_if_trained()
 
         weights = {k: self.variational.expectation(f"w_{k}").detach() for k in self.view_names}
-        if self.generative.weight_prior == "ARD_Spike_and_Slab":
+        if self.generative.weight_prior == "SnS":
             for k in self.view_names:
                 weights[k] *= self.variational.expectation(f"s_w_{k}").detach()
         return {k: w.cpu().numpy().squeeze() for k, w in weights.items()}

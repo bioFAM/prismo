@@ -117,7 +117,7 @@ class Generative(PyroModule):
 
             if self.factor_prior[group_name] == "Normal":
                 self.sample_factors[group_name] = self._sample_factors_normal
-            elif self.factor_prior == "Laplace":
+            elif self.factor_prior[group_name] == "Laplace":
                 self.sample_factors[group_name] = self._sample_factors_laplace
             elif self.factor_prior[group_name] == "Horseshoe":
                 self.sample_factors[group_name] = self._sample_factors_horseshoe
@@ -217,7 +217,7 @@ class Generative(PyroModule):
             return pyro.sample(f"w_{view_name}", dist.Laplace(self._zeros((1,)), self._ones((1,))))
 
     def _sample_weights_horseshoe(self, view_name, plates, **kwargs):
-        regularized = kwargs.get("regularized", None)
+        regularized = kwargs.get("regularized", True)
         prior_scales = kwargs.get("prior_scales", None)
 
         regularized |= prior_scales is not None
@@ -230,7 +230,7 @@ class Generative(PyroModule):
                 local_scale = local_scale * inter_scale * global_scale
 
                 if regularized:
-                    caux = self._sample(
+                    caux = pyro.sample(
                         f"caux_w_{view_name}", dist.InverseGamma(self._ones((1,)) * 0.5, self._ones((1,)) * 0.5)
                     )
                     c = torch.sqrt(caux)
@@ -391,46 +391,6 @@ class Variational(PyroModule):
 
         self.sample_dict: dict[str, torch.Tensor] = {}
 
-    # @torch.no_grad()
-    # def expectation(self, site_name: str, covariates: torch.Tensor = None, n_gp_samples: int = 100):
-    #     if self.site_to_dist[site_name] in ["Normal", "LogNormal"]:
-    #         loc, scale = self._get_loc_and_scale(site_name)
-    #         expectation = loc
-    #         if self.site_to_dist[site_name] == "LogNormal":
-    #             expectation = (loc - scale.square()).exp()
-
-    #         for gn in self.generative.n_samples:
-    #             if site_name == f"z_{gn}" and self.generative.nonnegative_factors[gn]:
-    #                 expectation = self.generative.pos_transform(expectation)
-
-    #         for vn in self.generative.n_features:
-    #             if site_name == f"w_{vn}" and self.generative.nonnegative_weights[vn]:
-    #                 expectation = self.generative.pos_transform(expectation)
-
-    #         return expectation.clone()
-
-    #     if self.site_to_dist[site_name] == "Gamma":
-    #         shape, rate = self._get_shape_and_rate(site_name)
-    #         return (shape / rate).clone()
-
-    #     if self.site_to_dist[site_name] == "Bernoulli":
-    #         prob = self._get_prob(site_name)
-    #         expectation = prob
-    #         return expectation.clone()
-
-    #     if self.site_to_dist[site_name] == "Beta":
-    #         alpha, beta = self._get_alpha_and_beta(site_name)
-    #         expectation = (alpha - 1) / (alpha + beta - 2)
-    #         return expectation.clone()
-
-    #     if self.site_to_dist[site_name] == "GP":
-    #         gp = self.generative.gps[site_name[2:]]
-    #         gp.eval()
-
-    #         with torch.no_grad():
-    #             expectation = gp.eval()(covariates.to(self.device))(torch.Size([n_gp_samples])).mean(axis=0)
-    #         return expectation.clone()
-
     def _get_loc_and_scale(self, site_name: str):
         site_loc = deep_getattr(self.locs, site_name)
         site_scale = deep_getattr(self.scales, site_name)
@@ -571,6 +531,12 @@ class Variational(PyroModule):
                     self.scales, f"z_{group_name}", PyroParam(z_scale_val, constraint=constraints.softplus_positive)
                 )
 
+            if self.generative.factor_prior[group_name] == "GP":
+                deep_setattr(self.locs, f"z_{group_name}", PyroParam(z_loc_val, constraint=constraints.real))
+                deep_setattr(
+                    self.scales, f"z_{group_name}", PyroParam(z_scale_val, constraint=constraints.softplus_positive)
+                )
+
         # weights variational parameters
         for view_name in self.generative.view_names:
             if self.generative.weight_prior[view_name] == "Normal":
@@ -622,26 +588,28 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"inter_scale_w_{view_name}",
-                    PyroParam(self.init_loc * self._ones(n_factors, 1, 1), constraint=constraints.real),
+                    PyroParam(self.init_loc * self._ones((n_factors, 1, 1)), constraint=constraints.real),
                 )
                 deep_setattr(
                     self.scales,
                     f"inter_scale_w_{view_name}",
-                    PyroParam(self.init_scale * self._ones(n_factors, 1, 1), constraint=constraints.softplus_positive),
+                    PyroParam(
+                        self.init_scale * self._ones((n_factors, 1, 1)), constraint=constraints.softplus_positive
+                    ),
                 )
 
                 deep_setattr(
                     self.locs,
                     f"local_scale_w_{view_name}",
                     PyroParam(
-                        self.init_loc * self._ones(n_factors, n_features[view_name], 1), constraint=constraints.real
+                        self.init_loc * self._ones((n_factors, n_features[view_name], 1)), constraint=constraints.real
                     ),
                 )
                 deep_setattr(
                     self.scales,
                     f"local_scale_w_{view_name}",
                     PyroParam(
-                        self.init_scale * self._ones(n_factors, n_features[view_name], 1),
+                        self.init_scale * self._ones((n_factors, n_features[view_name], 1)),
                         constraint=constraints.softplus_positive,
                     ),
                 )
@@ -650,14 +618,14 @@ class Variational(PyroModule):
                     self.locs,
                     f"caux_w_{view_name}",
                     PyroParam(
-                        self.init_loc * self._ones(n_factors, n_features[view_name], 1), constraint=constraints.real
+                        self.init_loc * self._ones((n_factors, n_features[view_name], 1)), constraint=constraints.real
                     ),
                 )
                 deep_setattr(
                     self.scales,
                     f"caux_w_{view_name}",
                     PyroParam(
-                        self.init_scale * self._ones(n_factors, n_features[view_name], 1),
+                        self.init_scale * self._ones((n_factors, n_features[view_name], 1)),
                         constraint=constraints.softplus_positive,
                     ),
                 )
@@ -839,7 +807,7 @@ class Variational(PyroModule):
         variational_distribution = variational_distribution.to_event(len(variational_distribution.batch_shape))
         pyro.sample(f"gp_{group_name}.u", variational_distribution)
 
-        with plates["gp_batch_plate"], plates[f"samples_{group_name}"] as index:
+        with plates["gp_batch"], plates[f"samples_{group_name}"] as index:
             # Draw samples from q(f)
             f_dist = gp(kwargs.get("covariates"), prior=False)
             f_dist = dist.Normal(f_dist.mean, f_dist.stddev).to_event(len(f_dist.event_shape) - 1)

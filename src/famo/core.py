@@ -600,6 +600,8 @@ class CORE(PyroModule):
 
         if seed is None:
             seed = int(time.strftime("%y%m%d%H%M"))
+            
+        self.seed = seed
 
         print(f"Setting training seed to `{seed}`.")
         pyro.set_rng_seed(seed)

@@ -349,6 +349,47 @@ def plot_factors_covariate_2d(model, covariate: str):
     final_chart.display()
 
 
+def plot_gps_covariate_2d(model, covariate: str):
+    """Plot every gp against a 2D covariate."""
+    model._check_if_trained()
+
+    group_charts = []
+
+    gps = model._cache["gps"]
+    covariates = model.covariates
+
+    for group_name in model.group_names:
+        factor_charts = []
+        f = gps[group_name].X.squeeze()
+        df = pd.DataFrame(f)
+        for i in range(covariates[group_name].shape[-1]):
+            df[f"covariate_{i}"] = covariates[group_name][:, i]
+        df.columns = df.columns.astype(str)
+
+        for factor in range(model.n_factors):
+            scatter_plot = (
+                alt.Chart(df)
+                .mark_point(filled=True)
+                .encode(
+                    x=alt.X("covariate_0:O", title="Covariate dim 1", axis=alt.Axis(labels=False)),
+                    y=alt.Y("covariate_1:O", title="Covariate dim 2", axis=alt.Axis(labels=False)),
+                    color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
+                )
+                .properties(width=300, height=300, title=f"GP {factor+1} with covariates")
+                .interactive()
+            )
+
+            factor_charts.append(scatter_plot)
+
+        group_charts.append(alt.hconcat(*factor_charts))
+
+    # Concatenate all the charts vertically
+    final_chart = alt.vconcat(*group_charts)
+
+    # Display the chart
+    final_chart.display()
+
+
 def plot_factors_covariate_1d(model, covariate: str, color: str = None) -> None:
     """Plot every factor against a 1D covariate.
 

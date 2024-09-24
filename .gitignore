@@ -31,6 +31,8 @@ __pycache__/
 # Files
 *.pkl
 *.save
+*.hdf5
+*.h5
 
 # Data directories
 notebooks/allelic_mouse_fibroblasts/data/**

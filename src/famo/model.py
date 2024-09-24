@@ -185,7 +185,7 @@ class Generative(PyroModule):
             theta = pyro.sample(f"theta_z_{group_name}", dist.Beta(self._ones((1,)), self._ones((1,))))
             with plates[f"samples_{group_name}"]:
                 s = pyro.sample(f"s_z_{group_name}", dist.Bernoulli(theta))
-                return pyro.sample(f"z_{group_name}", dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
+                return pyro.sample(f"z_{group_name}", dist.Normal(self._zeros(1), self._ones(1) / (alpha + EPS))) * s
 
     def _sample_factors_gp(self, group_name, plates, **kwargs):
         gp = self.gps[group_name]
@@ -203,10 +203,10 @@ class Generative(PyroModule):
         with plates["gp_batch"], plates[f"samples_{group_name}"]:
             f = pyro.sample(f"gp_{group_name}.f", f_dist.mask(False)).unsqueeze(-2)
 
-        eta = gp.covar_module.outputscale.reshape(-1, 1, 1)
+        outputscale = gp.covar_module.outputscale.reshape(-1, 1, 1)
 
         with plates["factors"], plates[f"samples_{group_name}"]:
-            return pyro.sample(f"z_{group_name}", dist.Normal(f, (1 - eta).clamp(1e-3, 1 - 1e-3)))
+            return pyro.sample(f"z_{group_name}", dist.Normal(f, (1 - outputscale).clamp(1e-3, 1 - 1e-3)))
 
     def _sample_weights_normal(self, view_name, plates, **kwargs):
         with plates["factors"], plates["features_" + view_name]:
@@ -360,8 +360,8 @@ class Variational(PyroModule):
         init_prob: float = 0.5,
         init_alpha: float = 1.0,
         init_beta: float = 1.0,
-        init_shape: float = 10.0,
-        init_rate: float = 10.0,
+        init_shape: float = 10,
+        init_rate: float = 10,
         **kwargs,
     ):
         super().__init__("Variational")

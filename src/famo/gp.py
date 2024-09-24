@@ -38,7 +38,7 @@ class GP(ApproximateGP):
 
         max_dist = torch.pdist(inducing_points.flatten(0, 1), p=n_dims).max()
 
-        base_kernel = RBFKernel(batch_shape=batch_shape, lengthscale_constraint=Interval(max_dist / 10, max_dist))
+        base_kernel = RBFKernel(batch_shape=batch_shape, lengthscale_constraint=Interval(max_dist / 20, max_dist))
 
         self.covar_module = ScaleKernel(
             base_kernel, outputscale_constraint=Interval(1e-3, 1 - 1e-3), batch_shape=batch_shape

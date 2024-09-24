@@ -51,6 +51,9 @@ class Generative(PyroModule):
         self.device = device
         self.to(self.device)
 
+        if isinstance(self.prior_scales, dict):
+            self.prior_scales = {vn: torch.Tensor(ps).to(self.device) for vn, ps in self.prior_scales.items()}
+
         self._setup_samplers()
 
         self.sample_dict: dict[str, torch.Tensor] = {}
@@ -115,14 +118,14 @@ class Generative(PyroModule):
 
                 if regularized:
                     caux = self._sample(
-                        f"caux_{site_name}", dist.InverseGamma(self._ones((1,)) * 0.5, self._ones((1,)) * 0.5)
+                        f"caux_{site_name}", dist.InverseGamma(0.5 * self._ones((1,)), 0.5 * self._ones((1,)))
                     )
                     c = torch.sqrt(caux)
                     if prior_scales is not None:
                         c = c * prior_scales.unsqueeze(-1)
                     local_scale = (c * local_scale) / torch.sqrt(c**2 + local_scale**2)
 
-                return self._sample(site_name, dist.Normal(self._zeros((1,)), self._ones((1,)) * local_scale))
+                return self._sample(site_name, dist.Normal(self._zeros((1,)), local_scale))
 
     def _sample_component_ard_spike_and_slab(self, site_name, outer_plate, inner_plate, **kwargs):
         with outer_plate:
@@ -244,7 +247,7 @@ class Generative(PyroModule):
                 z = self.sample_dict[f"z_{group_name}"]
                 w = self.sample_dict[f"w_{view_name}"]
 
-                loc = torch.einsum("...kji,...kji->...ji", z, w)
+                loc = torch.einsum("...ijk,...ilj->...jlk", z, w)
 
                 site_name = f"x_{group_name}_{view_name}"
 
@@ -280,10 +283,12 @@ class Generative(PyroModule):
                     # TODO: include intercept
                     probs = torch.nn.Sigmoid()(loc)
                     dist_parametrized = dist.BetaBinomial(
-                        concentration1=(dispersion * probs).clamp(EPS),
-                        concentration0=(dispersion * (1 - probs)).clamp(EPS),
+                        concentration1=probs / dispersion,
+                        concentration0=(1 - probs) / dispersion,
                         total_count=obs_total,
                     )
+                else:
+                    raise ValueError(f"Invalid likelihood: {self.likelihoods[view_name]}")
 
                 with (
                     pyro.poutine.mask(mask=obs_mask),

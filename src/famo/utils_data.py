@@ -254,7 +254,7 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     return data
 
 
-def get_feature_mean(data: dict, likelihoods: dict) -> dict:
+def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
     """Compute the mean of each feature across all observations in a group. For BetaBinomial data, the mean is computed from the ratio of the first occurence of a feature to the sum of both occurences.
 
     Parameters
@@ -270,12 +270,15 @@ def get_feature_mean(data: dict, likelihoods: dict) -> dict:
         Nested dictionary of torch.Tensor objects with group names as keys and view names as subkeys,
         representing the feature means in the respective group.
     """
+    if how not in ["feature", "sample"]:
+        raise ValueError("how must be either 'feature' or 'sample'.")
+
     means = {}
     for k_groups, v_groups in data.items():
         means[k_groups] = {}
         for k_views, v_views in v_groups.items():
             if likelihoods[k_views] in ["Normal", "Bernoulli", "GammaPoisson"]:
-                means[k_groups][k_views] = np.nanmean(v_views.X, axis=0)
+                means[k_groups][k_views] = np.nanmean(v_views.X, axis=0 if how == "feature" else 1)
 
             if likelihoods[k_views] == "BetaBinomial":
                 # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
@@ -291,7 +294,7 @@ def get_feature_mean(data: dict, likelihoods: dict) -> dict:
 
                 # compute mean of the ratio of the first occurence to the sum of both occurences
                 ratio = x_0 / (x_0 + x_1 + 1e-6)
-                means[k_groups][k_views] = np.nanmean(ratio, axis=0)
+                means[k_groups][k_views] = np.nanmean(ratio, axis=0 if how == "feature" else 1)
 
     return means
 

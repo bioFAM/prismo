@@ -23,6 +23,8 @@ class Generative(PyroModule):
         likelihoods: dict[str, str] | str = "Normal",
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
+        feature_means: dict[dict[str, torch.Tensor]] = None,
+        sample_means: dict[dict[str, torch.Tensor]] = None,
         gps: dict[str, GP] = None,
         device: str = None,
         **kwargs,
@@ -56,6 +58,8 @@ class Generative(PyroModule):
         self.likelihoods = likelihoods
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
+        self.feature_means = feature_means
+        self.sample_means = sample_means
         self.gps = gps
 
         self.pos_transform = torch.nn.ReLU()
@@ -261,8 +265,9 @@ class Generative(PyroModule):
 
     def _dist_obs_gamma_poisson(self, loc, **kwargs):
         view_name = kwargs["view_name"]
+        mean = kwargs["sample_means"][kwargs["group_name"]][kwargs["view_name"]]
         dispersion = self.sample_dict[f"dispersion_{view_name}"]
-        rate = self.pos_transform(loc)
+        rate = self.pos_transform(loc) * mean.view(1, -1)
         return dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
 
     def _dist_obs_bernoulli(self, loc, **kwargs):
@@ -292,6 +297,24 @@ class Generative(PyroModule):
         current_group_names = list(data.keys())
 
         plates = self._get_plates()
+
+        sample_means = {}
+        for group_name in current_group_names:
+            sample_means[group_name] = {}
+            for view_name in self.view_names:
+                if self.likelihoods[view_name] in ["GammaPoisson"]:
+                    sample_means[group_name][view_name] = torch.tensor(
+                        self.sample_means[group_name][view_name], device=self.device
+                    )[data[group_name]["sample_idx"]]
+
+        feature_means = {}
+        for group_name in current_group_names:
+            feature_means[group_name] = {}
+            for view_name in self.view_names:
+                if self.likelihoods[view_name] in ["GammaPoisson"]:
+                    feature_means[group_name][view_name] = torch.tensor(
+                        self.feature_means[group_name][view_name], device=self.device
+                    )
 
         # sample factors and transform if non-negative is required
         for group_name in current_group_names:
@@ -334,7 +357,13 @@ class Generative(PyroModule):
                 obs = torch.nan_to_num(obs, nan=0)
 
                 dist_parameterized = self.dist_obs[view_name](
-                    loc, obs=obs, obs_mask=obs_mask, group_name=group_name, view_name=view_name
+                    loc,
+                    obs=obs,
+                    obs_mask=obs_mask,
+                    group_name=group_name,
+                    view_name=view_name,
+                    feature_means=feature_means,
+                    sample_means=sample_means,
                 )
 
                 with (

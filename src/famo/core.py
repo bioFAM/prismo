@@ -189,6 +189,8 @@ class CORE(PyroModule):
             nonnegative_weights=nonnegative_weights,
             gps=self.gps,
             device=self.device,
+            feature_means=self.feature_means,
+            sample_means=self.sample_means,
         )
 
         self.variational = Variational(self.generative, self.init_tensor)
@@ -464,7 +466,8 @@ class CORE(PyroModule):
                     self.feature_names[view_name] = feature_names_base.unique()
 
         # compute feature means for intercept terms
-        self.feature_means = utils_data.get_feature_mean(self.data, self.likelihoods)
+        self.feature_means = utils_data.get_data_mean(self.data, self.likelihoods, how="feature")
+        self.sample_means = utils_data.get_data_mean(self.data, self.likelihoods, how="sample")
 
         # GP inducing point locations
         inducing_points = gp.setup_inducing_points(
@@ -604,7 +607,7 @@ class CORE(PyroModule):
             ss_tot = np.nansum(np.square(y_true))  # data is centered
         elif likelihood == "GammaPoisson":
             y_pred = np.logaddexp(0, y_pred)  # softplus
-            nu2 = self._get_dispersion_from_guide(view_name)
+            nu2 = self._get_dispersion_from_guide("mean")[view_name]
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, 1))
 
             truemean = np.nanmean(y_true)
@@ -618,7 +621,7 @@ class CORE(PyroModule):
             y_pred = expit(y_pred)
             obs_total = y_true[..., 1, :, :]
             y_true = y_true[..., 0, :, :]
-            dispersion = self._get_dispersion_from_guide(view_name)
+            dispersion = self._get_dispersion_from_guide("mean")[view_name]
             nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, nu1))
 

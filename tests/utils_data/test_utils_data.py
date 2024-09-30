@@ -139,7 +139,7 @@ def test_remove_constant_features():
     assert "g4_b" not in data_c["group2"]["view4"].var_names
 
 
-def test_get_feature_mean():
+def test_get_data_mean(how="feature"):
     data = {
         "group1": {
             "view1": create_adata(np.array([[1.5, -5.2], [4.4, 1.1], [70.0, 9.1]])),

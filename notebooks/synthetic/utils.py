@@ -19,6 +19,7 @@ def generate_data(
     likelihoods: dict[str, float],
     covariates: dict[str, float] = None,
     factor_smoothness: dict[str, list[float]] = None,
+    seed: int = None,
 ) -> dict:
     """Simulate data for experiments with synthetic data for model validation.
 
@@ -42,11 +43,12 @@ def generate_data(
     dict
         A nested dictionary of AnnData objects with the simulated data (group level -> view level)
     """
-    if covariates is None:
-        covariates = {group: None for group in n_samples}
-
-    if factor_smoothness is None:
-        factor_smoothness = {group: [1.0] * n_factors for group in n_samples}
+    rng = np.random.default_rng()
+    if seed is not None:
+        torch.manual_seed(seed)
+        rng = np.random.default_rng(seed)
+    covariates = covariates or {group: None for group in n_samples}
+    factor_smoothness = factor_smoothness or {group: [1.0] * n_factors for group in n_samples}
 
     # factors
     z = {}
@@ -81,14 +83,32 @@ def generate_data(
             ["".join(random.choices(string.ascii_letters + string.digits, k=4)) for _ in range(n_features[view])]
         )
 
+    # weights mask
+    w_mask = {}
+    for view in n_features:
+        w_mask[view] = np.zeros(w[view].shape)
+        fraction_active_features = rng.uniform(0.02, 0.05, n_factors)
+
+        for factor_idx, faft in enumerate(fraction_active_features):
+            w_mask[view][factor_idx] = rng.choice(2, n_features[view], p=[1 - faft, faft])
+
+        # set small values to zero
+        tiny_w_threshold = 0.1
+        w_mask[view][np.abs(w[view]) < tiny_w_threshold] = 0.0
+        w_mask[view] = w_mask[view].astype(bool)
+        # add some noise to avoid exactly zero values
+        w[view] = np.where(w_mask[view], w[view], rng.standard_normal(w[view].shape) / 100)
+        assert ((np.abs(w[view]) > tiny_w_threshold) == w_mask[view]).all()
+        w[view] = torch.tensor(w[view], dtype=torch.float)
+
     # observations
     data = {}
     for group in n_samples:
         data[group] = {}
         for view in n_features:
             # randomly remove some observations and features
-            keep_obs_inds = torch.rand(n_samples[group]) > 0.1
-            keep_var_inds = torch.rand(n_features[view]) > 0.1
+            keep_obs_inds = torch.rand(n_samples[group]) >= 0.0
+            keep_var_inds = torch.rand(n_features[view]) >= 0.0
 
             if likelihoods[view] == "Normal":
                 loc = z[group][keep_obs_inds] @ w[view][:, keep_var_inds]
@@ -103,6 +123,7 @@ def generate_data(
                 if covariates[group] is not None:
                     adata.obsm["f"] = f[group][keep_obs_inds].numpy()
                 adata.varm["w"] = w[view][:, keep_var_inds].numpy().T
+                adata.varm["w_mask"] = w_mask[view][:, keep_var_inds].T
 
                 if lengthscales[group] is not None:
                     adata.uns["lengthscales"] = lengthscales[group].numpy()
@@ -123,7 +144,7 @@ def generate_data(
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
                     obsm={"z": z[group][keep_obs_inds].numpy(), "f": f[group][keep_obs_inds].numpy()},
                     varm={"w": w[view][:, keep_var_inds].numpy().T, "rate_scale": rate_scale.numpy()},
-                    uns={"lengthscales": lengthscales[group].numpy() if lengthscales[group] is not None else None},
+                    uns={"lengthscales": (lengthscales[group].numpy() if lengthscales[group] is not None else None)},
                 )
                 if covariates[group] is not None:
                     data[group][view].obsm["covariates"] = covariates[group][keep_obs_inds].numpy()
@@ -138,7 +159,7 @@ def generate_data(
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
                     obsm={"z": z[group][keep_obs_inds].numpy(), "f": f[group][keep_obs_inds].numpy()},
                     varm={"w": w[view][:, keep_var_inds].numpy().T},
-                    uns={"lengthscales": lengthscales[group].numpy() if lengthscales[group] is not None else None},
+                    uns={"lengthscales": (lengthscales[group].numpy() if lengthscales[group] is not None else None)},
                 )
                 if covariates[group] is not None:
                     data[group][view].obsm["covariates"] = covariates[group][keep_obs_inds].numpy()

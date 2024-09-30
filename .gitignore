@@ -1,7 +1,9 @@
 # Temp files
+.history/
 .DS_Store
 *~
 buck-out/
+.ipynb_checkpoints
 
 # Compiled files
 .venv/

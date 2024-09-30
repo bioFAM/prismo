@@ -49,6 +49,9 @@ class Generative(PyroModule):
         if isinstance(nonnegative_factors, bool):
             nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
 
+        if isinstance(prior_scales, dict):
+            prior_scales = {vn: torch.Tensor(ps).to(self.device) for vn, ps in prior_scales.items()}
+
         self.n_samples = n_samples
         self.n_features = n_features
         self.n_factors = n_factors
@@ -350,7 +353,7 @@ class Generative(PyroModule):
                 z = self.sample_dict[f"z_{group_name}"]
                 w = self.sample_dict[f"w_{view_name}"]
 
-                loc = torch.einsum("...kji,...kji->...ji", z, w)
+                loc = torch.einsum("...ijk,...ilj->...jlk", z, w)
 
                 obs = view_obs.T
                 obs_mask = torch.logical_not(torch.isnan(obs))

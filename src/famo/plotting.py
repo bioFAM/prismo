@@ -143,10 +143,10 @@ def plot_factor_correlation(model):
     for k, v in factors.items():
         # Calculate the correlation matrix
         # and melt the DataFrame to long format
-        corr_df = pd.DataFrame(np.corrcoef(v.X.T)).reset_index()
+        corr_df = pd.DataFrame(np.corrcoef(v.X.T), index=model.factor_names, columns=model.factor_names)
         # Increase index by 1 to match the factor number and then melt the dataframe
 
-        corr_df["index"] += 1
+        corr_df["index"] = model.factor_names
         corr_df = corr_df.melt("index")
         corr_df.columns = ["Factor1", "Factor2", "Correlation"]
 
@@ -155,8 +155,8 @@ def plot_factor_correlation(model):
             alt.Chart(corr_df)
             .mark_rect()
             .encode(
-                x=alt.X("Factor1:O", title="Factor"),
-                y=alt.Y("Factor2:O", title="Factor"),
+                x=alt.X("Factor1:O", title="Factor", sort=None),
+                y=alt.Y("Factor2:O", title="Factor", sort=None),
                 color=alt.Color("Correlation:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))),
                 tooltip=["Factor1", "Factor2", "Correlation"],
             )
@@ -262,9 +262,8 @@ def plot_variance_explained(model, groupby="group"):
 def plot_factor(model, factor=1):
     """Plot factor values (y-axis) for each sample (x-axis)."""
     model._check_if_trained()
-
-    # We reduce the factor value by one, because we internally start counting at 0
-    factor -= 1
+    if isinstance(factor, int):
+        factor = model.factor_names[factor - 1]
 
     # Create an empty list to hold all the charts
     charts = []
@@ -272,9 +271,8 @@ def plot_factor(model, factor=1):
     factors = model._cache["factors"]
 
     for group_name in model.group_names:
-        z = factors[group_name].X.squeeze()
-        df = pd.DataFrame(z)
-        df["id"] = range(len(df))
+        df = factors[group_name].to_df()
+        df["id"] = df.index
         # Convert column names to strings
         df.columns = df.columns.astype(str)
 
@@ -284,7 +282,7 @@ def plot_factor(model, factor=1):
             .mark_point(filled=True)
             .encode(
                 x=alt.X("id:O", title="", axis=alt.Axis(labels=False)),
-                y=alt.Y(f"{factor}:Q", title=f"Factor {factor+1}"),
+                y=alt.Y(f"{factor}:Q", title=f"{factor}"),
                 color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
                 tooltip=["id", f"{factor}"],
             )
@@ -649,11 +647,11 @@ def plot_top_weights(model, views: list[str] = None, n_features: int = 10, facto
 
 
 def plot_weights(model, view, factor=1, top_n_features=10):
-    factor = factor - 1
+    if isinstance(factor, int):
+        factor = model.factor_names[factor - 1]
 
-    weights = model.get_weights(return_type="numpy")[view][factor]
-    feature_names = model.feature_names[view]
-    df_plot = pd.DataFrame({"weight": weights, "feature": feature_names})
+    weights = model.get_weights(return_type="pandas")[view].loc[factor, :]
+    df_plot = pd.DataFrame({"weight": weights, "feature": weights.index})
     df_plot = df_plot.sort_values("weight", ascending=False)
     df_plot["rank"] = len(df_plot) - np.arange(len(df_plot))
 
@@ -717,7 +715,7 @@ def plot_weights(model, view, factor=1, top_n_features=10):
     )
 
     chart = (points + text_pos + text_neg + lines_pos + lines_neg).properties(
-        title=f"Top {view} weights for factor {factor + 1}", width=600, height=400
+        title=f"Top {view} weights for {factor}", width=600, height=400
     )
 
     chart.display()
@@ -725,6 +723,8 @@ def plot_weights(model, view, factor=1, top_n_features=10):
 
 def plot_top_weights_muvi(model, factor_idx, view_idx="all", top=25, ranked=True, figsize=None, **kwargs):
     """Scatterplot of factor loadings for specific factors."""
+    if isinstance(factor_idx, int):
+        factor_idx = model.factor_names[factor_idx - 1]
     if isinstance(factor_idx, str):
         factor_idx = [factor_idx]
 
@@ -969,6 +969,8 @@ def _get_color_dict(factor_adata, groupby, include_rest=True):
 
 # plot groups of observations against (subset of) factors
 def group(model, factor_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
+    if isinstance(factor_idx, int):
+        factor_idx = model.factor_names[factor_idx - 1]
     pl_type = pl_type.lower().strip()
 
     if (pl_type in MATRIXPLOT or pl_type in DOTPLOT) and "colorbar_title" not in kwargs:
@@ -1092,6 +1094,8 @@ def _groupplot(
     save: Union[bool, str, None] = None,
     **kwargs,
 ):
+    if isinstance(factor_idx, int):
+        factor_idx = model.factor_names[factor_idx - 1]
     factor_adata = model._cache["factors"]
     factor_adata = factor_adata[list(factor_adata.keys())[0]]
     if groupby not in factor_adata.obs.columns:
@@ -1235,8 +1239,12 @@ def violinplot(
 
 
 def scatter(model, x, y, groupby=None, groups=None, include_rest=True, style=None, markers=True, **kwargs):
-    # x = _normalize_index(x, model.factor_names, as_idx=False)[0]
-    # y = _normalize_index(y, model.factor_names, as_idx=False)[0]
+    if isinstance(x, int):
+        x = model.factor_names[x - 1]
+
+    if isinstance(y, int):
+        y = model.factor_names[y - 1]
+
     kwargs["color"] = groupby
     factor_adata = model._cache["factors"]
     factor_adata = factor_adata[list(factor_adata.keys())[0]]

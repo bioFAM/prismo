@@ -626,6 +626,8 @@ def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_ob
                         torch.tensor(view_adata.obsm[covariates_obsm_key[group_name]], dtype=torch.float)
                     )
 
+            if len(group_covariates) == 0:
+                continue
             covariates[group_name] = torch.stack(group_covariates, dim=0).nanmean(dim=0)
 
         return covariates

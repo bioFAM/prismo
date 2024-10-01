@@ -544,8 +544,9 @@ class CORE(PyroModule):
         tensor_dict = {}
         for group_name, group_dict in self.data.items():
             tensor_dict[group_name] = {}
-            if self.covariates is not None and self.covariates[group_name] is not None:
-                tensor_dict[group_name]["covariates"] = self.covariates[group_name]
+            if self.covariates is not None and group_name in self.covariates:
+                if self.covariates[group_name] is not None:
+                    tensor_dict[group_name]["covariates"] = self.covariates[group_name]
 
             for view_name, view_adata in group_dict.items():
                 tensor_dict[group_name][view_name] = torch.from_numpy(view_adata.X)

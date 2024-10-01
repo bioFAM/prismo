@@ -45,3 +45,4 @@ notebooks/mefisto_microbiome/data/**
 notebooks/mefisto_umap/data/**
 notebooks/mefisto_visium/data/**
 notebooks/nsf_slideseq/data/**
+notebooks/xenium_breast_cancer/data/**

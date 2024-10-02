@@ -33,6 +33,8 @@ __pycache__/
 # Files
 *.pkl
 *.save
+*.hdf5
+*.h5
 
 # Data directories
 notebooks/allelic_mouse_fibroblasts/data/**
@@ -42,3 +44,5 @@ notebooks/mefisto_evodevo/data/**
 notebooks/mefisto_microbiome/data/**
 notebooks/mefisto_umap/data/**
 notebooks/mefisto_visium/data/**
+notebooks/nsf_slideseq/data/**
+notebooks/xenium_breast_cancer/data/**

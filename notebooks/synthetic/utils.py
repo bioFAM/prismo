@@ -120,7 +120,8 @@ def generate_data(
                     var=pd.DataFrame(index=var_names[view][keep_var_inds]),
                 )
                 adata.obsm["z"] = z[group][keep_obs_inds].numpy()
-                adata.obsm["f"] = f[group][keep_obs_inds].numpy()
+                if covariates[group] is not None:
+                    adata.obsm["f"] = f[group][keep_obs_inds].numpy()
                 adata.varm["w"] = w[view][:, keep_var_inds].numpy().T
                 adata.varm["w_mask"] = w_mask[view][:, keep_var_inds].T
 

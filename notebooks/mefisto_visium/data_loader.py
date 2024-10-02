@@ -5,8 +5,8 @@ import scanpy as sc
 
 
 def load_mefisto_visium():
-    if os.path.isfile("data/visium_brain_sagittal.h5ad"):
-        return ad.read_h5ad("data/visium_brain_sagittal.h5ad")
+    if os.path.isfile("data/mefisto_visium.h5ad"):
+        return ad.read_h5ad("data/mefisto_visium.h5ad")
 
     adata = sc.read_visium("data", count_file="V1_Mouse_Brain_Sagittal_Anterior_filtered_feature_bc_matrix.h5")
     adata.var_names_make_unique()

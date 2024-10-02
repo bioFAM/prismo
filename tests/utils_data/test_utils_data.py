@@ -139,7 +139,7 @@ def test_remove_constant_features():
     assert "g4_b" not in data_c["group2"]["view4"].var_names
 
 
-def test_get_feature_mean():
+def test_get_data_mean():
     data = {
         "group1": {
             "view1": create_adata(np.array([[1.5, -5.2], [4.4, 1.1], [70.0, 9.1]])),
@@ -163,7 +163,7 @@ def test_get_feature_mean():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    feature_mean = utils_data.get_feature_mean(data, likelihoods)
+    feature_mean = utils_data.get_data_mean(data, likelihoods, how="feature")
 
     assert isclose(feature_mean["group1"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
     assert isclose(feature_mean["group2"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)

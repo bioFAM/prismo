@@ -239,19 +239,19 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
             # the BetaBinomial likelihood is a special case because every feature occurs twice with different
             # suffixes and removal of one should also lead to removal of the other
             if likelihoods[k_views] == "BetaBinomial":
-                raise NotImplementedError("BetaBinomial likelihood is not yet supported.")
                 # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
-                split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
-                split_var_names.columns = ["base", "suffix"]
-                suffix_indices = split_var_names.groupby("base").apply(
-                    lambda x: pd.Series(x.index.values), include_groups=False
-                )
+                logger.warning("Not removing constants features in BetaBinomial.")
+                # split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
+                # split_var_names.columns = ["base", "suffix"]
+                # suffix_indices = split_var_names.groupby("base").apply(
+                #     lambda x: pd.Series(x.index.values), include_groups=False
+                # )
 
-                # if any of the two occurences of a feature is masked, mask the other one as well
-                for var_name_base in suffix_indices.index:
-                    ix = suffix_indices.loc[var_name_base].values
-                    if mask_keep_variable[ix].any():
-                        mask_keep_variable[ix] = True
+                # # if any of the two occurences of a feature is masked, mask the other one as well
+                # for var_name_base in suffix_indices.index:
+                #     ix = suffix_indices.loc[var_name_base].values
+                #     if mask_keep_variable[ix].any():
+                #         mask_keep_variable[ix] = True
 
     for k_view in likelihoods.keys():
         if not mask_keep_variable[k_view].all():

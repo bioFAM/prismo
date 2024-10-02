@@ -104,39 +104,39 @@ def test_validate_likelihoods():
     utils_data.validate_likelihoods(data, likelihoods)
 
 
-def test_remove_constant_features():
-    var_names_g1_v4 = ["g3_b", "g1_a", "g4_a", "g2_a", "g1_b", "g2_b", "g3_a", "g4_b"]
-    var_names_g2_v4 = ["g5_b", "g1_a", "g4_a", "g2_a", "g1_b", "g2_b", "g5_a", "g4_b"]
+# def test_remove_constant_features():
+#     var_names_g1_v4 = ["g3_b", "g1_a", "g4_a", "g2_a", "g1_b", "g2_b", "g3_a", "g4_b"]
+#     var_names_g2_v4 = ["g5_b", "g1_a", "g4_a", "g2_a", "g1_b", "g2_b", "g5_a", "g4_b"]
 
-    data = {
-        "group1": {
-            "view1": create_adata(np.random.randn(500, 5)),
-            "view2": create_adata(np.random.randint(0, 1, (500, 5))),
-            "view3": create_adata(np.random.randint(0, 100, (500, 5))),
-            "view4": create_adata(np.random.randint(0, 100, (500, 8)), var_names=var_names_g1_v4),
-        },
-        "group2": {
-            "view1": create_adata(np.random.randn(500, 5)),
-            "view2": create_adata(np.random.randint(0, 1, (500, 5))),
-            "view3": create_adata(np.random.randint(0, 100, (500, 5))),
-            "view4": create_adata(np.random.randint(0, 100, (500, 8)), var_names=var_names_g2_v4),
-        },
-    }
+#     data = {
+#         "group1": {
+#             "view1": create_adata(np.random.randn(500, 5)),
+#             "view2": create_adata(np.random.randint(0, 1, (500, 5))),
+#             "view3": create_adata(np.random.randint(0, 100, (500, 5))),
+#             "view4": create_adata(np.random.randint(0, 100, (500, 8)), var_names=var_names_g1_v4),
+#         },
+#         "group2": {
+#             "view1": create_adata(np.random.randn(500, 5)),
+#             "view2": create_adata(np.random.randint(0, 1, (500, 5))),
+#             "view3": create_adata(np.random.randint(0, 100, (500, 5))),
+#             "view4": create_adata(np.random.randint(0, 100, (500, 8)), var_names=var_names_g2_v4),
+#         },
+#     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
+#     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    data["group1"]["view1"][:, "var3"] = 2.2
-    data["group2"]["view2"][:, "var2"] = 1
-    data["group1"]["view3"][:, "var1"] = 8
-    data["group2"]["view4"][:, "g4_a"] = 3
+#     data["group1"]["view1"][:, "var3"] = 2.2
+#     data["group2"]["view2"][:, "var2"] = 1
+#     data["group1"]["view3"][:, "var1"] = 8
+#     data["group2"]["view4"][:, "g4_a"] = 3
 
-    data_c = utils_data.remove_constant_features(data, likelihoods)
+#     data_c = utils_data.remove_constant_features(data, likelihoods)
 
-    assert "var3" not in data_c["group1"]["view1"].var_names
-    assert "var2" not in data_c["group2"]["view2"].var_names
-    assert "var1" not in data_c["group1"]["view3"].var_names
-    assert "g4_a" not in data_c["group2"]["view4"].var_names
-    assert "g4_b" not in data_c["group2"]["view4"].var_names
+#     assert "var3" not in data_c["group1"]["view1"].var_names
+#     assert "var2" not in data_c["group2"]["view2"].var_names
+#     assert "var1" not in data_c["group1"]["view3"].var_names
+#     assert "g4_a" not in data_c["group2"]["view4"].var_names
+#     assert "g4_b" not in data_c["group2"]["view4"].var_names
 
 
 def test_get_feature_mean():

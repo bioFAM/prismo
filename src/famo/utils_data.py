@@ -9,6 +9,8 @@ from anndata import AnnData
 from mudata import MuData
 from scipy.sparse._csr import csr_matrix
 
+logger = logging.getLogger(__name__)
+
 
 def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None) -> dict:
     """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
@@ -216,20 +218,28 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
+    # For each view, we collect the variances of all features and remove those with zero variance
+    mask_keep_variable = {}
+
     for k_groups, v_groups in data.items():
         for k_views, v_views in v_groups.items():
-            # v_views.X = v_views.X.astype(np.float32)
+
+            # Start with an array of all False and if feature must not be dropped, set to True
+            if k_views not in mask_keep_variable:
+                mask_keep_variable[k_views] = np.full(v_views.X.shape[1], False)
 
             # compute variance of each feature
             variances = np.var(v_views.X, axis=0)
             variances[variances < 1e-16] = 0
 
             # create mask that is True where a feature is constant (has zero variance)
-            drop_mask = variances == 0
+            # Combine with or operator to keep track of all features that are constant across all groups
+            mask_keep_variable[k_views] = np.logical_or(mask_keep_variable[k_views], (variances != 0))
 
             # the BetaBinomial likelihood is a special case because every feature occurs twice with different
             # suffixes and removal of one should also lead to removal of the other
             if likelihoods[k_views] == "BetaBinomial":
+                raise NotImplementedError("BetaBinomial likelihood is not yet supported.")
                 # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
                 split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
                 split_var_names.columns = ["base", "suffix"]
@@ -238,18 +248,21 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
                 )
 
                 # if any of the two occurences of a feature is masked, mask the other one as well
-
                 for var_name_base in suffix_indices.index:
                     ix = suffix_indices.loc[var_name_base].values
-                    if drop_mask[ix].any():
-                        drop_mask[ix] = True
+                    if mask_keep_variable[ix].any():
+                        mask_keep_variable[ix] = True
 
-            if drop_mask.any():
-                dropped_features_names = list(v_views.var_names[drop_mask])
-                data[k_groups][k_views] = v_views[:, ~drop_mask].copy()
+    for k_view in likelihoods.keys():
+        if not mask_keep_variable[k_view].all():
+            # We can reuse the last v_groups object to find the feature names
+            dropped_features_names = list(v_groups[k_view].var_names[~mask_keep_variable[k_view]])
 
-                print(f"- Removing constant features in {k_groups}/{k_views}.")
-                print(f"  - Removed {len(dropped_features_names)} features: {','.join(dropped_features_names)}")
+            for k_groups, v_groups in data.items():
+                data[k_groups][k_views] = data[k_groups][k_views][:, mask_keep_variable[k_view]].copy()
+
+            logger.debug(f"- Removing constant features in {k_groups}/{k_views}.")
+            logger.debug(f"  - Removed {len(dropped_features_names)} features: {','.join(dropped_features_names)}")
 
     data.update()
 
@@ -322,11 +335,11 @@ def center_data(data: dict, likelihoods: dict, nonnegative_weights: dict, nonneg
             if likelihoods[k_views] == "Normal":
                 # only if both weights and factors are non-negative, data may not be negative
                 if nonnegative_weights[k_views] and nonnegative_factors[k_groups]:
-                    print(f"- Anchoring {k_groups}/{k_views}...")
+                    logger.debug(f"- Anchoring {k_groups}/{k_views}...")
                     min_values = np.nanmin(v_views.X, axis=0)
                     v_views.X -= min_values
                 else:
-                    print(f"- Centering {k_groups}/{k_views}...")
+                    logger.debug(f"- Centering {k_groups}/{k_views}...")
                     mean_values = np.nanmean(v_views.X, axis=0)
                     v_views.X -= mean_values
 

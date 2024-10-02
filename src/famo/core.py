@@ -24,6 +24,7 @@ from famo.plotting import plot_overview
 from famo.utils_io import save_model
 from famo.utils_training import EarlyStopper
 
+
 # Set 16bit cuda float as default
 # torch.set_default_dtype(torch.float32)
 

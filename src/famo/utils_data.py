@@ -223,7 +223,6 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
 
     for k_groups, v_groups in data.items():
         for k_views, v_views in v_groups.items():
-
             # Start with an array of all False and if feature must not be dropped, set to True
             if k_views not in mask_keep_variable:
                 mask_keep_variable[k_views] = np.full(v_views.X.shape[1], False)

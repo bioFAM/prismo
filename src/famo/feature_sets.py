@@ -1,17 +1,13 @@
 # Highly inspired by https://github.com/krassowski/gsea-api
 import logging
-
 from collections import Counter
-from collections.abc import Collection
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-
 from sklearn.metrics import pairwise_distances
-
 
 logger = logging.getLogger(__name__)
 
@@ -323,7 +319,6 @@ class FeatureSets:
             Similarity matrix as 1 minus distance matrix,
             may lead to negative values for some distance metrics.
         """
-
         if metric not in ["jaccard", "cosine"]:
             logger.warning(
                 f"Similarity matrix for `{metric}` might be negative. " "Recommended metrics are `jaccard` or `cosine`."
@@ -377,7 +372,6 @@ class FeatureSets:
         set[tuple[str, str]]
             Similar pairs of feature sets.
         """
-
         pairs = set()
         visited = set()
 
@@ -492,7 +486,6 @@ class FeatureSets:
         FeatureSets
             Merged feature sets.
         """
-
         feature_sets = self
         while True:
             pairs = {

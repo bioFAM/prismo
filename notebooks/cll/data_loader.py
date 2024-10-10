@@ -1,26 +1,16 @@
 import pandas as pd
-from mudata import MuData
 from anndata import AnnData
+from mudata import MuData
 
 
 def load_CLL() -> MuData:
     """Load and return CLL dataset."""
     modalities = {}
 
-    obs = pd.read_csv(
-        filepath_or_buffer="./data/metadata.txt",
-        sep="\t",
-        index_col="sample",
-        encoding="utf_8",
-    )
+    obs = pd.read_csv(filepath_or_buffer="./data/metadata.txt", sep="\t", index_col="sample", encoding="utf_8")
 
     for ome in ["drugs", "methylation", "mrna", "mutations"]:
-        modality = pd.read_csv(
-            filepath_or_buffer=f"./data/cll_{ome}.csv",
-            sep=",",
-            index_col=0,
-            encoding="utf_8",
-        ).T
+        modality = pd.read_csv(filepath_or_buffer=f"./data/cll_{ome}.csv", sep=",", index_col=0, encoding="utf_8").T
 
         modalities[ome] = AnnData(X=modality, dtype="float32")
 
@@ -33,9 +23,7 @@ def load_CLL() -> MuData:
     modalities["mrna"].var_names = cols
 
     # avoid duplicated names with the Mutations view
-    modalities["mutations"].var_names = [
-        f"m_{x}" for x in modalities["mutations"].var_names
-    ]
+    modalities["mutations"].var_names = [f"m_{x}" for x in modalities["mutations"].var_names]
 
     # Replace drug names
     # Create mapping from drug_id to name

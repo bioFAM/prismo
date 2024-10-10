@@ -1,25 +1,75 @@
+from collections.abc import Iterable
+
 import torch
 from gpytorch.constraints import Interval
 from gpytorch.distributions import MultivariateNormal
-from gpytorch.kernels import RBFKernel, ScaleKernel
+from gpytorch.kernels import IndexKernel, Kernel, RBFKernel, ScaleKernel
 from gpytorch.means import ZeroMean
 from gpytorch.models import ApproximateGP
+from gpytorch.priors import Prior
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
+
+
+class MefistoKernel(Kernel):
+    def __init__(
+        self,
+        base_kernel: Kernel | None,
+        n_groups: int,
+        rank: int = 1,
+        lowrank_covar_prior: Prior | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self.group_kernel = IndexKernel(
+            num_tasks=n_groups, batch_shape=base_kernel.batch_shape, rank=rank, prior=lowrank_covar_prior
+        )
+        self.base_kernel = base_kernel
+
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor, diag=False, last_dim_is_batch=False, **params):
+        group_idx1, group_idx2 = x1[..., 0, None], x2[..., 0, None]
+        x1_, x2_ = x1[..., 1:], x2[..., 1:]
+        base_mat = self.base_kernel(x1_, x2_, diag, last_dim_is_batch, **params)
+
+        if not diag:
+            group_cov = self.group_kernel(group_idx1, group_idx2)
+            if x1 is x2 or x1.shape == x2.shape and x1.data_ptr() == x2.data_ptr():
+                group_cov_diag1 = group_cov_diag2 = group_cov.diagonal().sqrt()
+            else:
+                group_cov_diag1 = self.group_kernel(group_idx1, diag=True).sqrt()
+                group_cov_diag2 = self.group_kernel(group_idx2, diag=True).sqrt()
+            group_cor = group_cov.div(group_cov_diag1[..., None]).div(group_cov_diag2[..., None, :])
+            return base_mat.mul(group_cor)
+        else:
+            return base_mat
+
+    @property
+    def outputscale(self):
+        return self.base_kernel.outputscale
 
 
 class GP(ApproximateGP):
     """Gaussian Process model with RBF kernel."""
 
-    def __init__(self, inducing_points: torch.Tensor, n_factors: int):
+    def __init__(
+        self, n_inducing: int, covariates: Iterable[torch.Tensor], n_factors: int, n_groups: int, rank: int = 1
+    ):
         """Initialize the GP model.
 
         Parameters
         ----------
-        inducing_points : torch.Tensor
-            Tensor of inducing points with shape (n_factors, n_inducing, n_dims).
-        n_factors : int
+        n_inducing
+            Number of inducing points.
+        covariates
+            Covariates to choose the inducing points from.
+        n_factors
             Number of factors.
+        n_groups
+            Number of groups.
+        rank
+            Rank of the group correlation kernel.
         """
+        inducing_points = setup_inducing_points(covariates, n_inducing, n_factors)
         if inducing_points.shape[-3] != n_factors:
             raise ValueError("The first dimension of inducing_points must be n_factors.")
 
@@ -30,7 +80,9 @@ class GP(ApproximateGP):
 
         variational_distribution = CholeskyVariationalDistribution(num_inducing_points, batch_shape)
 
-        variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution)
+        variational_strategy = VariationalStrategy(
+            self, inducing_points, variational_distribution, learn_inducing_locations=False
+        )
 
         super().__init__(variational_strategy)
 
@@ -39,13 +91,11 @@ class GP(ApproximateGP):
         max_dist = torch.pdist(inducing_points.flatten(0, 1), p=n_dims).max()
 
         base_kernel = RBFKernel(batch_shape=batch_shape, lengthscale_constraint=Interval(max_dist / 20, max_dist))
+        base_kernel = ScaleKernel(base_kernel, outputscale_constraint=Interval(1e-3, 1 - 1e-3), batch_shape=batch_shape)
+        base_kernel.outputscale = torch.sigmoid(torch.randn(batch_shape, device=device)).clamp(1e-3, 1 - 1e-3)
+        base_kernel.base_kernel.lengthscale = max_dist * torch.rand(batch_shape).to(device=device).clamp(0.1)
 
-        self.covar_module = ScaleKernel(
-            base_kernel, outputscale_constraint=Interval(1e-3, 1 - 1e-3), batch_shape=batch_shape
-        )
-
-        self.covar_module.outputscale = torch.sigmoid(torch.randn(batch_shape, device=device)).clamp(1e-3, 1 - 1e-3)
-        self.covar_module.base_kernel.lengthscale = max_dist * torch.rand(batch_shape).to(device=device).clamp(0.1)
+        self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
 
     def forward(self, x):
         """Forward pass of the GP model."""
@@ -54,34 +104,28 @@ class GP(ApproximateGP):
         return MultivariateNormal(mean, covar)
 
 
-def setup_inducing_points(factor_prior: dict, covariates: dict, n_inducing: dict, n_factors: int, device: str):
+def setup_inducing_points(covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int):
     """Randomly initialize inducing points from the covariates.
 
     Parameters
     ----------
-    factor_prior : dict
-        Dictionary with group names and factor priors.
-    covariates : dict
-        dictionary with group names and tensors of shape (n_samples, n_dims).
-    n_inducing : int
+    covariates
+        tensors of shape (n_samples, n_dims).
+    n_inducing
         Number of inducing points.
-    n_factors : int
+    n_factors
         Number of factors.
-    device: str
-        Device to use for the inducing points.
     """
     if covariates is None:
         return None
 
-    inducing_points = {}
-    for group_name, group_factor_prior in factor_prior.items():
-        if group_factor_prior == "GP":
-            inducing_points[group_name] = torch.zeros(
-                [n_factors, n_inducing[group_name], covariates[group_name].shape[-1]], device=device
-            )
-            for factor in range(n_factors):
-                inducing_points[group_name][factor] = covariates[group_name][
-                    torch.randint(0, covariates[group_name].shape[-2], (n_inducing[group_name],))
-                ].to(device)
+    covariates = tuple(covariates)
+    group_idx = torch.cat(tuple(torch.as_tensor(i).expand(c.shape[0]) for i, c in enumerate(covariates)), dim=0)
+    covariates = torch.cat(covariates, dim=0)
 
+    inducing_points = torch.zeros((n_factors, n_inducing, 1 + covariates.shape[-1]))
+    for factor in range(n_factors):
+        idx = torch.randint(0, covariates.shape[-2], (n_inducing,))
+        inducing_points[factor, :, 1:] = covariates[idx]
+        inducing_points[factor, :, 0] = group_idx[idx]
     return inducing_points

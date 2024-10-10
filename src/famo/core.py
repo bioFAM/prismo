@@ -49,12 +49,13 @@ class CORE(PyroModule):
         self.n_features = {}
         self.n_factors = 0
 
-        self.group_names = pd.Index([])
-        self.view_names = pd.Index([])
+        self.group_names = []
+        self.view_names = []
         self.sample_names = {}
         self.feature_names = {}
-        self._factor_names = pd.Index([])
-        self._factor_order = pd.Index([])
+        self.gp_group_names = []
+        self._factor_names = []
+        self._factor_order = []
 
         self.likelihoods = {}
         self.nmf = {}
@@ -68,7 +69,7 @@ class CORE(PyroModule):
         # SVI related attributes
         self.generative = None
         self.variational = None
-        self.gps = None
+        self.gp = None
         self._optimizer = None
         self._svi = None
 
@@ -206,19 +207,23 @@ class CORE(PyroModule):
         self,
         weight_prior,
         factor_prior,
+        gp_n_inducing,
         likelihoods,
         nonnegative_factors,
         nonnegative_weights,
-        inducing_points,
         batch_size,
         max_epochs,
         n_particles,
         lr,
     ):
-        self.gps = {}
-        for group_name in self.group_names:
-            if factor_prior[group_name] == "GP":
-                self.gps[group_name] = gp.GP(inducing_points[group_name], self.n_factors).to(self.device)
+        self.gp_group_names = tuple(g for g in self.group_names if factor_prior[g] == "GP")
+        if len(self.gp_group_names):
+            self.gp = gp.GP(
+                gp_n_inducing,
+                (self.covariates[g] for g in self.gp_group_names),
+                self.n_factors,
+                len(self.gp_group_names),
+            ).to(self.device)
 
         self.generative = Generative(
             n_samples=self.n_samples,
@@ -230,7 +235,8 @@ class CORE(PyroModule):
             likelihoods=likelihoods,
             nonnegative_factors=nonnegative_factors,
             nonnegative_weights=nonnegative_weights,
-            gps=self.gps,
+            gp=self.gp,
+            gp_group_names=self.gp_group_names,
             device=self.device,
             feature_means=self.feature_means,
             sample_means=self.sample_means,
@@ -363,7 +369,7 @@ class CORE(PyroModule):
         save_path: str = None,
         init_factors: str = "random",
         init_scale: float = 0.1,
-        gp_n_inducing: dict[str, int] | int = 100,
+        gp_n_inducing: int = 100,
         seed: int = None,
         **kwargs,
     ):
@@ -433,8 +439,8 @@ class CORE(PyroModule):
             Initialization method for factors.
         init_scale: float
             Initialization scale of Normal distribution for factors.
-        gp_n_inducing : dict | int
-            Number of inducing points for each group (if dict) or for all groups (if int).
+        gp_n_inducing : int
+            Number of inducing points.
         seed : int
             Random seed.
         **kwargs
@@ -462,9 +468,6 @@ class CORE(PyroModule):
             {k: covariates_obsm_key for k in self.group_names}
             if isinstance(covariates_obsm_key, str)
             else covariates_obsm_key
-        )
-        gp_n_inducing = (
-            {k: gp_n_inducing for k in self.group_names} if isinstance(gp_n_inducing, int) else gp_n_inducing
         )
         self.nonnegative_weights = (
             {k: nonnegative_weights for k in self.view_names}
@@ -518,10 +521,6 @@ class CORE(PyroModule):
             plot_overview(self.data)
 
         self._setup_annotations(n_factors, annotations, prior_penalty)
-        # GP inducing point locations
-        inducing_points = gp.setup_inducing_points(
-            factor_prior, self.covariates, gp_n_inducing, self.n_factors, device=self.device
-        )
         self._initialize_factors(init_factors, init_scale)
         n_samples_total = sum(self.n_samples.values())
         if batch_size is None or not (0 < batch_size <= n_samples_total):
@@ -530,10 +529,10 @@ class CORE(PyroModule):
         self._setup_svi(
             weight_prior,
             factor_prior,
+            gp_n_inducing,
             self.likelihoods,
             self.nonnegative_factors,
             self.nonnegative_weights,
-            inducing_points,
             batch_size,
             max_epochs,
             n_particles,
@@ -836,9 +835,9 @@ class CORE(PyroModule):
         factors = {}
         for group_name in self.group_names:
             if moment == "mean":
-                factors[group_name] = self.variational._get_loc_and_scale(f"z_{group_name}")[0].clone()
+                factors[group_name] = self.variational._get_loc_and_scale("z_", group_name)[0].clone()
             else:
-                factors[group_name] = self.variational._get_loc_and_scale(f"z_{group_name}")[1].clone()
+                factors[group_name] = self.variational._get_loc_and_scale("z_", group_name)[1].clone()
 
             if self.generative.factor_prior[group_name] == "SnS":
                 factors[group_name] *= self.variational._get_prob(f"s_z_{group_name}").clone()
@@ -896,15 +895,17 @@ class CORE(PyroModule):
 
         if x is not None:
             group_names = x.keys()
+            group_idxs = [i for i, g in self.gp_group_names if g in x]
 
         else:
-            x = {group_name: self.covariates[group_name] for group_name in self.group_names}
-            group_names = self.group_names
+            x = {group_name: self.covariates[group_name] for group_name in self.gp_group_names}
+            group_names = self.gp_group_names
+            group_idxs = range(self.gp_group_names)
 
         f = {}
-        for group_name in group_names:
-            gp = self.gps[group_name]
-            gp_dist = gp(x[group_name].to(self.device), prior=False)
+        for group_name, group_idx in zip(group_names, group_idxs, strict=False):
+            ccovar = torch.cat((torch.as_tensor(group_idx).expand(x[group_name].shape[0], 1), x[group_name]), dim=-1)
+            gp_dist = self.gp(ccovar.to(self.device), prior=False)
             gp_samples = gp_dist.sample(torch.Size([n_samples]))
             if moment == "mean":
                 f[group_name] = gp_samples.mean(axis=0).clone()

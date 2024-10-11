@@ -3,13 +3,11 @@
 import itertools
 import logging
 import math
-
 from typing import Optional
 
 import anndata as ad
 import mudata as mu
 import numpy as np
-
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +63,6 @@ class DataGenerator:
             Whether to generate data from a non-negative matrix factorization,
             by default False
         """
-
         self.n_samples = n_samples
         self.n_features = n_features
         self.n_views = len(self.n_features)
@@ -403,6 +400,7 @@ class DataGenerator:
                     swapped_indices = zip(
                         rng.choice(len(active_cell_indices), n_noisy_cells, replace=False),
                         rng.choice(len(inactive_cell_indices), n_noisy_cells, replace=False),
+                        strict=False,
                     )
 
                     for on_idx, off_idx in swapped_indices:
@@ -518,7 +516,7 @@ class DataGenerator:
             view_names.append(view_name)
 
         mdata = mu.MuData(ad_dict)
-        mdata.uns["likelihoods"] = dict(zip(view_names, self.likelihoods))
+        mdata.uns["likelihoods"] = dict(zip(view_names, self.likelihoods, strict=False))
         mdata.uns["n_active_factors"] = self.n_active_factors
         if self.x is not None:
             mdata.obsm["x"] = self.x

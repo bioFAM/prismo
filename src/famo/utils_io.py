@@ -1,8 +1,9 @@
+import io
 from pathlib import Path
+
 import dill as pickle
 import pyro
 import torch
-import io
 
 
 class CPUUnpickler(pickle.Unpickler):

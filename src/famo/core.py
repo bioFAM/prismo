@@ -9,7 +9,7 @@ import pandas as pd
 import pyro
 import scipy.stats as stats
 import torch
-from addict import Dict
+from dtw import dtw
 from mudata import MuData
 from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.nn import PyroModule
@@ -26,7 +26,6 @@ from famo.utils_io import save_model
 from famo.utils_training import EarlyStopper
 
 logger = logging.getLogger(__name__)
-
 
 class CORE(PyroModule):
     def __init__(self, device):
@@ -70,6 +69,10 @@ class CORE(PyroModule):
         self.generative = None
         self.variational = None
         self.gp = None
+        self.gp_warp_groups = None
+        self._orig_covariates = None
+        self._gp_warp_groups_order = None
+        self._gp_warp_internval = None
         self._optimizer = None
         self._svi = None
 
@@ -218,7 +221,25 @@ class CORE(PyroModule):
     ):
         self.gp_group_names = tuple(g for g in self.group_names if factor_prior[g] == "GP")
         if len(self.gp_group_names):
-            self.gp = gp.GP(
+            if len(self.gp_warp_groups) > 1:
+                if not set(self.gp_warp_groups) <= set(self.gp_group_names):
+                    raise ValueError(
+                        "The set of groups with dynamic time warping must be a subset of groups with a GP factor prior."
+                    )
+                self._gp_warp_groups_order = {}
+                for g in self.gp_warp_groups:
+                    ccov = self.covariates[g].squeeze()
+                    if ccov.ndim > 1:
+                        raise ValueError(
+                            f"Warping can only be performed with 1D covariates, but the covariate for group {g} has {ccov.ndim} dimensions."
+                        )
+                    self._gp_warp_groups_order[g] = ccov.argsort()
+                self._orig_covariates = {g: c.clone() for g, c in self.covariates.items()}
+            elif len(self.gp_warp_groups) == 1:
+                logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
+                self.gp_warp_groups = []
+
+            self.gp = gp.SparseGP(
                 gp_n_inducing,
                 (self.covariates[g] for g in self.gp_group_names),
                 self.n_factors,
@@ -284,7 +305,7 @@ class CORE(PyroModule):
             save_model(self, save_path)
 
     def _initialize_factors(self, init_factors="random", init_scale=1.0, impute_missings=True):
-        init_tensor = Dict()
+        init_tensor = defaultdict(dict)
         logger.info(f"Initializing factors using `{init_factors}` method...")
 
         # Initialize factors
@@ -347,11 +368,11 @@ class CORE(PyroModule):
         group_by: str | list[str] | dict[str] | dict[list[str]] | None = None,
         n_factors: int = None,
         annotations=None,
-        weight_prior: dict[str, str] | str = None,
-        factor_prior: dict[str, str] | str = None,
-        likelihoods: dict[str, str] | str = None,
-        covariates_obs_key: dict[str, str] | str = None,
-        covariates_obsm_key: dict[str, str] | str = None,
+        weight_prior: dict[str, str] | str | None = None,
+        factor_prior: dict[str, str] | str | None = None,
+        likelihoods: dict[str, str] | str | None = None,
+        covariates_obs_key: dict[str, str] | str | None = None,
+        covariates_obsm_key: dict[str, str] | str | None = None,
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
         prior_penalty: float = 0.01,
@@ -366,11 +387,13 @@ class CORE(PyroModule):
         use_obs: str = "union",
         use_var: str = "union",
         save: bool = True,
-        save_path: str = None,
+        save_path: str | None = None,
         init_factors: str = "random",
         init_scale: float = 0.1,
         gp_n_inducing: int = 100,
-        seed: int = None,
+        gp_warp_groups: list[str] | None = None,
+        gp_warp_interval: int = 20,
+        seed: int | None = None,
         **kwargs,
     ):
         """
@@ -378,7 +401,7 @@ class CORE(PyroModule):
 
         Parameters
         ----------
-        data : MuData | dict[str, ad.AnnData] | dict[str, MuData] | dict[str, dict[str, ad.AnnData]]
+        data
             can be any of:
             - MuData object
             - dict with view names as keys and AnnData objects as values
@@ -386,61 +409,66 @@ class CORE(PyroModule):
             - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
             - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
             - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
-        group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
+        group_by:
+            Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
             - String or list of strings. This will be applied to the MuData object or to all AnnData objects
             - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
               is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
               in the corresponding `group_by` element.
-        n_factors : int
+        n_factors
             Number of latent factors.
-        annotations : dict
+        annotations
             Dictionary with weight annotations for informed views.
-        weight_prior : dict | str
+        weight_prior
             Weight priors for each view (if dict) or for all views (if str). Normal if None.
-        factor_prior : dict | str
+        factor_prior
             Factor priors for each group (if dict) or for all groups (if str). Normal if None.
-        likelihoods : dict | str
+        likelihoods
             Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None.
-        covariates_obs_key : dict | str
+        covariates_obs_key
             Key of .obs attribute of each AnnData object that contains covariate values.
-        covariates_obsm_key : dict | str
+        covariates_obsm_key
             Key of .obsm attribute of each AnnData object that contains covariate values.
-        nonnegative_weights : dict | bool
+        nonnegative_weights
             Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
-        nonnegative_factors : dict | bool
+        nonnegative_factors
             Non-negativity constraints for factors for each group (if dict) or for all groups (if bool).
-        prior_penalty : float
+        prior_penalty
             Prior penalty for annotations. #TODO: add more detail
-        batch_size : int
+        batch_size
             Batch size.
-        max_epochs : int
+        max_epochs
             Maximum number of training epochs.
-        n_particles : int
+        n_particles
             Number of particles for ELBO estimation.
-        lr : float
+        lr
             Learning rate.
-        early_stopper_patience : int
+        early_stopper_patience
             Number of steps without relevant improvement to stop training.
-        print_every : int
-            print loss every n steps.
-        plot_data_overview: bool
+        print_every
+            Print loss every n steps.
+        plot_data_overview
             Plot data overview.
-        scale_per_group : bool
+        scale_per_group
             Scale Normal likelihood data per group, otherwise across all groups.
-        use_obs : str
+        use_obs
             How to align observations across views. One of 'union', 'intersection'.
-        use_var : str
+        use_var
             How to align variables across groups. One of 'union', 'intersection'.
-        save : bool
+        save
             Save model.
-        save_path : str
+        save_path
             Path to save model.
-        init_factors : str
+        init_factors
             Initialization method for factors.
-        init_scale: float
+        init_scale
             Initialization scale of Normal distribution for factors.
-        gp_n_inducing : int
+        gp_n_inducing
             Number of inducing points.
+        gp_warp_groups
+            List of groups to apply dynamic time warping to.
+        gp_warp_interval
+            Apply dynamic time warping every `gp_warp_interval` epochs.
         seed : int
             Random seed.
         **kwargs
@@ -499,6 +527,8 @@ class CORE(PyroModule):
         # obtain observations DataFrame and covariates
         self.metadata = utils_data.extract_obs(self.data)
         self.covariates = utils_data.extract_covariate(self.data, covariates_obs_key, covariates_obsm_key)
+        self.gp_warp_groups = gp_warp_groups if gp_warp_groups is not None else []
+        self._gp_warp_interval = gp_warp_interval
 
         # extract feature and samples names / numbers from data
         self.feature_names = {k: self.data[list(self.data.keys())[0]][k].var_names.tolist() for k in self.view_names}
@@ -619,6 +649,8 @@ class CORE(PyroModule):
         try:
             for i in range(max_epochs):
                 loss = step_fn()
+                if len(self.gp_warp_groups) and not i % self._gp_warp_interval:
+                    self._warp_covariates()
                 self.train_loss_elbo.append(loss)
 
                 if i % print_every == 0:
@@ -634,6 +666,24 @@ class CORE(PyroModule):
         self._is_trained = True
 
         return self._post_fit(save, save_path, self.covariates)
+
+    def _warp_covariates(self):
+        factormeans = self._get_factors_from_guide("mean")
+        refgroup = self.gp_warp_groups[0]
+        reffactormeans = factormeans[refgroup].mean(axis=0)
+        refidx = self._gp_warp_groups_order[refgroup]
+        for g in self.gp_warp_groups[1:]:
+            idx = self._gp_warp_groups_order[g]
+            alignment = dtw(
+                reffactormeans[refidx],
+                factormeans[g][:, idx].mean(axis=0),
+                open_begin=True,
+                open_end=True,
+                step_pattern="asymmetric",
+            )
+            self.covariates[g] = self._orig_covariates[g].clone()
+            self.covariates[g][idx[alignment.index2], 0] = self._orig_covariates[refgroup][refidx[alignment.index1], 0]
+        self.gp.update_inducing_points(self.covariates.values())
 
     @staticmethod
     def _Vprime(mu, nu2, nu1):
@@ -772,6 +822,7 @@ class CORE(PyroModule):
 
     def get_factors(self, return_type="pandas", moment="mean"):
         """Get all factor matrices, z_x."""
+        self._check_if_trained()
         factors = {
             group_name: pd.DataFrame(
                 group_factors[self.factor_order, :].T, index=self.sample_names[group_name], columns=self.factor_names
@@ -789,6 +840,7 @@ class CORE(PyroModule):
 
     def get_weights(self, return_type="pandas", moment="mean"):
         """Get all weight matrices, w_x."""
+        self._check_if_trained()
         weights = {
             view_name: pd.DataFrame(
                 view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
@@ -800,6 +852,7 @@ class CORE(PyroModule):
 
     def get_dispersion(self, return_type="pandas", moment="mean"):
         """Get all dispersion vectors, dispersion_x."""
+        self._check_if_trained()
         dispersion = {
             view_name: pd.Series(view_dispersion, index=self.feature_names[view_name])
             for view_name, view_dispersion in self._get_dispersion_from_guide(moment).items()
@@ -828,7 +881,6 @@ class CORE(PyroModule):
     @torch.no_grad()
     def _get_factors_from_guide(self, moment: str = "mean"):
         """Get all factor matrices, z_x."""
-        self._check_if_trained()
         if moment not in ["mean", "std"]:
             raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
 
@@ -850,7 +902,6 @@ class CORE(PyroModule):
     @torch.no_grad()
     def _get_weights_from_guide(self, moment: str = "mean"):
         """Get all weight matrices, w_x."""
-        self._check_if_trained()
         if moment not in ["mean", "std"]:
             raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
 
@@ -872,7 +923,6 @@ class CORE(PyroModule):
     @torch.no_grad()
     def _get_dispersion_from_guide(self, moment: str = "mean"):
         """Get all dispersion vectors, dispersion_x."""
-        self._check_if_trained()
         if moment not in ["mean", "std"]:
             raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
 
@@ -889,7 +939,6 @@ class CORE(PyroModule):
     @torch.no_grad()
     def _get_gps_from_guide(self, moment: str = "mean", x: dict[str, torch.Tensor] = None, n_samples: int = 100):
         """Get all latent functions."""
-        self._check_if_trained()
         if moment not in ["mean", "std"]:
             raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
 

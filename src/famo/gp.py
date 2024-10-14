@@ -69,16 +69,19 @@ class GP(ApproximateGP):
         rank
             Rank of the group correlation kernel.
         """
-        inducing_points = setup_inducing_points(covariates, n_inducing, n_factors)
+        covariates = tuple(covariates)
+        self._inducing_points_idx = get_inducing_points_idx(covariates, n_inducing, n_factors)
+        self._n_inducing = n_inducing
+
+        inducing_points = setup_inducing_points(covariates, self._inducing_points_idx, n_inducing)
         if inducing_points.shape[-3] != n_factors:
             raise ValueError("The first dimension of inducing_points must be n_factors.")
 
-        num_inducing_points = inducing_points.shape[-2]
         n_dims = inducing_points.shape[-1]
         batch_shape = [n_factors]
         device = inducing_points.device
 
-        variational_distribution = CholeskyVariationalDistribution(num_inducing_points, batch_shape)
+        variational_distribution = CholeskyVariationalDistribution(n_inducing, batch_shape)
 
         variational_strategy = VariationalStrategy(
             self, inducing_points, variational_distribution, learn_inducing_locations=False
@@ -103,29 +106,48 @@ class GP(ApproximateGP):
         covar = self.covar_module(x)
         return MultivariateNormal(mean, covar)
 
+    def update_inducing_points(self, covariates):
+        setup_inducing_points(
+            covariates, self._inducing_points_idx, self._n_inducing, out=self.variational_strategy.inducing_points
+        )
 
-def setup_inducing_points(covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int):
+
+def get_inducing_points_idx(covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int):
+    n = [0] + [c.shape[0] for c in covariates]
+    totaln = sum(n)
+    offsets = torch.cumsum(torch.as_tensor(n), 0)
+    idx = tuple(torch.randint(0, totaln, (n_inducing,)).sort().values for _ in range(n_factors))
+    return tuple(
+        tuple(cidx[(s <= cidx) & (cidx < e)] - s for s, e in zip(offsets[:-1], offsets[1:], strict=False))
+        for cidx in idx
+    )
+
+
+def setup_inducing_points(covariates: Iterable[torch.Tensor], idx, n_inducing, *, out=None):
     """Randomly initialize inducing points from the covariates.
 
     Parameters
     ----------
     covariates
         tensors of shape (n_samples, n_dims).
+    idx
+        output of get_inducing_points_idx
     n_inducing
         Number of inducing points.
-    n_factors
-        Number of factors.
     """
     if covariates is None:
         return None
 
     covariates = tuple(covariates)
-    group_idx = torch.cat(tuple(torch.as_tensor(i).expand(c.shape[0]) for i, c in enumerate(covariates)), dim=0)
-    covariates = torch.cat(covariates, dim=0)
+    group_idx = tuple(torch.as_tensor(i) for i in range(len(covariates)))
 
-    inducing_points = torch.zeros((n_factors, n_inducing, 1 + covariates.shape[-1]))
-    for factor in range(n_factors):
-        idx = torch.randint(0, covariates.shape[-2], (n_inducing,))
-        inducing_points[factor, :, 1:] = covariates[idx]
-        inducing_points[factor, :, 0] = group_idx[idx]
-    return inducing_points
+    if out is None:
+        out = torch.empty((len(idx), n_inducing, 1 + covariates[0].shape[-1]))
+    for factor, factoridx in enumerate(idx):
+        offset = 0
+        for cov, cidx, gidx in zip(covariates, factoridx, group_idx, strict=False):
+            noffset = offset + cidx.shape[0]
+            out[factor, offset:noffset, 1:] = cov[cidx]
+            out[factor, offset:noffset, 0] = gidx
+            offset = noffset
+    return out

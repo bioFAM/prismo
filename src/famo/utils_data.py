@@ -1,7 +1,8 @@
 import logging
+import warnings
 from collections import defaultdict
 from functools import reduce
-import warnings
+
 import numpy as np
 import pandas as pd
 import torch
@@ -294,7 +295,7 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
             if likelihoods[k_views] in ["Normal", "Bernoulli", "GammaPoisson"]:
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=RuntimeWarning)
-                    # In some views all values of a sample might be nan, so we need to ignore the warning 
+                    # In some views all values of a sample might be nan, so we need to ignore the warning
                     means[k_groups][k_views] = np.nanmean(v_views.X, axis=0 if how == "feature" else 1)
 
             if likelihoods[k_views] == "BetaBinomial":

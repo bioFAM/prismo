@@ -1,7 +1,7 @@
+import logging
 import time
 from collections import defaultdict
 from functools import reduce
-import logging
 
 import anndata as ad
 import numpy as np
@@ -692,7 +692,9 @@ class CORE(PyroModule):
     def _r2(self, y_true, factors, weights, view_name):
         r2_full = self._r2_impl(y_true, factors, weights, view_name)
         if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
-            logger.info(f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs.")
+            logger.info(
+                f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
+            )
             return [0.0] * factors.shape[0]
 
         r2s = []

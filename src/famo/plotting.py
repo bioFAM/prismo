@@ -52,9 +52,7 @@ def plot_overview(data):
             color=alt.Color("missing:N", scale=alt.Scale(range=["#214D83", "#8AB6D4"])),
             facet=alt.Facet("group:N", columns=3, title=None),
         ).properties(width=800, title="Missing Data Overview").configure_view(
-            strokeWidth=2,
-            strokeOpacity=1,
-            stroke='black'
+            strokeWidth=2, strokeOpacity=1, stroke="black"
         ).display()
 
 
@@ -272,8 +270,6 @@ def plot_variance_explained(model, groupby="group"):
 def plot_factor(model, factor=1):
     """Plot factor values (y-axis) for each sample (x-axis)."""
     model._check_if_trained()
-    if isinstance(factor, int):
-        factor = model.factor_names[factor - 1]
 
     # Create an empty list to hold all the charts
     charts = []
@@ -284,7 +280,8 @@ def plot_factor(model, factor=1):
         df = factors[group_name].to_df()
         df["id"] = df.index
         # Convert column names to strings
-        df.columns = df.columns.astype(str)
+        df.columns = [f"Factor {i}" for i in range(1, model.n_factors + 1)] + ["id"]
+        factor_name = f"Factor {factor}"
 
         # Create the scatter plot chart
         scatter_plot = (
@@ -292,9 +289,9 @@ def plot_factor(model, factor=1):
             .mark_point(filled=True)
             .encode(
                 x=alt.X("id:O", title="", axis=alt.Axis(labels=False)),
-                y=alt.Y(f"{factor}:Q", title=f"{factor}"),
-                color=alt.Color(f"{factor}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
-                tooltip=["id", f"{factor}"],
+                y=alt.Y(f"{factor_name}:Q", title=f"{factor_name}"),
+                color=alt.Color(f"{factor_name}:Q", scale=alt.Scale(scheme="redblue", domainMid=0)),
+                tooltip=["id", f"{factor_name}"],
             )
             .properties(width=600, height=300)
             .interactive()

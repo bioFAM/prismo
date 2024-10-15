@@ -49,9 +49,13 @@ def plot_overview(data):
         alt.Chart(missings).mark_rect().encode(
             x=alt.X("obs_name", axis=alt.Axis(labels=False, title=None)),
             y=alt.Y("view", axis=alt.Axis(title=None)),
-            color=alt.Color("missing:N", scale=alt.Scale(range=["#049DBF", "#023373"])),
+            color=alt.Color("missing:N", scale=alt.Scale(range=["#214D83", "#8AB6D4"])),
             facet=alt.Facet("group:N", columns=3, title=None),
-        ).properties(width=800, title="Missing Data Overview").display()
+        ).properties(width=800, title="Missing Data Overview").configure_view(
+            strokeWidth=2,
+            strokeOpacity=1,
+            stroke='black'
+        ).display()
 
 
 def _lines(ax, positions, ymin, ymax, horizontal=False, **kwargs):
@@ -84,7 +88,7 @@ def plot_training_curve(model, figsize=(600, 400)):
 
     train_loss_elbo = model._cache["train_loss_elbo"]
     df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
-    alt.Chart(df).mark_line().encode(alt.Y("-ELBO").scale(zero=False), x="Epoch").properties(
+    alt.Chart(df).mark_line(color="#214D83").encode(alt.Y("-ELBO").scale(zero=False), x="Epoch").properties(
         title="Training Curve", width=figsize[0], height=figsize[1]
     ).display()
 
@@ -149,6 +153,12 @@ def plot_factor_correlation(model):
         corr_df["index"] = model.factor_names
         corr_df = corr_df.melt("index")
         corr_df.columns = ["Factor1", "Factor2", "Correlation"]
+
+        # Sort by Factor 1, and make sure "Factor 10" is behind "Factor 2"
+        # Extract factor id
+        corr_df["Factor1_int"] = corr_df["Factor1"].str.extract(r"(\d+)").astype(int)
+        corr_df["Factor2_int"] = corr_df["Factor2"].str.extract(r"(\d+)").astype(int)
+        corr_df = corr_df.sort_values(["Factor1_int", "Factor2_int"])
 
         # Create the heatmap chart
         heatmap = (

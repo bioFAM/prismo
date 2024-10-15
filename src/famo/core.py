@@ -1,6 +1,7 @@
 import time
 from collections import defaultdict
 from functools import reduce
+import logging
 
 import anndata as ad
 import numpy as np
@@ -24,8 +25,7 @@ from famo.plotting import plot_overview
 from famo.utils_io import save_model
 from famo.utils_training import EarlyStopper
 
-# Set 16bit cuda float as default
-# torch.set_default_dtype(torch.float32)
+logger = logging.getLogger(__name__)
 
 
 class CORE(PyroModule):
@@ -111,15 +111,15 @@ class CORE(PyroModule):
             data_concatenated[k_views] = ad.concat(data_concatenated[k_views], axis=0)
 
         if likelihoods is None:
-            print("- No likelihoods provided. Inferring likelihoods from data.")
+            logger.info("- No likelihoods provided. Inferring likelihoods from data.")
             likelihoods = utils_data.infer_likelihoods(data_concatenated)
 
         elif isinstance(likelihoods, dict):
-            print("- Checking compatibility of provided likelihoods with data.")
+            logger.info("- Checking compatibility of provided likelihoods with data.")
             utils_data.validate_likelihoods(data_concatenated, likelihoods)
 
         elif isinstance(likelihoods, str):
-            print("- Using provided likelihood for all views.")
+            logger.info("- Using provided likelihood for all views.")
             likelihoods = {k: likelihoods for k in view_names}
             # Still validate likelihoods
             utils_data.validate_likelihoods(data_concatenated, likelihoods)
@@ -128,7 +128,7 @@ class CORE(PyroModule):
             raise ValueError("likelihoods must be a dictionary or string.")
 
         for k, v in likelihoods.items():
-            print(f"  - {k}: {v}")
+            logger.info(f"  - {k}: {v}")
 
         return likelihoods
 
@@ -243,7 +243,7 @@ class CORE(PyroModule):
         n_iterations = int(max_epochs * (total_n_samples // batch_size))
         gamma = 0.1
         lrd = gamma ** (1 / n_iterations)
-        print(f"Decaying learning rate over {n_iterations} iterations.")
+        logger.info(f"Decaying learning rate over {n_iterations} iterations.")
         self._optimizer = ClippedAdam({"lr": lr, "lrd": lrd})
 
         self._svi = SVI(
@@ -274,12 +274,12 @@ class CORE(PyroModule):
         if save:
             if save_path is None:
                 save_path = f"model_{time.strftime('%Y%m%d_%H%M%S')}"
-            print("Saving results...")
+            logger.info("Saving results...")
             save_model(self, save_path)
 
     def _initialize_factors(self, init_factors="random", init_scale=1.0, impute_missings=True):
         init_tensor = Dict()
-        print(f"Initializing factors using `{init_factors}` method...")
+        logger.info(f"Initializing factors using `{init_factors}` method...")
 
         # Initialize factors
         if init_factors == "random":
@@ -416,7 +416,7 @@ class CORE(PyroModule):
         early_stopper_patience : int
             Number of steps without relevant improvement to stop training.
         print_every : int
-            Print loss every n steps.
+            print loss every n steps.
         plot_data_overview: bool
             Plot data overview.
         scale_per_group : bool
@@ -597,7 +597,7 @@ class CORE(PyroModule):
             try:
                 seed = int(seed)
             except ValueError:
-                print(f"Could not convert `{seed}` to integer.")
+                logger.info(f"Could not convert `{seed}` to integer.")
                 seed = None
 
         if seed is None:
@@ -605,10 +605,10 @@ class CORE(PyroModule):
 
         self.seed = seed
 
-        print(f"Setting training seed to `{seed}`.")
+        logger.info(f"Setting training seed to `{seed}`.")
         pyro.set_rng_seed(seed)
         # clean start
-        print("Cleaning parameter store.")
+        logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)
         pyro.clear_param_store()
 
@@ -623,14 +623,14 @@ class CORE(PyroModule):
                 self.train_loss_elbo.append(loss)
 
                 if i % print_every == 0:
-                    print(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
+                    logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
                 if earlystopper.step(loss):
-                    print(f"Training finished after {i} steps.")
+                    logger.info(f"Training finished after {i} steps.")
                     break
 
         except KeyboardInterrupt:
-            print("Keyboard interrupt, stopping training and saving progress...")
+            logger.info("Keyboard interrupt, stopping training and saving progress...")
 
         self._is_trained = True
 
@@ -692,7 +692,7 @@ class CORE(PyroModule):
     def _r2(self, y_true, factors, weights, view_name):
         r2_full = self._r2_impl(y_true, factors, weights, view_name)
         if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
-            print(f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs.")
+            logger.info(f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs.")
             return [0.0] * factors.shape[0]
 
         r2s = []
@@ -746,7 +746,7 @@ class CORE(PyroModule):
             sorted_r2_means = df_sum.mean(axis=1).sort_values(ascending=False)
             factor_order = np.array(sorted_r2_means.index)
         except NameError:
-            print("Sorting factors failed. Using default order.")
+            logger.info("Sorting factors failed. Using default order.")
             factor_order = np.array(list(range(self.n_factors)))
 
         for group_name in self.data.keys():
@@ -912,12 +912,12 @@ class CORE(PyroModule):
         return {group_name: group_f.cpu().numpy().squeeze() for group_name, group_f in f.items()}
 
     def _setup_device(self, device):
-        print("Setting up device...")
+        logger.info("Setting up device...")
         cuda_available = torch.cuda.is_available()
 
         device = str(device).lower()
         if "cuda" in device and not cuda_available:
-            print(f"- `{device}` not available...")
+            logger.info(f"- `{device}` not available...")
             device = "cpu"
 
         if "cuda" in device and cuda_available:
@@ -926,16 +926,16 @@ class CORE(PyroModule):
                 # Check if device_id is valid
                 device_id = int(device.split(":")[1])
                 if device_id >= torch.cuda.device_count():
-                    print(
+                    logger.info(
                         f"- Device id `{device_id}` not available. Using default device: {torch.cuda.current_device()}"
                     )
                     device = f"cuda:{torch.cuda.current_device()}"
             else:
-                print(f"- No device id given. Using default device: {torch.cuda.current_device()}")
+                logger.info(f"- No device id given. Using default device: {torch.cuda.current_device()}")
                 device = f"cuda:{torch.cuda.current_device()}"
 
             # Set all cuda operations to specific cuda device
             torch.cuda.set_device(device)
 
-        print(f"- Running all computations on `{device}`")
+        logger.info(f"- Running all computations on `{device}`")
         return torch.device(device)

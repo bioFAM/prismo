@@ -279,7 +279,6 @@ def plot_factor(model, factor=1):
     for group_name in model.group_names:
         df = factors[group_name].to_df()
         df["id"] = df.index
-        # Convert column names to strings
         df.columns = [f"Factor {i}" for i in range(1, model.n_factors + 1)] + ["id"]
         factor_name = f"Factor {factor}"
 
@@ -644,7 +643,7 @@ def plot_top_weights(model, views: list[str] = None, n_features: int = 10, facto
                 color=alt.Color("value:Q", scale=alt.Scale(scheme="redblue", reverse=True), title="Weight"),
                 size=alt.Size("value_abs:Q", title="Abs. Weight"),
             )
-            .properties(width=800, height=n_features * 15, title=view)
+            .properties(width=len(factors) * 50, height=n_features * 25, title=view)
         )
 
         charts.append(heatmap)
@@ -655,9 +654,9 @@ def plot_top_weights(model, views: list[str] = None, n_features: int = 10, facto
 
 def plot_weights(model, view, factor=1, top_n_features=10):
     if isinstance(factor, int):
-        factor = model.factor_names[factor - 1]
+        factor_sorted = model.factor_names[factor - 1]
 
-    weights = model.get_weights(return_type="pandas")[view].loc[factor, :]
+    weights = model.get_weights(return_type="pandas")[view].loc[factor_sorted, :]
     df_plot = pd.DataFrame({"weight": weights, "feature": weights.index})
     df_plot = df_plot.sort_values("weight", ascending=False)
     df_plot["rank"] = len(df_plot) - np.arange(len(df_plot))

@@ -11,8 +11,7 @@ def load_CLL() -> MuData:
 
     for ome in ["drugs", "methylation", "mrna", "mutations"]:
         modality = pd.read_csv(filepath_or_buffer=f"./data/cll_{ome}.csv", sep=",", index_col=0, encoding="utf_8").T
-
-        modalities[ome] = AnnData(X=modality, dtype="float32")
+        modalities[ome] = AnnData(X=modality)
 
     # Replace with gene ID with gene name
     gene_ids = pd.read_csv("./data/cll_gene_ids.csv", index_col=0)

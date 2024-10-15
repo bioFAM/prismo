@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections import defaultdict
 from functools import reduce
 
@@ -292,7 +293,10 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
         means[k_groups] = {}
         for k_views, v_views in v_groups.items():
             if likelihoods[k_views] in ["Normal", "Bernoulli", "GammaPoisson"]:
-                means[k_groups][k_views] = np.nanmean(v_views.X, axis=0 if how == "feature" else 1)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    # In some views all values of a sample might be nan, so we need to ignore the warning
+                    means[k_groups][k_views] = np.nanmean(v_views.X, axis=0 if how == "feature" else 1)
 
             if likelihoods[k_views] == "BetaBinomial":
                 # create DataFrame with indices of first and second occurence (columns) of every feature (rows)

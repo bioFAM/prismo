@@ -1,6 +1,7 @@
 import os
 
 import anndata as ad
+import numpy as np
 import scanpy as sc
 
 
@@ -25,6 +26,16 @@ def load_mefisto_visium():
     sc.pp.log1p(adata)
     sc.pp.highly_variable_genes(adata, flavor="seurat", n_top_genes=2000)
     adata = adata[:, adata.var.highly_variable]
+
+    # rescale coordinates
+    coordinates = adata.obsm["spatial"].astype("float32")
+    coordinates -= np.mean(coordinates, axis=0)
+    coordinates /= np.ptp(coordinates, axis=0)
+    adata.obsm["spatial"] = coordinates
+
+    # sort obs and var names
+    adata = adata[adata.obs_names.argsort(), :]
+    adata = adata[:, adata.var_names.argsort()]
 
     adata.write_h5ad("data/mefisto_visium.h5ad")
 

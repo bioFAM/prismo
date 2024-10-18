@@ -14,7 +14,7 @@ from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.nn import PyroModule
 from pyro.optim import ClippedAdam
 from scipy.special import expit
-from sklearn.decomposition import PCA
+from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
@@ -210,6 +210,8 @@ class CORE(PyroModule):
         nonnegative_factors,
         nonnegative_weights,
         inducing_points,
+        kernel,
+        matern_kernel_nu,
         batch_size,
         max_epochs,
         n_particles,
@@ -218,7 +220,9 @@ class CORE(PyroModule):
         self.gps = {}
         for group_name in self.group_names:
             if factor_prior[group_name] == "GP":
-                self.gps[group_name] = gp.GP(inducing_points[group_name], self.n_factors).to(self.device)
+                self.gps[group_name] = gp.GP(inducing_points[group_name], self.n_factors, kernel, matern_kernel_nu).to(
+                    self.device
+                )
 
         self.generative = Generative(
             n_samples=self.n_samples,
@@ -291,9 +295,12 @@ class CORE(PyroModule):
                 pca = PCA(n_components=self.n_factors, whiten=True)
                 pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.n_factors)).T)
                 init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T, device=self.device)
-        elif init_factors == "pca":
+        elif init_factors in ["pca", "nmf"]:
             for group_name in self.n_samples.keys():
-                pca = PCA(n_components=self.n_factors, whiten=True)
+                if init_factors == "pca":
+                    pca = PCA(n_components=self.n_factors, whiten=True)
+                elif init_factors == "nmf":
+                    nmf = NMF(n_components=self.n_factors, max_iter=1000)
                 # Combine all views
                 concat_data = torch.cat(
                     [
@@ -314,8 +321,12 @@ class CORE(PyroModule):
                         raise ValueError(
                             "Data has missing values. Please impute missings or set `impute_missings=True`."
                         )
-                pca.fit(concat_data)
-                init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data), device=self.device)
+                if init_factors == "pca":
+                    pca.fit(concat_data)
+                    init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data), device=self.device)
+                elif init_factors == "nmf":
+                    nmf.fit(concat_data)
+                    init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data), device=self.device)
 
         else:
             raise ValueError(
@@ -364,6 +375,8 @@ class CORE(PyroModule):
         init_factors: str = "random",
         init_scale: float = 0.1,
         gp_n_inducing: dict[str, int] | int = 100,
+        gp_kernel: str = "RBF",
+        gp_matern_kernel_nu: float = 2.5,
         seed: int = None,
         **kwargs,
     ):
@@ -534,6 +547,8 @@ class CORE(PyroModule):
             self.nonnegative_factors,
             self.nonnegative_weights,
             inducing_points,
+            gp_kernel,
+            gp_matern_kernel_nu,
             batch_size,
             max_epochs,
             n_particles,
@@ -806,11 +821,18 @@ class CORE(PyroModule):
 
         return self._get_component(dispersion, return_type)
 
-    def get_gps(self, return_type="pandas", moment="mean", x: dict[str, torch.Tensor] = None, n_samples: int = 100):
+    def get_gps(
+        self,
+        return_type="pandas",
+        moment="mean",
+        x: dict[str, torch.Tensor] = None,
+        n_samples: int = 100,
+        batch_size: int = None,
+    ):
         """Get all latent functions."""
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
-            for group_name, group_f in self._get_gps_from_guide(moment, x, n_samples).items()
+            for group_name, group_f in self._get_gps_from_guide(moment, x, n_samples, batch_size).items()
         }
 
         return self._get_component(gps, return_type)
@@ -886,9 +908,22 @@ class CORE(PyroModule):
         return {view_name: view_dispersion.cpu().numpy().squeeze() for view_name, view_dispersion in dispersion.items()}
 
     @torch.no_grad()
-    def _get_gps_from_guide(self, moment: str = "mean", x: dict[str, torch.Tensor] = None, n_samples: int = 100):
+    def _get_gps_from_guide(
+        self,
+        moment: str = "mean",
+        x: dict[str, torch.Tensor] = None,
+        n_samples: int = 100,
+        batch_size: dict[str, int] = None,
+    ):
         """Get all latent functions."""
         self._check_if_trained()
+
+        if batch_size is None:
+            batch_size = self.n_samples
+
+        if isinstance(batch_size, int):
+            batch_size = {group_name: batch_size for group_name in self.group_names}
+
         if moment not in ["mean", "std"]:
             raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
 
@@ -902,12 +937,19 @@ class CORE(PyroModule):
         f = {}
         for group_name in group_names:
             gp = self.gps[group_name]
-            gp_dist = gp(x[group_name].to(self.device), prior=False)
-            gp_samples = gp_dist.sample(torch.Size([n_samples]))
+            idx_list = [
+                range(i, min(i + batch_size[group_name], self.n_samples[group_name]))
+                for i in range(0, self.n_samples[group_name], batch_size[group_name])
+            ]
+            gp_samples = []
+            for idx in idx_list:
+                gp_dist = gp(x[group_name][idx].to(self.device), prior=False)
+                gp_samples.append(gp_dist.sample(torch.Size([n_samples])))
+            gp_samples = torch.cat(gp_samples, dim=-1)
             if moment == "mean":
-                f[group_name] = gp_samples.mean(axis=0).clone()
+                f[group_name] = gp_samples.mean(dim=0).clone()
             else:
-                f[group_name] = gp_samples.std(axis=0).clone()
+                f[group_name] = gp_samples.std(dim=0).clone()
 
         return {group_name: group_f.cpu().numpy().squeeze() for group_name, group_f in f.items()}
 

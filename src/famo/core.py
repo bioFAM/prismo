@@ -159,12 +159,18 @@ class SmoothOptions(_Options):
         kernel: Kernel function to use.
         warp_groups; List of groups to apply dynamic time warping to.
         warp_interval: Apply dynamic time warping every `warp_interval` epochs.
+        warp_open_begin: Perform open-ended alignment.
+        warp_open_end: Perform open-ended alignment.
+        warp_reference_group: Reference group to align the others to. Defaults to the first group of `warp_groups`.
     """
 
     n_inducing: int = 100
     kernel: Literal["RBF", "Matern"] = "RBF"
     warp_groups: list[str] = field(default_factory=list)
     warp_interval: int = 20
+    warp_open_begin: bool = True
+    warp_open_end: bool = True
+    warp_reference_group: str | None = None
 
 
 class CORE:
@@ -369,6 +375,9 @@ class CORE:
                         )
                     self._gp_warp_groups_order[g] = ccov.argsort()
                 self._orig_covariates = {g: c.clone() for g, c in self.covariates.items()}
+
+                if self.gp_opts.warp_reference_group is None:
+                    self.gp_opts.warp_reference_group = self.gp_opts.warp_groups[0]
             elif len(self.gp_opts.warp_groups) == 1:
                 logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
                 self.gp_opts.warp_groups = []
@@ -729,7 +738,7 @@ class CORE:
 
     def _warp_covariates(self):
         factormeans = self.variational.get_factors("mean")
-        refgroup = self.gp_opts.warp_groups[0]
+        refgroup = self.gp_opts.warp_reference_group
         reffactormeans = factormeans[refgroup].mean(axis=0)
         refidx = self._gp_warp_groups_order[refgroup]
         for g in self.gp_opts.warp_groups[1:]:
@@ -737,8 +746,8 @@ class CORE:
             alignment = dtw(
                 reffactormeans[refidx],
                 factormeans[g][:, idx].mean(axis=0),
-                open_begin=True,
-                open_end=True,
+                open_begin=self.gp_opts.warp_open_begin,
+                open_end=self.gp_opts.warp_open_end,
                 step_pattern="asymmetric",
             )
             self.covariates[g] = self._orig_covariates[g].clone()

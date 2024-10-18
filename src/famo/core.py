@@ -15,7 +15,7 @@ from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.nn import PyroModule
 from pyro.optim import ClippedAdam
 from scipy.special import expit
-from sklearn.decomposition import PCA
+from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
@@ -26,6 +26,7 @@ from famo.utils_io import save_model
 from famo.utils_training import EarlyStopper
 
 logger = logging.getLogger(__name__)
+
 
 class CORE(PyroModule):
     def __init__(self, device):
@@ -214,6 +215,7 @@ class CORE(PyroModule):
         likelihoods,
         nonnegative_factors,
         nonnegative_weights,
+        kernel,
         batch_size,
         max_epochs,
         n_particles,
@@ -239,11 +241,12 @@ class CORE(PyroModule):
                 logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
                 self.gp_warp_groups = []
 
-            self.gp = gp.SparseGP(
+            self.gp = gp.GP(
                 gp_n_inducing,
                 (self.covariates[g] for g in self.gp_group_names),
                 self.n_factors,
                 len(self.gp_group_names),
+                kernel,
             ).to(self.device)
 
         self.generative = Generative(
@@ -318,9 +321,12 @@ class CORE(PyroModule):
                 pca = PCA(n_components=self.n_factors, whiten=True)
                 pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.n_factors)).T)
                 init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T, device=self.device)
-        elif init_factors == "pca":
+        elif init_factors in ["pca", "nmf"]:
             for group_name in self.n_samples.keys():
-                pca = PCA(n_components=self.n_factors, whiten=True)
+                if init_factors == "pca":
+                    pca = PCA(n_components=self.n_factors, whiten=True)
+                elif init_factors == "nmf":
+                    nmf = NMF(n_components=self.n_factors, max_iter=1000)
                 # Combine all views
                 concat_data = torch.cat(
                     [
@@ -341,8 +347,12 @@ class CORE(PyroModule):
                         raise ValueError(
                             "Data has missing values. Please impute missings or set `impute_missings=True`."
                         )
-                pca.fit(concat_data)
-                init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data), device=self.device)
+                if init_factors == "pca":
+                    pca.fit(concat_data)
+                    init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data), device=self.device)
+                elif init_factors == "nmf":
+                    nmf.fit(concat_data)
+                    init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data), device=self.device)
 
         else:
             raise ValueError(
@@ -393,6 +403,7 @@ class CORE(PyroModule):
         gp_n_inducing: int = 100,
         gp_warp_groups: list[str] | None = None,
         gp_warp_interval: int = 20,
+        gp_kernel: str = "RBF",
         seed: int | None = None,
         **kwargs,
     ):
@@ -563,6 +574,7 @@ class CORE(PyroModule):
             self.likelihoods,
             self.nonnegative_factors,
             self.nonnegative_weights,
+            gp_kernel,
             batch_size,
             max_epochs,
             n_particles,
@@ -860,11 +872,18 @@ class CORE(PyroModule):
 
         return self._get_component(dispersion, return_type)
 
-    def get_gps(self, return_type="pandas", moment="mean", x: dict[str, torch.Tensor] = None, n_samples: int = 100):
+    def get_gps(
+        self,
+        return_type="pandas",
+        moment="mean",
+        x: dict[str, torch.Tensor] = None,
+        n_samples: int = 100,
+        batch_size: int = None,
+    ):
         """Get all latent functions."""
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
-            for group_name, group_f in self._get_gps_from_guide(moment, x, n_samples).items()
+            for group_name, group_f in self._get_gps_from_guide(moment, x, n_samples, batch_size).items()
         }
 
         return self._get_component(gps, return_type)
@@ -939,6 +958,8 @@ class CORE(PyroModule):
     @torch.no_grad()
     def _get_gps_from_guide(self, moment: str = "mean", x: dict[str, torch.Tensor] = None, n_samples: int = 100):
         """Get all latent functions."""
+        self._check_if_trained()
+
         if moment not in ["mean", "std"]:
             raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
 
@@ -957,9 +978,9 @@ class CORE(PyroModule):
             gp_dist = self.gp(ccovar.to(self.device), prior=False)
             gp_samples = gp_dist.sample(torch.Size([n_samples]))
             if moment == "mean":
-                f[group_name] = gp_samples.mean(axis=0).clone()
+                f[group_name] = gp_samples.mean(dim=0).clone()
             else:
-                f[group_name] = gp_samples.std(axis=0).clone()
+                f[group_name] = gp_samples.std(dim=0).clone()
 
         return {group_name: group_f.cpu().numpy().squeeze() for group_name, group_f in f.items()}
 

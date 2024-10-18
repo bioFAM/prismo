@@ -4,6 +4,9 @@ from typing import Union
 import numpy as np
 import pandas as pd
 import scipy
+import torch
+from scipy.optimize import linear_sum_assignment
+from scipy.stats import pearsonr
 from statsmodels.stats import multitest
 from tqdm import tqdm
 
@@ -156,3 +159,67 @@ def test(
         result["p_adj"] = prob_adj_df
 
     return result
+
+
+def match(
+    reference: torch.Tensor | np.ndarray, permutable: torch.Tensor | np.ndarray, dim: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Find the permutation and sign of permutable along one dimension to maximize correlation with reference.
+
+    This is useful for comparing ground truth factor scores / loadings with inferred values because the factor order
+    and sign is arbitrary.
+
+    Parameters
+    ----------
+    reference : torch.Tensor | np.ndarray
+        The reference tensor.
+    permutable : torch.Tensor | np.ndarray
+        The permutable tensor.
+    dim : int
+        The dimension along which to permute the tensor.
+
+    Returns
+    -------
+    permutation : torch.tensor
+        The permutation of permutable that maximizes the correlation with reference.
+    signs : torch.tensor
+        The sign of permutable that maximizes the correlation with reference.
+    """
+    # convert all tensors to numpy arrays
+    if isinstance(reference, torch.Tensor):
+        reference = reference.numpy()
+    if isinstance(permutable, torch.Tensor):
+        permutable = permutable.numpy()
+    if isinstance(reference, pd.DataFrame):
+        reference = reference.to_numpy()
+    if isinstance(permutable, pd.DataFrame):
+        permutable = permutable.to_numpy()
+
+    nonnegative = False
+    if np.all(reference >= 0) and np.all(permutable >= 0):
+        nonnegative = True
+
+    # move the assignment dimension to the end
+    reference = np.moveaxis(reference, dim, -1)
+    permutable = np.moveaxis(permutable, dim, -1)
+
+    # compute the correlation matrix between reference and permutable
+    correlation = np.zeros([reference.shape[-1], permutable.shape[-1]])
+    for i in range(reference.shape[-1]):
+        for j in range(permutable.shape[-1]):
+            correlation[i, j] = pearsonr(reference[..., i].flatten(), permutable[..., j].flatten())[0]
+    correlation = np.nan_to_num(correlation, 0)
+
+    if nonnegative:
+        correlation = np.clip(correlation, a_min=0.0, a_max=None)
+
+    # find the permutation that maximizes the correlation
+    row_ind, permutation = linear_sum_assignment(-1 * np.abs(correlation))
+    signs = np.ones_like(permutation)
+
+    # if correlation is negative, flip the sign of the corresponding column
+    for k in range(signs.shape[0]):
+        if correlation[row_ind, permutation][k] < 0:
+            signs[k] *= -1
+
+    return permutation, signs

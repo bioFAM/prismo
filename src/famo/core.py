@@ -287,8 +287,8 @@ class CORE(PyroModule):
 
     def _post_fit(self, save, save_path, covariates: dict[str, torch.Tensor] = None):
         # Sort factors by explained variance
-        weights = self._get_weights_from_guide()
-        factors = self._get_factors_from_guide()
+        weights = self.variational.get_weights()
+        factors = self.variational.get_factors()
         df_r2, self.factor_order = self._sort_factors(weights=weights, factors=factors)
 
         # Fill cache
@@ -680,7 +680,7 @@ class CORE(PyroModule):
         return self._post_fit(save, save_path, self.covariates)
 
     def _warp_covariates(self):
-        factormeans = self._get_factors_from_guide("mean")
+        factormeans = self.variational.get_factors("mean")
         refgroup = self.gp_warp_groups[0]
         reffactormeans = factormeans[refgroup].mean(axis=0)
         refidx = self._gp_warp_groups_order[refgroup]
@@ -719,7 +719,7 @@ class CORE(PyroModule):
             ss_tot = np.nansum(np.square(y_true))  # data is centered
         elif likelihood == "GammaPoisson":
             y_pred = np.logaddexp(0, y_pred)  # softplus
-            nu2 = self._get_dispersion_from_guide("mean")[view_name]
+            nu2 = self.variational.get_dispersion("mean")[view_name]
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, 1))
 
             truemean = np.nanmean(y_true)
@@ -733,7 +733,7 @@ class CORE(PyroModule):
             y_pred = expit(y_pred)
             obs_total = y_true[..., 1, :, :]
             y_true = y_true[..., 0, :, :]
-            dispersion = self._get_dispersion_from_guide("mean")[view_name]
+            dispersion = self.variational.get_dispersion("mean")[view_name]
             nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, nu1))
 
@@ -839,7 +839,7 @@ class CORE(PyroModule):
             group_name: pd.DataFrame(
                 group_factors[self.factor_order, :].T, index=self.sample_names[group_name], columns=self.factor_names
             )
-            for group_name, group_factors in self._get_factors_from_guide(moment).items()
+            for group_name, group_factors in self.variational.get_factors(moment).items()
         }
 
         factors = self._get_component(factors, return_type)
@@ -857,7 +857,7 @@ class CORE(PyroModule):
             view_name: pd.DataFrame(
                 view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
             )
-            for view_name, view_weights in self._get_weights_from_guide(moment).items()
+            for view_name, view_weights in self.variational.get_weights(moment).items()
         }
 
         return self._get_component(weights, return_type)
@@ -867,23 +867,20 @@ class CORE(PyroModule):
         self._check_if_trained()
         dispersion = {
             view_name: pd.Series(view_dispersion, index=self.feature_names[view_name])
-            for view_name, view_dispersion in self._get_dispersion_from_guide(moment).items()
+            for view_name, view_dispersion in self.variational.get_dispersion(moment).items()
         }
 
         return self._get_component(dispersion, return_type)
 
     def get_gps(
-        self,
-        return_type="pandas",
-        moment="mean",
-        x: dict[str, torch.Tensor] = None,
-        n_samples: int = 100,
-        batch_size: int = None,
+        self, return_type="pandas", moment="mean", x: dict[str, torch.Tensor] | None = None, n_samples: int = 100
     ):
         """Get all latent functions."""
+        if x is None:
+            x = self.covariates
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
-            for group_name, group_f in self._get_gps_from_guide(moment, x, n_samples, batch_size).items()
+            for group_name, group_f in self.variational.get_gps(x, moment, n_samples).items()
         }
 
         return self._get_component(gps, return_type)
@@ -896,93 +893,6 @@ class CORE(PyroModule):
         }
 
         return self._get_component(annotations, return_type)
-
-    @torch.no_grad()
-    def _get_factors_from_guide(self, moment: str = "mean"):
-        """Get all factor matrices, z_x."""
-        if moment not in ["mean", "std"]:
-            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
-
-        factors = {}
-        for group_name in self.group_names:
-            if moment == "mean":
-                factors[group_name] = self.variational._get_loc_and_scale("z_", group_name)[0].clone()
-            else:
-                factors[group_name] = self.variational._get_loc_and_scale("z_", group_name)[1].clone()
-
-            if self.generative.factor_prior[group_name] == "SnS":
-                factors[group_name] *= self.variational._get_prob(f"s_z_{group_name}").clone()
-
-            if self.generative.nonnegative_factors[group_name] and moment == "mean":
-                factors[group_name] = self.generative.pos_transform(factors[group_name])
-
-        return {group_name: group_factors.cpu().numpy().squeeze() for group_name, group_factors in factors.items()}
-
-    @torch.no_grad()
-    def _get_weights_from_guide(self, moment: str = "mean"):
-        """Get all weight matrices, w_x."""
-        if moment not in ["mean", "std"]:
-            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
-
-        weights = {}
-        for view_name in self.view_names:
-            if moment == "mean":
-                weights[view_name] = self.variational._get_loc_and_scale(f"w_{view_name}")[0].clone()
-            else:
-                weights[view_name] = self.variational._get_loc_and_scale(f"w_{view_name}")[1].clone()
-
-            if self.generative.weight_prior == "SnS":
-                weights[view_name] *= self.variational._get_prob(f"s_w_{view_name}").clone()
-
-            if self.generative.nonnegative_weights[view_name] and moment == "mean":
-                weights[view_name] = self.generative.pos_transform(weights[view_name])
-
-        return {view_name: view_weights.cpu().numpy().squeeze() for view_name, view_weights in weights.items()}
-
-    @torch.no_grad()
-    def _get_dispersion_from_guide(self, moment: str = "mean"):
-        """Get all dispersion vectors, dispersion_x."""
-        if moment not in ["mean", "std"]:
-            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
-
-        dispersion = {}
-        for view_name in self.view_names:
-            # TODO: use actual mean and std of LogNormal
-            if moment == "mean":
-                dispersion[view_name] = self.variational._get_loc_and_scale(f"dispersion_{view_name}")[0].clone()
-            else:
-                dispersion[view_name] = self.variational._get_loc_and_scale(f"dispersion_{view_name}")[1].clone()
-
-        return {view_name: view_dispersion.cpu().numpy().squeeze() for view_name, view_dispersion in dispersion.items()}
-
-    @torch.no_grad()
-    def _get_gps_from_guide(self, moment: str = "mean", x: dict[str, torch.Tensor] = None, n_samples: int = 100):
-        """Get all latent functions."""
-        self._check_if_trained()
-
-        if moment not in ["mean", "std"]:
-            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
-
-        if x is not None:
-            group_names = x.keys()
-            group_idxs = [i for i, g in self.gp_group_names if g in x]
-
-        else:
-            x = {group_name: self.covariates[group_name] for group_name in self.gp_group_names}
-            group_names = self.gp_group_names
-            group_idxs = range(self.gp_group_names)
-
-        f = {}
-        for group_name, group_idx in zip(group_names, group_idxs, strict=False):
-            ccovar = torch.cat((torch.as_tensor(group_idx).expand(x[group_name].shape[0], 1), x[group_name]), dim=-1)
-            gp_dist = self.gp(ccovar.to(self.device), prior=False)
-            gp_samples = gp_dist.sample(torch.Size([n_samples]))
-            if moment == "mean":
-                f[group_name] = gp_samples.mean(dim=0).clone()
-            else:
-                f[group_name] = gp_samples.std(dim=0).clone()
-
-        return {group_name: group_f.cpu().numpy().squeeze() for group_name, group_f in f.items()}
 
     def _setup_device(self, device):
         logger.info("Setting up device...")

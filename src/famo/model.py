@@ -225,7 +225,7 @@ class Generative(PyroModule):
         pyro.sample("gp.u", prior_distribution)
 
         # Draw samples from p(f)
-        f_dist = gp(torch.cat((kwargs.get("group_idx")[..., None], kwargs.get("covariates")), dim=-1), prior=True)
+        f_dist = gp(kwargs.get("group_idx")[..., None], kwargs.get("covariates"), prior=True)
         f_dist = dist.Normal(loc=f_dist.mean, scale=f_dist.stddev).to_event(len(f_dist.event_shape) - 1)
 
         with plates["gp_batch"]:
@@ -462,25 +462,35 @@ class Variational(PyroModule):
         self._setup_parameters()
         self._setup_distributions()
 
-        self._gp_group_offsets = {}
-        offset = 0
-        for g in self.generative.gp_groups.keys():
-            noffset = offset + self.generative.n_samples[g]
-            self._gp_group_offsets[g] = slice(offset, noffset)
-            offset = noffset
-
         self.sample_dict: dict[str, torch.Tensor] = {}
 
-    def _get_loc_and_scale(self, site_prefix: str, site_suffix: str = ""):
-        if site_prefix == "z_" and site_suffix in self.generative.gp_groups:
-            loc = deep_getattr(self.locs, "z_gp")
-            scale = deep_getattr(self.scales, "z_gp")
+    def _get_loc_and_scale(self, site_name):
+        site_loc = deep_getattr(self.locs, site_name)
+        site_scale = deep_getattr(self.scales, site_name)
+        return site_loc, site_scale
 
-            site_loc = loc[..., self._gp_group_offsets[site_suffix]]
-            site_scale = scale[..., self._gp_group_offsets[site_suffix]]
+    def _get_gp_loc_and_scale(self, group: str | None = None):
+        if not len(self.generative.gp_groups):
+            return {}, {}
+
+        loc = deep_getattr(self.locs, "z_gp")
+        scale = deep_getattr(self.scales, "z_gp")
+
+        gp_group_sizes = [self.generative.n_samples[g] for g in self.generative.gp_groups.keys()]
+        if group is not None:
+            gp_group_offsets = torch.as_tensor([0] + gp_group_sizes).cumsum()
+            group_idx = self.generative.gp_groups[group]
+            offset = slice(gp_group_offsets[group_idx], gp_group_offsets[group_idx + 1])
+            site_loc = offset
+            site_scale = scale[..., offset]
         else:
-            site_loc = deep_getattr(self.locs, site_prefix + site_suffix)
-            site_scale = deep_getattr(self.scales, site_prefix + site_suffix)
+            site_loc = dict(
+                zip(self.generative.gp_groups.keys(), torch.split(loc, gp_group_sizes, dim=-1), strict=False)
+            )
+            site_scale = dict(
+                zip(self.generative.gp_groups.keys(), torch.split(scale, gp_group_sizes, dim=-1), strict=False)
+            )
+
         return site_loc, site_scale
 
     def _get_prob(self, site_name: str):
@@ -901,7 +911,7 @@ class Variational(PyroModule):
 
         with plates["gp_batch"]:
             # Draw samples from q(f)
-            f_dist = gp(torch.cat((kwargs.get("group_idx")[..., None], kwargs.get("covariates")), dim=-1), prior=False)
+            f_dist = gp(kwargs.get("group_idx")[..., None], kwargs.get("covariates"), prior=False)
             f_dist = dist.Normal(f_dist.mean, f_dist.stddev).to_event(len(f_dist.event_shape) - 1)
             pyro.sample("gp.f", f_dist.mask(False))
 
@@ -1004,3 +1014,83 @@ class Variational(PyroModule):
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
 
         return self.sample_dict
+
+    @torch.no_grad()
+    def get_factors(self, moment: str = "mean"):
+        """Get all factor matrices, z_x."""
+        if moment not in ["mean", "std"]:
+            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
+
+        factors = {}
+        lsidx = 0 if moment == "mean" else 1
+
+        for group_name, fac in self._get_gp_loc_and_scale()[lsidx].items():
+            factors[group_name] = fac
+        for group_name in self.generative.group_names:
+            if group_name not in self.generative.gp_groups:
+                factors[group_name] = self._get_loc_and_scale(f"z_{group_name}")[lsidx]
+
+                if self.generative.factor_prior[group_name] == "SnS":
+                    factors[group_name] *= self._get_prob(f"s_z_{group_name}").clone()
+
+            if self.generative.nonnegative_factors[group_name] and moment == "mean":
+                factors[group_name] = self.generative.pos_transform(factors[group_name])
+            factors[group_name] = factors[group_name].cpu().numpy().squeeze()
+
+        return factors
+
+    @torch.no_grad()
+    def get_weights(self, moment: str = "mean"):
+        """Get all weight matrices, w_x."""
+        if moment not in ["mean", "std"]:
+            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
+
+        weights = {}
+        lsidx = 0 if moment == "mean" else 1
+        for view_name in self.generative.view_names:
+            weights[view_name] = self._get_loc_and_scale(f"w_{view_name}")[lsidx]
+
+            if self.generative.weight_prior == "SnS":
+                weights[view_name] *= self._get_prob(f"s_w_{view_name}").clone()
+
+            if self.generative.nonnegative_weights[view_name] and moment == "mean":
+                weights[view_name] = self.generative.pos_transform(weights[view_name])
+            weights[view_name] = weights[view_name].cpu().numpy().squeeze()
+
+        return weights
+
+    @torch.no_grad()
+    def get_dispersion(self, moment: str = "mean"):
+        """Get all dispersion vectors, dispersion_x."""
+        if moment not in ["mean", "std"]:
+            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
+
+        dispersion = {}
+        lsidx = 0 if moment == "mean" else 1
+        for view_name in self.view_names:
+            # TODO: use actual mean and std of LogNormal
+            dispersion[view_name] = self._get_loc_and_scale(f"dispersion_{view_name}")[lsidx].cpu().numpy().squeeze()
+
+        return dispersion
+
+    @torch.no_grad()
+    def get_gps(self, x: dict[str, torch.Tensor], moment: str = "mean", n_samples: int = 100):
+        """Get all latent functions."""
+        if moment not in ["mean", "std"]:
+            raise ValueError("Invalid argument for `moment`. Must be one of ['mean', 'std'].")
+
+        f = {}
+        for group_name, group_idx in self.generative.gp_groups.items():
+            gp_dist = self.gp(
+                torch.as_tensor(group_idx).expand(x[group_name].shape[0], 1).to(self.device),
+                x[group_name].to(self.device),
+                prior=False,
+            )
+            gp_samples = gp_dist.sample(torch.Size([n_samples]))
+            if moment == "mean":
+                gp = gp_samples.mean(axis=0)
+            else:
+                gp = gp_samples.std(axis=0)
+            f[group_name] = gp.cpu().numpy().squeeze()
+
+        return f

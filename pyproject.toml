@@ -20,28 +20,27 @@ urls.Source = "https://github.com/bioFAM/famo"
 urls.Home-page = "https://github.com/bioFAM/famo"
 dependencies = [
     "anndata",
-    # for debug logging (referenced from the issue template)
-    "session-info",
-    # Pacakge specific dependencies
-    "coverage",
-    "graphviz",
+    "mudata",
+    "scanpy",
+    "IPython",
     "pyro-ppl",
     "torch",
-    "numpy==1.26",
-    "rich",
-    "muon",
+    "numpy",
     "pandas",
+    "matplotlib",
     "dill",
     "tensordict",
-    "addict",
     "altair",
-    "ipython",
     "gpytorch",
+    "dtw-python",
+    # for debug logging (referenced from the issue template)
+    "session-info",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pre-commit",
+    "coverage",
     "twine>=4.0.2",
 ]
 doc = [

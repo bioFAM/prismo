@@ -1,11 +1,13 @@
-import pytest
 import os
 import shutil
-import torch
-import pyro
 from pathlib import Path
-from famo.utils_io import load_model
+
+import pyro
+import pytest
+import torch
+
 from famo.core import CORE
+from famo.utils_io import load_model
 
 
 @pytest.fixture
@@ -59,7 +61,7 @@ def test_save_load_model(setup_teardown):
     # Load the model and its parameters
     loaded_model = load_model(dir_path=temp_dir)
     # Check if the model's parameter is correctly loaded
-    for original_param, loaded_param in zip(prev_generator_params, loaded_model.parameters()):
+    for original_param, loaded_param in zip(prev_generator_params, loaded_model.parameters(), strict=False):
         assert torch.equal(original_param, loaded_param), "Model parameter mismatch"
 
     # Check if the param store parameter is correctly loaded

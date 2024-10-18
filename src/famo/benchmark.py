@@ -6,16 +6,16 @@ import numpy as np
 import pandas as pd
 import scarches as sca
 import Spectra
-
 from sklearn.decomposition import NMF
-from sklearn.metrics import PrecisionRecallDisplay
-from sklearn.metrics import average_precision_score
-from sklearn.metrics import root_mean_squared_error
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import (
+    PrecisionRecallDisplay,
+    average_precision_score,
+    precision_recall_fscore_support,
+    root_mean_squared_error,
+)
 
 # import muvi
 from famo.core import CORE
-
 
 logger = logging.getLogger(__name__)
 
@@ -68,15 +68,7 @@ def generate_spectra_5d(
     return w, true_mask, z, x
 
 
-def generate_spectra_5e(
-    rng,
-    n_samples=1000,
-    n_features=500,
-    n_factors=10,
-    factor_size=20,
-    overlap_coef=0.95,
-    sigma=2,
-):
+def generate_spectra_5e(rng, n_samples=1000, n_features=500, n_factors=10, factor_size=20, overlap_coef=0.95, sigma=2):
     # factor scores
     z_shape = (n_samples, n_factors)
     z = rng.lognormal(0, 1, size=z_shape)
@@ -90,12 +82,7 @@ def generate_spectra_5e(
     idx_pairs = []
     indices = list(range(true_mask.shape[0]))
     while indices:
-        idx_pairs.append(
-            (
-                indices.pop(rng.choice(len(indices), 1)[0]),
-                indices.pop(rng.choice(len(indices), 1)[0]),
-            )
-        )
+        idx_pairs.append((indices.pop(rng.choice(len(indices), 1)[0]), indices.pop(rng.choice(len(indices), 1)[0])))
 
     n_overlap = int(factor_size * overlap_coef)
 
@@ -136,13 +123,7 @@ def train_nmf(data, mask, seed=0, **kwargs):
     n_components = kwargs.pop("n_components", mask.shape[0])
     init = kwargs.pop("init", "random")
     max_iter = kwargs.pop("max_iter", 1000)
-    model = NMF(
-        n_components=n_components,
-        init=init,
-        max_iter=max_iter,
-        random_state=seed,
-        **kwargs,
-    )
+    model = NMF(n_components=n_components, init=init, max_iter=max_iter, random_state=seed, **kwargs)
     model.fit(data)
     return model
 
@@ -153,9 +134,7 @@ def train_spectra(data, mask, seed=0, terms=None, **kwargs):
     if terms is not None:
         annot.index = pd.Index(terms, name="terms")
 
-    annot = {
-        f"all_{idx!s}": annot.columns[annot.loc[idx, :]].tolist() for idx in annot.index
-    }
+    annot = {f"all_{idx!s}": annot.columns[annot.loc[idx, :]].tolist() for idx in annot.index}
 
     lam = kwargs.pop("lam", 0.01)
     delta = kwargs.pop("delta", 0.001)
@@ -299,9 +278,7 @@ def train_muvi(data, mask, seed=0, terms=None, **kwargs):
         callbacks.append(log_callback)
 
     callbacks.append(
-        muvi.EarlyStoppingCallback(
-            n_epochs, min_epochs=n_epochs // 10, tolerance=tolerance, patience=patience
-        )
+        muvi.EarlyStoppingCallback(n_epochs, min_epochs=n_epochs // 10, tolerance=tolerance, patience=patience)
     )
 
     model.fit(
@@ -318,14 +295,12 @@ def train_muvi(data, mask, seed=0, terms=None, **kwargs):
     return model
 
 
-
 def train_famo(data, mask, seed=None, terms=None, **kwargs):
     adata = ad.AnnData(data)
     if terms is None:
         terms = [f"factor_{k}" for k in range(mask.shape[0])]
     adata.varm["I"] = pd.DataFrame(mask, index=terms, columns=adata.var_names).T
-    
-    
+
     device = kwargs.pop("device", "cpu")
     prior_penalty = kwargs.pop("prior_penalty", 0.005)
     n_factors = kwargs.pop("n_factors", 3)
@@ -338,7 +313,7 @@ def train_famo(data, mask, seed=None, terms=None, **kwargs):
     lr = kwargs.pop("lr", 0.003)
 
     early_stopper_patience = kwargs.pop("early_stopper_patience", 100)
-    
+
     model = CORE(device=device)
     model.fit(
         mu.MuData({"view_0": adata}),
@@ -347,8 +322,8 @@ def train_famo(data, mask, seed=None, terms=None, **kwargs):
         weight_prior="Horseshoe",
         factor_prior="Normal",
         likelihoods={"view_0": likelihood},
-        nonnegative_weights = nmf,
-        nonnegative_factors = nmf,
+        nonnegative_weights=nmf,
+        nonnegative_factors=nmf,
         prior_penalty=prior_penalty,
         batch_size=batch_size,
         max_epochs=max_epochs,
@@ -361,10 +336,11 @@ def train_famo(data, mask, seed=None, terms=None, **kwargs):
         use_obs=None,
         use_var=None,
         seed=seed,
-        **kwargs
+        **kwargs,
     )
 
     return model
+
 
 def get_factor_loadings(model, with_dense=False):
     if type(model).__name__ == "NMF":
@@ -372,7 +348,7 @@ def get_factor_loadings(model, with_dense=False):
     if type(model).__name__ == "CORE":
         w_hat = model.get_weights("numpy")["view_0"]
         if not with_dense and model.n_dense_factors > 0:
-            return w_hat[model.n_dense_factors:, :]
+            return w_hat[model.n_dense_factors :, :]
         return w_hat
     if type(model).__name__ == "MuVI":
         w_hat = model.get_factor_loadings(as_df=False)["view_0"]
@@ -393,7 +369,7 @@ def get_factor_scores(model, data, with_dense=False):
     if type(model).__name__ == "CORE":
         z_hat = model.get_factors("numpy")["group_1"]
         if not with_dense and model.n_dense_factors > 0:
-            return z_hat[:, model.n_dense_factors:]
+            return z_hat[:, model.n_dense_factors :]
         return z_hat
     if type(model).__name__ == "MuVI":
         z_hat = model.get_factor_scores(as_df=False)
@@ -416,13 +392,12 @@ def get_reconstructed(model, data):
     if type(model).__name__ == "MuVI":
         return model.get_reconstructed(as_df=False)["view_0"]
     if type(model).__name__ == "SPECTRA_Model":
-        return model.return_cell_scores() @ (
-            model.return_factors() * model.return_gene_scalings()
-        )
+        return model.return_cell_scores() @ (model.return_factors() * model.return_gene_scalings())
     if type(model).__name__ == "EXPIMAP":
         return model.get_y()
 
     raise ValueError(f"Unknown model type: {type(model)}")
+
 
 def _r2(y_true, y_pred):
     ss_res = np.nansum(np.square(y_true - y_pred))
@@ -472,9 +447,7 @@ def sort_and_subset(w_hat, true_mask, top=None):
     argsort_indices = np.argsort(-np.abs(w_hat), axis=1)
 
     sorted_w_hat = np.array(list(map(lambda x, y: y[x], argsort_indices, w_hat)))
-    sorted_true_mask = np.array(
-        list(map(lambda x, y: y[x], argsort_indices, true_mask))
-    )
+    sorted_true_mask = np.array(list(map(lambda x, y: y[x], argsort_indices, true_mask)))
 
     if top is not None:
         argsort_indices = argsort_indices[:, :top]
@@ -490,9 +463,7 @@ def get_binary_scores(true_mask, model, threshold=0.0, per_factor=False, top=Non
 
     if threshold is not None:
         prec, rec, f1, supp = precision_recall_fscore_support(
-            (true_mask).flatten(),
-            (np.abs(w_hat) > threshold).flatten(),
-            average="binary",
+            (true_mask).flatten(), (np.abs(w_hat) > threshold).flatten(), average="binary"
         )
     else:
         prec = None
@@ -500,14 +471,10 @@ def get_binary_scores(true_mask, model, threshold=0.0, per_factor=False, top=Non
         f1 = None
         supp = None
         sorted_w_hat = np.sort(np.abs(w_hat).flatten())
-        for threshold_idx in np.linspace(
-            0, len(sorted_w_hat), num=100, endpoint=False, dtype=int
-        ):
+        for threshold_idx in np.linspace(0, len(sorted_w_hat), num=100, endpoint=False, dtype=int):
             threshold_ = sorted_w_hat[threshold_idx]
             prec_, rec_, f1_, supp_ = precision_recall_fscore_support(
-                (true_mask).flatten(),
-                (np.abs(w_hat) > threshold_).flatten(),
-                average="binary",
+                (true_mask).flatten(), (np.abs(w_hat) > threshold_).flatten(), average="binary"
             )
 
             if f1 is None or f1_ > f1:
@@ -537,9 +504,7 @@ def get_binary_scores(true_mask, model, threshold=0.0, per_factor=False, top=Non
 
 def get_reconstruction_fraction(true_mask, noisy_mask, model, top=None):
     fi_1, w_hat, true_mask = sort_and_subset(get_factor_loadings(model), true_mask, top)
-    fi_2, w_hat, noisy_mask = sort_and_subset(
-        get_factor_loadings(model), noisy_mask, top
-    )
+    fi_2, w_hat, noisy_mask = sort_and_subset(get_factor_loadings(model), noisy_mask, top)
     assert (fi_1 == fi_2).all()
     feature_idx = fi_1
     # return true_mask & ~noisy_mask
@@ -557,9 +522,7 @@ def get_average_precision(true_mask, model, per_factor=False, top=None):
         mask = true_mask[k, :]
         loadings_hat = np.abs(w_hat[k, :])
         order = np.argsort(loadings_hat)[::-1]
-        per_factor_aupr.append(
-            average_precision_score(mask[order], loadings_hat[order])
-        )
+        per_factor_aupr.append(average_precision_score(mask[order], loadings_hat[order]))
     return per_factor_aupr
 
 
@@ -567,7 +530,5 @@ def plot_precision_recall(true_mask, model, top=None):
     w_hat = get_factor_loadings(model)
     feature_idx, w_hat, true_mask = sort_and_subset(w_hat, true_mask, top)
     return PrecisionRecallDisplay.from_predictions(
-        (true_mask).flatten(),
-        np.abs(w_hat).flatten(),
-        plot_chance_level=True,
+        (true_mask).flatten(), np.abs(w_hat).flatten(), plot_chance_level=True
     )

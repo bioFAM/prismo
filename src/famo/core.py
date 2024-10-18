@@ -1,7 +1,9 @@
 import logging
 import time
 from collections import defaultdict
+from dataclasses import MISSING, dataclass, field, fields
 from functools import reduce
+from typing import Literal
 
 import anndata as ad
 import numpy as np
@@ -12,7 +14,6 @@ import torch
 from dtw import dtw
 from mudata import MuData
 from pyro.infer import SVI, TraceMeanField_ELBO
-from pyro.nn import PyroModule
 from pyro.optim import ClippedAdam
 from scipy.special import expit
 from sklearn.decomposition import NMF, PCA
@@ -28,11 +29,147 @@ from famo.utils_training import EarlyStopper
 logger = logging.getLogger(__name__)
 
 
-class CORE(PyroModule):
+@dataclass(kw_only=True)
+class _Options:
+    def __or__(self, other):
+        if self.__class__ is not other.__class__:
+            raise TypeError("Can only merge objects of the same type")
+
+        kwargs = self.asdict()
+        for f in fields(other):
+            val = getattr(other, f.name)
+            if (
+                f.default is not MISSING
+                and val != f.default
+                or f.default_factory is not MISSING
+                and val != f.default_factory()
+            ):
+                kwargs[f.name] = val
+        return self.__class__(**kwargs)
+
+    def __ior__(self, other):
+        if self.__class__ is not other.__class__:
+            raise TypeError("Can only merge objects of the same type")
+
+        for f in fields(other):
+            val = getattr(other, f.name)
+            if (
+                f.default is not MISSING
+                and val != f.default
+                or f.default_factory is not MISSING
+                and val != f.default_factory()
+            ):
+                setattr(self, f.name, val)
+        return self
+
+
+@dataclass(kw_only=True)
+class DataOptions(_Options):
+    """
+    Options for the data.
+
+    Args:
+        group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
+            - String or list of strings. This will be applied to the MuData object or to all AnnData objects
+            - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
+              is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
+              in the corresponding `group_by` element.
+        scale_per_group: Scale Normal likelihood data per group, otherwise across all groups.
+        covariates_obs_key: Key of .obs attribute of each AnnData object that contains covariate values.
+        covariates_obsm_key: Key of .obsm attribute of each AnnData object that contains covariate values.
+        use_obs: How to align observations across views. One of 'union', 'intersection'.
+        use_var: How to align variables across groups. One of 'union', 'intersection'.
+        plot_data_overview: Plot data overview.
+    """
+
+    group_by: str | list[str] | dict[str] | dict[list[str]] | None = None
+    scale_per_group: bool = True
+    covariates_obs_key: dict[str, str] | str | None = None
+    covariates_obsm_key: dict[str, str] | str | None = None
+    use_obs: Literal["union", "intersection"] | None = "union"
+    use_var: Literal["union", "intersection"] | None = "union"
+    plot_data_overview: bool = True
+
+
+@dataclass(kw_only=True)
+class ModelOptions(_Options):
+    """
+    Options for the model.
+
+    Args:
+        n_factors: Number of latent factors.
+        weight_prior: Weight priors for each view (if dict) or for all views (if str).
+        factor_prior: Factor priors for each group (if dict) or for all groups (if str).
+        likelihoods: Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None.
+        nonnegative_weights: Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
+        nonnegative_factors: Non-negativity constraints for factors for each group (if dict) or for all groups (if bool).
+        annotations: Dictionary with weight annotations for informed views.
+        prior_penalty: Prior penalty for annotations. #TODO: add more detail
+        init_factors: Initialization method for factors.
+        init_scale: Initialization scale of Normal distribution for factors.
+    """
+
+    n_factors: int = 0
+    weight_prior: dict[str, str] | str = "Normal"
+    factor_prior: dict[str, str] | str = "Normal"
+    likelihoods: dict[str, str] | str | None = None
+    nonnegative_weights: dict[str, bool] | bool = False
+    nonnegative_factors: dict[str, bool] | bool = False
+    annotations: dict[str, pd.DataFrame] | dict[str, np.ndarray] | None = None
+    prior_penalty: float = 0.01
+    init_factors: Literal["random", "orthogonal", "pca"] = "random"
+    init_scale: float = 0.1
+
+
+@dataclass(kw_only=True)
+class TrainingOptions(_Options):
+    """
+    Options for training.
+
+    Args:
+        batch_size: Batch size.
+        max_epochs: Maximum number of training epochs.
+        n_particles: Number of particles for ELBO estimation.
+        lr: Learning rate.
+        early_stopper_patience: Number of steps without relevant improvement to stop training.
+        print_every: Print loss every n steps.
+        save: Save model.
+        save_path: Path to save model.
+        seed : Random seed.
+    """
+
+    batch_size: int = 0
+    max_epochs: int = 10_000
+    n_particles: int = 1
+    lr: float = 0.001
+    early_stopper_patience: int = 100
+    print_every: int = 100
+    save: bool = True
+    save_path: str | None = None
+    seed: int | None = None
+
+
+@dataclass(kw_only=True)
+class SmoothOptions(_Options):
+    """
+    Options for Gaussian processes.
+
+    Args:
+        n_inducing: Number of inducing points.
+        kernel: Kernel function to use.
+        warp_groups; List of groups to apply dynamic time warping to.
+        warp_interval: Apply dynamic time warping every `warp_interval` epochs.
+    """
+
+    n_inducing: int = 100
+    kernel: Literal["RBF", "Matern"] = "RBF"
+    warp_groups: list[str] = field(default_factory=list)
+    warp_interval: int = 20
+
+
+class CORE:
     def __init__(self, device):
-        super().__init__(name="CORE")
         self.device = self._setup_device(device)
-        self.to(self.device)
 
         self._init()
 
@@ -47,7 +184,6 @@ class CORE(PyroModule):
         self.n_views = 0
         self.n_samples = {}
         self.n_features = {}
-        self.n_factors = 0
 
         self.group_names = []
         self.view_names = []
@@ -57,9 +193,7 @@ class CORE(PyroModule):
         self._factor_names = []
         self._factor_order = []
 
-        self.likelihoods = {}
         self.nmf = {}
-        self.prior_penalty = None
         self.prior_masks = None
         self.prior_scales = None
 
@@ -70,10 +204,8 @@ class CORE(PyroModule):
         self.generative = None
         self.variational = None
         self.gp = None
-        self.gp_warp_groups = None
         self._orig_covariates = None
         self._gp_warp_groups_order = None
-        self._gp_warp_internval = None
         self._optimizer = None
         self._svi = None
 
@@ -195,10 +327,10 @@ class CORE(PyroModule):
 
         self.n_dense_factors = n_dense_factors
         self.n_informed_factors = n_informed_factors
-        self.n_factors = n_dense_factors + n_informed_factors
+        self.model_opts.n_factors = n_dense_factors + n_informed_factors
 
         self._factor_names = pd.Index(factor_names)
-        self._factor_order = np.arange(self.n_factors)
+        self._factor_order = np.arange(self.model_opts.n_factors)
 
         # storing prior_masks as full annotations instead of partial annotations
         self.annotations = prior_masks
@@ -223,13 +355,13 @@ class CORE(PyroModule):
     ):
         self.gp_group_names = tuple(g for g in self.group_names if factor_prior[g] == "GP")
         if len(self.gp_group_names):
-            if len(self.gp_warp_groups) > 1:
-                if not set(self.gp_warp_groups) <= set(self.gp_group_names):
+            if len(self.gp_opts.warp_groups) > 1:
+                if not set(self.gp_opts.warp_groups) <= set(self.gp_group_names):
                     raise ValueError(
                         "The set of groups with dynamic time warping must be a subset of groups with a GP factor prior."
                     )
                 self._gp_warp_groups_order = {}
-                for g in self.gp_warp_groups:
+                for g in self.gp_opts.warp_groups:
                     ccov = self.covariates[g].squeeze()
                     if ccov.ndim > 1:
                         raise ValueError(
@@ -237,14 +369,14 @@ class CORE(PyroModule):
                         )
                     self._gp_warp_groups_order[g] = ccov.argsort()
                 self._orig_covariates = {g: c.clone() for g, c in self.covariates.items()}
-            elif len(self.gp_warp_groups) == 1:
+            elif len(self.gp_opts.warp_groups) == 1:
                 logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
-                self.gp_warp_groups = []
+                self.gp_opts.warp_groups = []
 
             self.gp = gp.GP(
-                gp_n_inducing,
+                self.gp_opts.n_inducing,
                 (self.covariates[g] for g in self.gp_group_names),
-                self.n_factors,
+                self.model_opts.n_factors,
                 len(self.gp_group_names),
                 kernel,
             ).to(self.device)
@@ -252,7 +384,7 @@ class CORE(PyroModule):
         self.generative = Generative(
             n_samples=self.n_samples,
             n_features=self.n_features,
-            n_factors=self.n_factors,
+            n_factors=self.model_opts.n_factors,
             prior_scales=self.prior_scales,
             factor_prior=factor_prior,
             weight_prior=weight_prior,
@@ -314,19 +446,20 @@ class CORE(PyroModule):
         # Initialize factors
         if init_factors == "random":
             for group_name, n in self.n_samples.items():
-                init_tensor[group_name]["loc"] = torch.rand(size=(n, self.n_factors), device=self.device)
+                init_tensor[group_name]["loc"] = torch.rand(size=(n, self.model_opts.n_factors), device=self.device)
         elif init_factors == "orthogonal":
             for group_name, n in self.n_samples.items():
                 # Compute PCA of random vectors
-                pca = PCA(n_components=self.n_factors, whiten=True)
-                pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.n_factors)).T)
+                pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
+                pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.model_opts.n_factors)).T)
                 init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T, device=self.device)
         elif init_factors in ["pca", "nmf"]:
             for group_name in self.n_samples.keys():
                 if init_factors == "pca":
-                    pca = PCA(n_components=self.n_factors, whiten=True)
+                    pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
                 elif init_factors == "nmf":
-                    nmf = NMF(n_components=self.n_factors, max_iter=1000)
+                    nmf = NMF(n_components=self.model_opts.n_factors, max_iter=1000)
+
                 # Combine all views
                 concat_data = torch.cat(
                     [
@@ -367,46 +500,12 @@ class CORE(PyroModule):
             # Add artifical dimension at dimension -2 for broadcasting
             init_tensor[group_name]["loc"] = q.T.unsqueeze(-2).float()
             init_tensor[group_name]["scale"] = (
-                init_scale * torch.ones(size=(n, self.n_factors), device=self.device).T.unsqueeze(-2).float()
+                init_scale * torch.ones(size=(n, self.model_opts.n_factors), device=self.device).T.unsqueeze(-2).float()
             )
 
         self.init_tensor = init_tensor
 
-    def fit(
-        self,
-        data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]],
-        group_by: str | list[str] | dict[str] | dict[list[str]] | None = None,
-        n_factors: int = None,
-        annotations=None,
-        weight_prior: dict[str, str] | str | None = None,
-        factor_prior: dict[str, str] | str | None = None,
-        likelihoods: dict[str, str] | str | None = None,
-        covariates_obs_key: dict[str, str] | str | None = None,
-        covariates_obsm_key: dict[str, str] | str | None = None,
-        nonnegative_weights: dict[str, bool] | bool = False,
-        nonnegative_factors: dict[str, bool] | bool = False,
-        prior_penalty: float = 0.01,
-        batch_size: int = 0,
-        max_epochs: int = 10000,
-        n_particles: int = 1,
-        lr: float = 0.001,
-        early_stopper_patience: int = 100,
-        print_every: int = 100,
-        plot_data_overview: bool = True,
-        scale_per_group: bool = True,
-        use_obs: str = "union",
-        use_var: str = "union",
-        save: bool = True,
-        save_path: str | None = None,
-        init_factors: str = "random",
-        init_scale: float = 0.1,
-        gp_n_inducing: int = 100,
-        gp_warp_groups: list[str] | None = None,
-        gp_warp_interval: int = 20,
-        gp_kernel: str = "RBF",
-        seed: int | None = None,
-        **kwargs,
-    ):
+    def fit(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
         """
         Fit the model using the provided data.
 
@@ -420,70 +519,8 @@ class CORE(PyroModule):
             - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
             - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
             - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
-        group_by:
-            Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
-            - String or list of strings. This will be applied to the MuData object or to all AnnData objects
-            - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
-              is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
-              in the corresponding `group_by` element.
-        n_factors
-            Number of latent factors.
-        annotations
-            Dictionary with weight annotations for informed views.
-        weight_prior
-            Weight priors for each view (if dict) or for all views (if str). Normal if None.
-        factor_prior
-            Factor priors for each group (if dict) or for all groups (if str). Normal if None.
-        likelihoods
-            Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None.
-        covariates_obs_key
-            Key of .obs attribute of each AnnData object that contains covariate values.
-        covariates_obsm_key
-            Key of .obsm attribute of each AnnData object that contains covariate values.
-        nonnegative_weights
-            Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
-        nonnegative_factors
-            Non-negativity constraints for factors for each group (if dict) or for all groups (if bool).
-        prior_penalty
-            Prior penalty for annotations. #TODO: add more detail
-        batch_size
-            Batch size.
-        max_epochs
-            Maximum number of training epochs.
-        n_particles
-            Number of particles for ELBO estimation.
-        lr
-            Learning rate.
-        early_stopper_patience
-            Number of steps without relevant improvement to stop training.
-        print_every
-            Print loss every n steps.
-        plot_data_overview
-            Plot data overview.
-        scale_per_group
-            Scale Normal likelihood data per group, otherwise across all groups.
-        use_obs
-            How to align observations across views. One of 'union', 'intersection'.
-        use_var
-            How to align variables across groups. One of 'union', 'intersection'.
-        save
-            Save model.
-        save_path
-            Path to save model.
-        init_factors
-            Initialization method for factors.
-        init_scale
-            Initialization scale of Normal distribution for factors.
-        gp_n_inducing
-            Number of inducing points.
-        gp_warp_groups
-            List of groups to apply dynamic time warping to.
-        gp_warp_interval
-            Apply dynamic time warping every `gp_warp_interval` epochs.
-        seed : int
-            Random seed.
-        **kwargs
-            Additional training arguments.
+        *args
+            Options for training.
         """
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
         self.data = utils_data.cast_data(data, group_by=None)
@@ -495,51 +532,62 @@ class CORE(PyroModule):
         self.view_names = list(self.data[list(self.data.keys())[0]].keys())
         self.n_views = len(self.view_names)
 
+        # process parameters
+        self.data_opts = DataOptions()
+        self.model_opts = ModelOptions()
+        self.train_opts = TrainingOptions()
+        self.gp_opts = SmoothOptions()
+
+        for arg in args:
+            match arg:
+                case DataOptions():
+                    self.data_opts |= arg
+                case ModelOptions():
+                    self.model_opts |= arg
+                case TrainingOptions():
+                    self.train_opts |= arg
+                case SmoothOptions():
+                    self.gp_opts |= arg
+
         # convert input arguments to dictionaries if necessary
-        weight_prior = {k: weight_prior for k in self.view_names} if isinstance(weight_prior, str) else weight_prior
-        factor_prior = {k: factor_prior for k in self.group_names} if isinstance(factor_prior, str) else factor_prior
-        covariates_obs_key = (
-            {k: covariates_obs_key for k in self.group_names}
-            if isinstance(covariates_obs_key, str)
-            else covariates_obs_key
-        )
-        covariates_obsm_key = (
-            {k: covariates_obsm_key for k in self.group_names}
-            if isinstance(covariates_obsm_key, str)
-            else covariates_obsm_key
-        )
-        self.nonnegative_weights = (
-            {k: nonnegative_weights for k in self.view_names}
-            if isinstance(nonnegative_weights, bool)
-            else nonnegative_weights
-        )
-        self.nonnegative_factors = (
-            {k: nonnegative_factors for k in self.group_names}
-            if isinstance(nonnegative_factors, bool)
-            else nonnegative_factors
-        )
+        for opt_name, keys in zip(
+            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
+            (self.view_names, self.group_names, self.view_names, self.group_names),
+            strict=False,
+        ):
+            val = getattr(self.model_opts, opt_name)
+            if not isinstance(val, dict):
+                setattr(self.model_opts, opt_name, {k: val for k in keys})
+
+        for opt_name in ("covariates_obs_key", "covariates_obsm_key"):
+            val = getattr(self.data_opts, opt_name)
+            if isinstance(val, str):
+                setattr(self.data_opts, opt_name, {k: val for k in self.group_names})
 
         # validate or infer likelihoods
-        self.likelihoods = self._setup_likelihoods(self.data, likelihoods)
+        self.model_opts.likelihoods = self._setup_likelihoods(self.data, self.model_opts.likelihoods)
 
         # process data
-        self.data = utils_data.remove_constant_features(self.data, self.likelihoods)
-        self.data = utils_data.scale_data(self.data, self.likelihoods, scale_per_group)
+        self.data = utils_data.remove_constant_features(self.data, self.model_opts.likelihoods)
+        self.data = utils_data.scale_data(self.data, self.model_opts.likelihoods, self.data_opts.scale_per_group)
         self.data = utils_data.center_data(
-            self.data, self.likelihoods, self.nonnegative_weights, self.nonnegative_factors
+            self.data,
+            self.model_opts.likelihoods,
+            self.model_opts.nonnegative_weights,
+            self.model_opts.nonnegative_factors,
         )
 
         # align observations across views and variables across groups
-        if use_obs is not None:
-            self.data = utils_data.align_obs(self.data, use_obs)
-        if use_var is not None:
-            self.data = utils_data.align_var(self.data, self.likelihoods, use_var)
+        if self.data_opts.use_obs is not None:
+            self.data = utils_data.align_obs(self.data, self.data_opts.use_obs)
+        if self.data_opts.use_var is not None:
+            self.data = utils_data.align_var(self.data, self.model_opts.likelihoods, self.data_opts.use_var)
 
         # obtain observations DataFrame and covariates
         self.metadata = utils_data.extract_obs(self.data)
-        self.covariates = utils_data.extract_covariate(self.data, covariates_obs_key, covariates_obsm_key)
-        self.gp_warp_groups = gp_warp_groups if gp_warp_groups is not None else []
-        self._gp_warp_interval = gp_warp_interval
+        self.covariates = utils_data.extract_covariate(
+            self.data, self.data_opts.covariates_obs_key, self.data_opts.covariates_obsm_key
+        )
 
         # extract feature and samples names / numbers from data
         self.feature_names = {k: self.data[list(self.data.keys())[0]][k].var_names.tolist() for k in self.view_names}
@@ -548,37 +596,37 @@ class CORE(PyroModule):
         self.n_samples = {k: len(v) for k, v in self.sample_names.items()}
 
         for view_name in self.view_names:
-            if self.likelihoods[view_name] == "BetaBinomial":
+            if self.model_opts.likelihoods[view_name] == "BetaBinomial":
                 feature_names_base = pd.Series(self.feature_names[view_name]).str.rsplit("_", n=1, expand=True)[0]
                 if feature_names_base.nunique() == len(feature_names_base) // 2:
                     self.n_features[view_name] = self.n_features[view_name] // 2
                     self.feature_names[view_name] = feature_names_base.unique()
 
         # compute feature means for intercept terms
-        self.feature_means = utils_data.get_data_mean(self.data, self.likelihoods, how="feature")
-        self.sample_means = utils_data.get_data_mean(self.data, self.likelihoods, how="sample")
+        self.feature_means = utils_data.get_data_mean(self.data, self.model_opts.likelihoods, how="feature")
+        self.sample_means = utils_data.get_data_mean(self.data, self.model_opts.likelihoods, how="sample")
 
-        if plot_data_overview:
+        if self.data_opts.plot_data_overview:
             plot_overview(self.data)
 
-        self._setup_annotations(n_factors, annotations, prior_penalty)
-        self._initialize_factors(init_factors, init_scale)
+        self._setup_annotations(self.model_opts.n_factors, self.model_opts.annotations, self.model_opts.prior_penalty)
+        self._initialize_factors(self.model_opts.init_factors, self.model_opts.init_scale)
         n_samples_total = sum(self.n_samples.values())
-        if batch_size is None or not (0 < batch_size <= n_samples_total):
-            batch_size = n_samples_total
+        if self.train_opts.batch_size is None or not (0 < self.train_opts.batch_size <= n_samples_total):
+            self.train_opts.batch_size = n_samples_total
 
         self._setup_svi(
-            weight_prior,
-            factor_prior,
-            gp_n_inducing,
-            self.likelihoods,
-            self.nonnegative_factors,
-            self.nonnegative_weights,
-            gp_kernel,
-            batch_size,
-            max_epochs,
-            n_particles,
-            lr,
+            self.model_opts.weight_prior,
+            self.model_opts.factor_prior,
+            self.gp_opts.n_inducing,
+            self.model_opts.likelihoods,
+            self.model_opts.nonnegative_factors,
+            self.model_opts.nonnegative_weights,
+            self.gp_opts.kernel,
+            self.train_opts.batch_size,
+            self.train_opts.max_epochs,
+            self.train_opts.n_particles,
+            self.train_opts.lr,
         )
 
         # convert AnnData to torch.Tensor objects
@@ -592,8 +640,8 @@ class CORE(PyroModule):
             for view_name, view_adata in group_dict.items():
                 tensor_dict[group_name][view_name] = torch.from_numpy(view_adata.X)
 
-        if batch_size < n_samples_total:
-            batch_fraction = batch_size / n_samples_total
+        if self.train_opts.batch_size < n_samples_total:
+            batch_fraction = self.train_opts.batch_size / n_samples_total
 
             # has to be a list of data loaders to zip over
             data_loaders = []
@@ -634,20 +682,18 @@ class CORE(PyroModule):
             def step_fn():
                 return self._svi.step(tensor_dict)
 
-        if seed is not None:
+        if self.train_opts.seed is not None:
             try:
-                seed = int(seed)
+                self.train_opts.seed = int(self.train_opts.seed)
             except ValueError:
-                logger.info(f"Could not convert `{seed}` to integer.")
-                seed = None
+                logger.warning(f"Could not convert `{self.train_opts.seed}` to integer.")
+                self.train_opts.seed = None
 
-        if seed is None:
-            seed = int(time.strftime("%y%m%d%H%M"))
+        if self.train_opts.seed is None:
+            self.train_opts.seed = int(time.strftime("%y%m%d%H%M"))
 
-        self.seed = seed
-
-        logger.info(f"Setting training seed to `{seed}`.")
-        pyro.set_rng_seed(seed)
+        logger.info(f"Setting training seed to `{self.train_opts.seed}`.")
+        pyro.set_rng_seed(self.train_opts.seed)
         # clean start
         logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)
@@ -655,17 +701,19 @@ class CORE(PyroModule):
 
         # Train
         self.train_loss_elbo = []
-        earlystopper = EarlyStopper(mode="min", min_delta=0.1, patience=early_stopper_patience, percentage=True)
+        earlystopper = EarlyStopper(
+            mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
+        )
         start_timer = time.time()
 
         try:
-            for i in range(max_epochs):
+            for i in range(self.train_opts.max_epochs):
                 loss = step_fn()
-                if len(self.gp_warp_groups) and not i % self._gp_warp_interval:
+                if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
                     self._warp_covariates()
                 self.train_loss_elbo.append(loss)
 
-                if i % print_every == 0:
+                if i % self.train_opts.print_every == 0:
                     logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
                 if earlystopper.step(loss):
@@ -677,14 +725,14 @@ class CORE(PyroModule):
 
         self._is_trained = True
 
-        return self._post_fit(save, save_path, self.covariates)
+        return self._post_fit(self.train_opts.save, self.train_opts.save_path, self.covariates)
 
     def _warp_covariates(self):
         factormeans = self.variational.get_factors("mean")
-        refgroup = self.gp_warp_groups[0]
+        refgroup = self.gp_opts.warp_groups[0]
         reffactormeans = factormeans[refgroup].mean(axis=0)
         refidx = self._gp_warp_groups_order[refgroup]
-        for g in self.gp_warp_groups[1:]:
+        for g in self.gp_opts.warp_groups[1:]:
             idx = self._gp_warp_groups_order[g]
             alignment = dtw(
                 reffactormeans[refidx],
@@ -712,7 +760,7 @@ class CORE(PyroModule):
     def _r2_impl(self, y_true, factor, weights, view_name):
         # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
         y_pred = factor.T @ weights
-        likelihood = self.likelihoods[view_name]
+        likelihood = self.model_opts.likelihoods[view_name]
 
         if likelihood == "Normal":
             ss_res = np.nansum(np.square(y_true - y_pred))
@@ -759,7 +807,7 @@ class CORE(PyroModule):
             return [0.0] * factors.shape[0]
 
         r2s = []
-        if self.likelihoods[view_name] == "Normal":
+        if self.model_opts.likelihoods[view_name] == "Normal":
             for k in range(factors.shape[0]):
                 r2s.append(self._r2_impl(y_true, factors[None, k, :], weights[None, k, :], view_name))
         else:
@@ -810,7 +858,7 @@ class CORE(PyroModule):
             factor_order = np.array(sorted_r2_means.index)
         except NameError:
             logger.info("Sorting factors failed. Using default order.")
-            factor_order = np.array(list(range(self.n_factors)))
+            factor_order = np.array(list(range(self.model_opts.n_factors)))
 
         for group_name in self.data.keys():
             dfs[group_name] = dfs[group_name].loc[factor_order].reset_index(drop=True)

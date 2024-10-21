@@ -127,6 +127,7 @@ class TrainingOptions(_Options):
     Options for training.
 
     Args:
+        device: Device to run training on.
         batch_size: Batch size.
         max_epochs: Maximum number of training epochs.
         n_particles: Number of particles for ELBO estimation.
@@ -138,6 +139,7 @@ class TrainingOptions(_Options):
         seed : Random seed.
     """
 
+    device: str | torch.device = "cuda"
     batch_size: int = 0
     max_epochs: int = 10_000
     n_particles: int = 1
@@ -174,9 +176,7 @@ class SmoothOptions(_Options):
 
 
 class CORE:
-    def __init__(self, device):
-        self.device = self._setup_device(device)
-
+    def __init__(self):
         self._init()
 
     def _init(self):
@@ -232,13 +232,13 @@ class CORE:
     def factor_names(self):
         return self._factor_names[np.array(self.factor_order)]
 
-    def _to_device(self, data):
+    def _to_device(self, data, device):
         tensor_dict = {}
         for k, v in data.items():
             if isinstance(v, dict):
-                tensor_dict[k] = self._to_device(v)
+                tensor_dict[k] = self._to_device(v, device)
             else:
-                tensor_dict[k] = v.to(self.device)
+                tensor_dict[k] = v.to(device)
 
         return tensor_dict
 
@@ -388,7 +388,7 @@ class CORE:
                 self.model_opts.n_factors,
                 len(self.gp_group_names),
                 kernel,
-            ).to(self.device)
+            ).to(self.train_opts.device)
 
         self.generative = Generative(
             n_samples=self.n_samples,
@@ -402,12 +402,11 @@ class CORE:
             nonnegative_weights=nonnegative_weights,
             gp=self.gp,
             gp_group_names=self.gp_group_names,
-            device=self.device,
             feature_means=self.feature_means,
             sample_means=self.sample_means,
-        )
+        ).to(self.train_opts.device)
 
-        self.variational = Variational(self.generative, self.init_tensor)
+        self.variational = Variational(self.generative, self.init_tensor).to(self.train_opts.device)
 
         total_n_samples = sum(self.n_samples.values())
 
@@ -453,64 +452,65 @@ class CORE:
         logger.info(f"Initializing factors using `{init_factors}` method...")
 
         # Initialize factors
-        if init_factors == "random":
-            for group_name, n in self.n_samples.items():
-                init_tensor[group_name]["loc"] = torch.rand(size=(n, self.model_opts.n_factors), device=self.device)
-        elif init_factors == "orthogonal":
-            for group_name, n in self.n_samples.items():
-                # Compute PCA of random vectors
-                pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
-                pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.model_opts.n_factors)).T)
-                init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T, device=self.device)
-        elif init_factors in ["pca", "nmf"]:
-            for group_name in self.n_samples.keys():
-                if init_factors == "pca":
+        with self.train_opts.device:
+            if init_factors == "random":
+                for group_name, n in self.n_samples.items():
+                    init_tensor[group_name]["loc"] = torch.rand(size=(n, self.model_opts.n_factors))
+            elif init_factors == "orthogonal":
+                for group_name, n in self.n_samples.items():
+                    # Compute PCA of random vectors
                     pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
-                elif init_factors == "nmf":
-                    nmf = NMF(n_components=self.model_opts.n_factors, max_iter=1000)
+                    pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.model_opts.n_factors)).T)
+                    init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T)
+            elif init_factors in ["pca", "nmf"]:
+                for group_name in self.n_samples.keys():
+                    if init_factors == "pca":
+                        pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
+                    elif init_factors == "nmf":
+                        nmf = NMF(n_components=self.model_opts.n_factors, max_iter=1000)
 
-                # Combine all views
-                concat_data = torch.cat(
-                    [
-                        torch.tensor(self.data[group_name][view_name].X, dtype=torch.float)
-                        for view_name in self.view_names
-                    ],
-                    dim=-1,
+                    # Combine all views
+                    concat_data = torch.cat(
+                        [
+                            torch.tensor(self.data[group_name][view_name].X, dtype=torch.float)
+                            for view_name in self.view_names
+                        ],
+                        dim=-1,
+                    )
+                    # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error
+                    if torch.isnan(concat_data).any():
+                        if impute_missings:
+                            from sklearn.impute import SimpleImputer
+
+                            imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
+                            imp.fit(concat_data)
+                            concat_data = torch.tensor(imp.transform(concat_data), dtype=torch.float)
+                        else:
+                            raise ValueError(
+                                "Data has missing values. Please impute missings or set `impute_missings=True`."
+                            )
+                    if init_factors == "pca":
+                        pca.fit(concat_data)
+                        init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data))
+                    elif init_factors == "nmf":
+                        nmf.fit(concat_data)
+                        init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data))
+
+            else:
+                raise ValueError(
+                    f"Initialization method `{init_factors}` not found. Please choose from `random`, `orthogonal`, `PCA`, or `NMF`."
                 )
-                # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error
-                if torch.isnan(concat_data).any():
-                    if impute_missings:
-                        from sklearn.impute import SimpleImputer
 
-                        imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
-                        imp.fit(concat_data)
-                        concat_data = torch.tensor(imp.transform(concat_data), dtype=torch.float)
-                    else:
-                        raise ValueError(
-                            "Data has missing values. Please impute missings or set `impute_missings=True`."
-                        )
-                if init_factors == "pca":
-                    pca.fit(concat_data)
-                    init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data), device=self.device)
-                elif init_factors == "nmf":
-                    nmf.fit(concat_data)
-                    init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data), device=self.device)
+            for group_name, n in self.n_samples.items():
+                # scale factor values from -1 to 1 (per factor)
+                q = init_tensor[group_name]["loc"]
+                q = 2.0 * (q - torch.min(q, dim=0)[0]) / (torch.max(q, dim=0)[0] - torch.min(q, dim=0)[0]) - 1
 
-        else:
-            raise ValueError(
-                f"Initialization method `{init_factors}` not found. Please choose from `random`, `orthogonal`, or `PCA`."
-            )
-
-        for group_name, n in self.n_samples.items():
-            # scale factor values from -1 to 1 (per factor)
-            q = init_tensor[group_name]["loc"]
-            q = 2.0 * (q - torch.min(q, dim=0)[0]) / (torch.max(q, dim=0)[0] - torch.min(q, dim=0)[0]) - 1
-
-            # Add artifical dimension at dimension -2 for broadcasting
-            init_tensor[group_name]["loc"] = q.T.unsqueeze(-2).float()
-            init_tensor[group_name]["scale"] = (
-                init_scale * torch.ones(size=(n, self.model_opts.n_factors), device=self.device).T.unsqueeze(-2).float()
-            )
+                # Add artifical dimension at dimension -2 for broadcasting
+                init_tensor[group_name]["loc"] = q.T.unsqueeze(-2).float()
+                init_tensor[group_name]["scale"] = (
+                    init_scale * torch.ones(size=(n, self.model_opts.n_factors)).T.unsqueeze(-2).float()
+                )
 
         self.init_tensor = init_tensor
 
@@ -573,6 +573,7 @@ class CORE:
             if isinstance(val, str):
                 setattr(self.data_opts, opt_name, {k: val for k in self.group_names})
 
+        self.train_opts.device = self._setup_device(self.train_opts.device)
         # validate or infer likelihoods
         self.model_opts.likelihoods = self._setup_likelihoods(self.data, self.model_opts.likelihoods)
 
@@ -669,7 +670,7 @@ class CORE:
                         shuffle=True,
                         num_workers=0,
                         collate_fn=lambda x: x,
-                        pin_memory=str(self.device) != "cpu",
+                        pin_memory=str(self.train_opts.device) != "cpu",
                         drop_last=False,
                     )
                 )
@@ -679,14 +680,19 @@ class CORE:
 
                 for group_batch in zip(*data_loaders, strict=False):
                     epoch_loss += self._svi.step(
-                        dict(zip(self.group_names, (batch.to(self.device) for batch in group_batch), strict=False))
+                        dict(
+                            zip(
+                                self.group_names,
+                                (batch.to(self.train_opts.device) for batch in group_batch),
+                                strict=False,
+                            )
+                        )
                     )
 
                 return epoch_loss
 
         else:
-            # move all data to device once
-            tensor_dict = self._to_device(tensor_dict)
+            tensor_dict = self._to_device(tensor_dict, self.train_opts.device)
 
             def step_fn():
                 return self._svi.step(tensor_dict)
@@ -708,33 +714,34 @@ class CORE:
         pyro.enable_validation(True)
         pyro.clear_param_store()
 
-        # Train
-        self.train_loss_elbo = []
-        earlystopper = EarlyStopper(
-            mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
-        )
-        start_timer = time.time()
+        with self.train_opts.device:
+            # Train
+            self.train_loss_elbo = []
+            earlystopper = EarlyStopper(
+                mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
+            )
+            start_timer = time.time()
 
-        try:
-            for i in range(self.train_opts.max_epochs):
-                loss = step_fn()
-                if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
-                    self._warp_covariates()
-                self.train_loss_elbo.append(loss)
+            try:
+                for i in range(self.train_opts.max_epochs):
+                    loss = step_fn()
+                    if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
+                        self._warp_covariates()
+                    self.train_loss_elbo.append(loss)
 
-                if i % self.train_opts.print_every == 0:
-                    logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
+                    if i % self.train_opts.print_every == 0:
+                        logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
-                if earlystopper.step(loss):
-                    logger.info(f"Training finished after {i} steps.")
-                    break
+                    if earlystopper.step(loss):
+                        logger.info(f"Training finished after {i} steps.")
+                        break
 
-        except KeyboardInterrupt:
-            logger.info("Keyboard interrupt, stopping training and saving progress...")
+            except KeyboardInterrupt:
+                logger.info("Keyboard interrupt, stopping training and saving progress...")
 
-        self._is_trained = True
+            self._is_trained = True
 
-        return self._post_fit(self.train_opts.save, self.train_opts.save_path, self.covariates)
+            return self._post_fit(self.train_opts.save, self.train_opts.save_path, self.covariates)
 
     def _warp_covariates(self):
         factormeans = self.variational.get_factors("mean")

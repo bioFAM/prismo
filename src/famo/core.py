@@ -960,29 +960,14 @@ class CORE:
 
     def _setup_device(self, device):
         logger.info("Setting up device...")
-        cuda_available = torch.cuda.is_available()
 
-        device = str(device).lower()
-        if "cuda" in device and not cuda_available:
-            logger.info(f"- `{device}` not available...")
-            device = "cpu"
+        device = torch.device(device)
+        tens = torch.tensor(())
+        try:
+            tens.to(device)
+        except (RuntimeError, AssertionError):
+            default_device = tens.device
+            logger.warning(f"Device {str(device)} is not available. Using default device: {default_device}")
+            device = default_device
 
-        if "cuda" in device and cuda_available:
-            # Check if device id is given, otherwise use default device
-            if ":" in device:
-                # Check if device_id is valid
-                device_id = int(device.split(":")[1])
-                if device_id >= torch.cuda.device_count():
-                    logger.info(
-                        f"- Device id `{device_id}` not available. Using default device: {torch.cuda.current_device()}"
-                    )
-                    device = f"cuda:{torch.cuda.current_device()}"
-            else:
-                logger.info(f"- No device id given. Using default device: {torch.cuda.current_device()}")
-                device = f"cuda:{torch.cuda.current_device()}"
-
-            # Set all cuda operations to specific cuda device
-            torch.cuda.set_device(device)
-
-        logger.info(f"- Running all computations on `{device}`")
-        return torch.device(device)
+        return device

@@ -1,8 +1,10 @@
+from operator import attrgetter
+
 import pyro
 import pyro.distributions as dist
 import torch
 from pyro.distributions import constraints
-from pyro.infer.autoguide.guides import deep_getattr, deep_setattr
+from pyro.infer.autoguide.guides import deep_setattr
 from pyro.nn import PyroModule, PyroParam
 
 from famo.dist import ReinMaxBernoulli
@@ -454,16 +456,16 @@ class Variational(PyroModule):
         self.sample_dict: dict[str, torch.Tensor] = {}
 
     def _get_loc_and_scale(self, site_name):
-        site_loc = deep_getattr(self.locs, site_name)
-        site_scale = deep_getattr(self.scales, site_name)
+        site_loc = attrgetter(site_name)(self.locs)
+        site_scale = attrgetter(site_name)(self.scales)
         return site_loc, site_scale
 
     def _get_gp_loc_and_scale(self, group: str | None = None):
         if not len(self.generative.gp_groups):
             return {}, {}
 
-        loc = deep_getattr(self.locs, "z_gp")
-        scale = deep_getattr(self.scales, "z_gp")
+        loc = attrgetter("z_gp")(self.locs)
+        scale = attrgetter("z_gp")(self.scales)
 
         gp_group_sizes = [self.generative.n_samples[g] for g in self.generative.gp_groups.keys()]
         if group is not None:
@@ -483,17 +485,17 @@ class Variational(PyroModule):
         return site_loc, site_scale
 
     def _get_prob(self, site_name: str):
-        site_prob = deep_getattr(self.probs, site_name)
+        site_prob = attrgetter(site_name)(self.probs)
         return site_prob
 
     def _get_alpha_and_beta(self, site_name: str):
-        site_alpha = deep_getattr(self.alphas, site_name)
-        site_beta = deep_getattr(self.betas, site_name)
+        site_alpha = attrgetter(site_name)(self.alphas)
+        site_beta = attrgetter(site_name)(self.betas)
         return site_alpha, site_beta
 
     def _get_shape_and_rate(self, site_name: str):
-        site_shape = deep_getattr(self.shapes, site_name)
-        site_rate = deep_getattr(self.rates, site_name)
+        site_shape = attrgetter(site_name)(self.shapes)
+        site_rate = attrgetter(site_name)(self.rates)
         return site_shape, site_rate
 
     def _setup_parameters(self):

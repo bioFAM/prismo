@@ -9,6 +9,7 @@ import seaborn as sns
 import torch
 from plotnine import (
     aes,
+    coord_equal,
     element_blank,
     element_text,
     facet_wrap,
@@ -19,7 +20,6 @@ from plotnine import (
     guides,
     labs,
     scale_fill_gradient2,
-    scale_y_continuous,
     theme,
     theme_minimal,
 )
@@ -43,7 +43,7 @@ alt.data_transformers.enable("vegafusion")
 
 
 def plot_training_curve(model, figsize=(12, 4)):
-    """Plot the training curve (-ELBO vs epoch) using plotnine."""
+    """Plot the training curve: -ELBO vs epoch."""
     model._check_if_trained()
 
     train_loss_elbo = model._cache["train_loss_elbo"]
@@ -52,9 +52,7 @@ def plot_training_curve(model, figsize=(12, 4)):
     plot = (
         ggplot(df, aes(x="Epoch", y="-ELBO"))
         + geom_line(color="#214D83", size=1)
-        + theme_minimal()
         + labs(title="Training Curve", x="Epoch", y="-ELBO")
-        + scale_y_continuous(expand=(0, 0))
         + theme_minimal(base_size=12)
         + theme(figure_size=figsize)
     )
@@ -62,7 +60,7 @@ def plot_training_curve(model, figsize=(12, 4)):
     return plot
 
 
-def plot_factor_correlation(model, figsize=(12, 4)):
+def plot_factor_correlation(model, figsize=(8, 8)):
     """Plot the correlation between factors."""
     model._check_if_trained()
 
@@ -87,7 +85,8 @@ def plot_factor_correlation(model, figsize=(12, 4)):
         ggplot(final_df, aes(x="Factor1", y="Factor2", fill="Correlation"))
         + geom_tile()
         + scale_fill_gradient2(low="#7D1B26", high="#214D83", mid="white", midpoint=0, limits=(-1, 1))
-        + theme_minimal()
+        + coord_equal()
+        + theme_minimal(base_size=12)
         + labs(x="Factor", y="Factor")
         + theme(
             figure_size=figsize,

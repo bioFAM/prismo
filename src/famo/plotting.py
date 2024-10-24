@@ -16,12 +16,9 @@ from plotnine import (
     geom_line,
     geom_tile,
     ggplot,
-    guide_colorbar,
-    guides,
     labs,
     scale_fill_gradient2,
     theme,
-    theme_minimal,
 )
 
 HEATMAP = "heatmap"
@@ -42,7 +39,7 @@ GROUP_PL_TYPES = [STRIPPLOT, BOXPLOT, BOXENPLOT, VIOLINPLOT]
 alt.data_transformers.enable("vegafusion")
 
 
-def plot_training_curve(model, figsize=(12, 4)):
+def plot_training_curve(model, color="#214D83", size=1, figsize=(12, 4)):
     """Plot the training curve: -ELBO vs epoch."""
     model._check_if_trained()
 
@@ -51,16 +48,16 @@ def plot_training_curve(model, figsize=(12, 4)):
 
     plot = (
         ggplot(df, aes(x="Epoch", y="-ELBO"))
-        + geom_line(color="#214D83", size=1)
+        + geom_line(color=color, size=size)
         + labs(title="Training Curve", x="Epoch", y="-ELBO")
-        + theme_minimal(base_size=12)
+        # + theme_minimal(base_size=12)
         + theme(figure_size=figsize)
     )
 
     return plot
 
 
-def plot_factor_correlation(model, figsize=(8, 8)):
+def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)):
     """Plot the correlation between factors."""
     model._check_if_trained()
 
@@ -84,9 +81,9 @@ def plot_factor_correlation(model, figsize=(8, 8)):
     plot = (
         ggplot(final_df, aes(x="Factor1", y="Factor2", fill="Correlation"))
         + geom_tile()
-        + scale_fill_gradient2(low="#7D1B26", high="#214D83", mid="white", midpoint=0, limits=(-1, 1))
+        + scale_fill_gradient2(low=low, high=high, mid="white", midpoint=0, limits=(-1, 1), name="Correlation")
         + coord_equal()
-        + theme_minimal(base_size=12)
+        # + theme_minimal(base_size=12)
         + labs(x="Factor", y="Factor")
         + theme(
             figure_size=figsize,
@@ -94,8 +91,7 @@ def plot_factor_correlation(model, figsize=(8, 8)):
             panel_grid_major=element_blank(),
             panel_grid_minor=element_blank(),
         )
-        + facet_wrap("~Group")
-        + guides(fill=guide_colorbar(title="Correlation"))
+        + facet_wrap("Group")
     )
 
     return plot

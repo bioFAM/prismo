@@ -33,6 +33,7 @@ dependencies = [
     "altair",
     "gpytorch",
     "dtw-python",
+    "plotnine",
     # for debug logging (referenced from the issue template)
     "session-info",
 ]

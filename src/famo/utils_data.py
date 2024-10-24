@@ -3,6 +3,7 @@ import warnings
 from collections import defaultdict
 from functools import reduce
 
+import anndata as ad
 import numpy as np
 import pandas as pd
 import torch
@@ -219,52 +220,26 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
-    # For each view, we collect the variances of all features and remove those with zero variance
-    mask_keep_variable = {}
+    mask_keep_var = {}
+    for view_name in likelihoods.keys():
+        adata_view = []
+        for group_dict in data.values():
+            if view_name in group_dict.keys():
+                adata_view.append(group_dict[view_name])
+            else:
+                continue
+        adata_view = ad.concat(adata_view, join="outer", fill_value=0.0)
+        variances = np.nanvar(adata_view.X, axis=0)
+        mask_keep_var[view_name] = variances > 1e-16
+        n_removed_features = np.sum(~mask_keep_var[view_name])
+        logger.debug(f"Removing {n_removed_features} constant features from view {view_name}")
 
-    for k_groups, v_groups in data.items():
-        for k_views, v_views in v_groups.items():
-            # Start with an array of all False and if feature must not be dropped, set to True
-            if k_views not in mask_keep_variable:
-                mask_keep_variable[k_views] = np.full(v_views.X.shape[1], False)
-
-            # compute variance of each feature
-            variances = np.var(v_views.X, axis=0)
-            variances[variances < 1e-16] = 0
-
-            # create mask that is True where a feature is constant (has zero variance)
-            # Combine with or operator to keep track of all features that are constant across all groups
-            mask_keep_variable[k_views] = np.logical_or(mask_keep_variable[k_views], (variances != 0))
-
-            # the BetaBinomial likelihood is a special case because every feature occurs twice with different
-            # suffixes and removal of one should also lead to removal of the other
-            if likelihoods[k_views] == "BetaBinomial":
-                # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
-                logger.warning("Not removing constants features in BetaBinomial.")
-                # split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
-                # split_var_names.columns = ["base", "suffix"]
-                # suffix_indices = split_var_names.groupby("base").apply(
-                #     lambda x: pd.Series(x.index.values), include_groups=False
-                # )
-
-                # # if any of the two occurences of a feature is masked, mask the other one as well
-                # for var_name_base in suffix_indices.index:
-                #     ix = suffix_indices.loc[var_name_base].values
-                #     if mask_keep_variable[ix].any():
-                #         mask_keep_variable[ix] = True
-
-    for k_view in likelihoods.keys():
-        if not mask_keep_variable[k_view].all():
-            # We can reuse the last v_groups object to find the feature names
-            dropped_features_names = list(v_groups[k_view].var_names[~mask_keep_variable[k_view]])
-
-            for k_groups, v_groups in data.items():
-                data[k_groups][k_views] = data[k_groups][k_views][:, mask_keep_variable[k_view]].copy()
-
-            logger.debug(f"- Removing constant features in {k_groups}/{k_views}.")
-            logger.debug(f"  - Removed {len(dropped_features_names)} features: {','.join(dropped_features_names)}")
-
-    data.update()
+        for group_name, group_dict in data.items():
+            if view_name in group_dict.keys():
+                new_vars = np.intersect1d(
+                    adata_view.var_names[mask_keep_var[view_name]], group_dict[view_name].var_names
+                )
+                data[group_name][view_name] = group_dict[view_name][:, new_vars].copy()
 
     return data
 

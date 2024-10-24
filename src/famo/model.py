@@ -115,7 +115,7 @@ class Generative(PyroModule):
                 if s is None:
                     gp_subsample.append(torch.arange(self.n_samples[g]) + offset)
                 else:
-                    gp_subsample[g].append(s + offset)
+                    gp_subsample.append(s + offset)
                 offset += self.n_samples[g]
             gp_subsample = torch.cat(gp_subsample)
         elif len(self.gp_groups):

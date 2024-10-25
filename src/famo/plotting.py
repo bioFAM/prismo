@@ -39,8 +39,21 @@ GROUP_PL_TYPES = [STRIPPLOT, BOXPLOT, BOXENPLOT, VIOLINPLOT]
 alt.data_transformers.enable("vegafusion")
 
 
-def plot_training_curve(model, color="#214D83", size=1, figsize=(12, 4)):
-    """Plot the training curve: -ELBO vs epoch."""
+def plot_training_curve(model, linecolor="#214D83", linewidth=1, figsize=(12, 4)):
+    """Plot the training curve: -ELBO vs epoch.
+
+    Parameters
+    ----------
+    model
+        The model to plot the training curve for.
+    linecolor: str
+        The color of the line.
+    linewidth: int
+        The width of the line.
+    figsize: tuple
+        The size of the figure.
+
+    """
     model._check_if_trained()
 
     train_loss_elbo = model._cache["train_loss_elbo"]
@@ -48,9 +61,8 @@ def plot_training_curve(model, color="#214D83", size=1, figsize=(12, 4)):
 
     plot = (
         ggplot(df, aes(x="Epoch", y="-ELBO"))
-        + geom_line(color=color, size=size)
+        + geom_line(color=linecolor, size=linewidth)
         + labs(title="Training Curve", x="Epoch", y="-ELBO")
-        # + theme_minimal(base_size=12)
         + theme(figure_size=figsize)
     )
 
@@ -58,7 +70,19 @@ def plot_training_curve(model, color="#214D83", size=1, figsize=(12, 4)):
 
 
 def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)):
-    """Plot the correlation between factors."""
+    """Plot the correlation between factors.
+
+    Parameters
+    ----------
+    model
+        The model to plot the factor correlation for.
+    low: str
+        The color for low correlation.
+    high: str
+        The color for high correlation.
+    figsize: tuple
+        The size of the figure.
+    """
     model._check_if_trained()
 
     factors = model._cache["factors"]
@@ -83,7 +107,6 @@ def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)
         + geom_tile()
         + scale_fill_gradient2(low=low, high=high, mid="white", midpoint=0, limits=(-1, 1), name="Correlation")
         + coord_equal()
-        # + theme_minimal(base_size=12)
         + labs(x="Factor", y="Factor")
         + theme(
             figure_size=figsize,

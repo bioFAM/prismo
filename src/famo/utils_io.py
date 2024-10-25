@@ -1,17 +1,8 @@
-import io
 from pathlib import Path
 
-import dill as pickle
+import dill
 import pyro
 import torch
-
-
-class CPUUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
-        if module == "torch.storage" and name == "_load_from_bytes":
-            return lambda b: torch.load(io.BytesIO(b), map_location="cpu")
-        else:
-            return super().find_class(module, name)
 
 
 def save_model(model, dir_path="."):
@@ -31,7 +22,7 @@ def save_model(model, dir_path="."):
 
     # third, save model
     with open(model_path, "wb") as f:
-        pickle.dump(model, f)
+        torch.save(model, f, pickle_module=dill)
 
     print(f"- Model saved to {model_path}")
     print(f"- Parameters saved to {params_path}")
@@ -47,7 +38,7 @@ def load_model(dir_path=".", with_params=True, map_location=None):
 
     # first, load model
     with open(model_path, "rb") as f:
-        model = pickle.load(f) if map_location is None else CPUUnpickler(f).load()
+        model = torch.load(f, map_location=map_location, pickle_module=dill)
 
     # second, load parameters
     if with_params:

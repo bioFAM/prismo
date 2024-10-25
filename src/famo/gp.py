@@ -116,6 +116,11 @@ class GP(ApproximateGP):
 
         self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
 
+    def __call__(self, group_idx: torch.Tensor | None, inputs: torch.Tensor | None, prior: bool = False, **kwargs):
+        if group_idx is not None and inputs is not None:
+            inputs = torch.cat((group_idx, inputs), dim=-1)
+        return super().__call__(inputs, prior, **kwargs)
+
     def forward(self, x):
         """Forward pass of the GP model."""
         mean = self.mean_module(x)

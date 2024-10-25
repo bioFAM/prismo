@@ -1,12 +1,13 @@
 import os
 import shutil
+from itertools import chain
 from pathlib import Path
 
 import pyro
 import pytest
 import torch
 
-from famo.core import CORE
+from famo import CORE, DataOptions, ModelOptions, TrainingOptions
 from famo.utils_io import load_model
 
 
@@ -29,18 +30,23 @@ def test_save_load_model(setup_teardown):
     data = {"group1": {"view1": torch.rand(3, 10), "view2": torch.rand(3, 5)}}
 
     # Create and train the CORE model for a single epoch
-    model = CORE(device="cpu")
+    model = CORE()
     model.fit(
-        n_factors=2,
-        data=data,
-        likelihoods={"view1": "Normal", "view2": "Normal"},
-        factor_prior="Normal",
-        weight_prior="Normal",
-        lr=0.001,
-        scale_per_group=False,
-        max_epochs=1,  # Train for a single epoch
-        save=True,
-        save_path=temp_dir,
+        data,
+        DataOptions(scale_per_group=False),
+        ModelOptions(
+            n_factors=2,
+            likelihoods={"view1": "Normal", "view2": "Normal"},
+            factor_prior="Normal",
+            weight_prior="Normal",
+        ),
+        TrainingOptions(
+            device="cpu",
+            lr=0.001,
+            max_epochs=1,  # Train for a single epoch
+            save=True,
+            save_path=temp_dir,
+        ),
     )
 
     # Check if files are saved
@@ -48,7 +54,7 @@ def test_save_load_model(setup_teardown):
     assert os.path.exists(temp_dir / "params.save")
 
     # model params
-    prev_generator_params = model.parameters()
+    prev_generator_params = chain(model.generative.parameters(), model.variational.parameters())
     # Save pyro param store
     prev_param_store = pyro.get_param_store()
 
@@ -61,7 +67,11 @@ def test_save_load_model(setup_teardown):
     # Load the model and its parameters
     loaded_model = load_model(dir_path=temp_dir)
     # Check if the model's parameter is correctly loaded
-    for original_param, loaded_param in zip(prev_generator_params, loaded_model.parameters(), strict=False):
+    for original_param, loaded_param in zip(
+        prev_generator_params,
+        chain(loaded_model.generative.parameters(), loaded_model.variational.parameters()),
+        strict=False,
+    ):
         assert torch.equal(original_param, loaded_param), "Model parameter mismatch"
 
     # Check if the param store parameter is correctly loaded

@@ -7,6 +7,19 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import torch
+from plotnine import (
+    aes,
+    coord_equal,
+    element_blank,
+    element_text,
+    facet_wrap,
+    geom_line,
+    geom_tile,
+    ggplot,
+    labs,
+    scale_fill_gradient2,
+    theme,
+)
 
 HEATMAP = "heatmap"
 MATRIXPLOT = "matrixplot"
@@ -24,6 +37,90 @@ VIOLINPLOT = "violinplot"
 GROUP_PL_TYPES = [STRIPPLOT, BOXPLOT, BOXENPLOT, VIOLINPLOT]
 
 alt.data_transformers.enable("vegafusion")
+
+
+def plot_training_curve(model, linecolor="#214D83", linewidth=1, figsize=(12, 4)):
+    """Plot the training curve: -ELBO vs epoch.
+
+    Parameters
+    ----------
+    model
+        The model to plot the training curve for.
+    linecolor: str
+        The color of the line.
+    linewidth: int
+        The width of the line.
+    figsize: tuple
+        The size of the figure.
+
+    """
+    model._check_if_trained()
+
+    train_loss_elbo = model._cache["train_loss_elbo"]
+    df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
+
+    plot = (
+        ggplot(df, aes(x="Epoch", y="-ELBO"))
+        + geom_line(color=linecolor, size=linewidth)
+        + labs(title="Training Curve", x="Epoch", y="-ELBO")
+        + theme(figure_size=figsize)
+    )
+
+    return plot
+
+
+def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)):
+    """Plot the correlation between factors.
+
+    Parameters
+    ----------
+    model
+        The model to plot the factor correlation for.
+    low: str
+        The color for low correlation.
+    high: str
+        The color for high correlation.
+    figsize: tuple
+        The size of the figure.
+    """
+    model._check_if_trained()
+
+    factors = model._cache["factors"]
+    all_corr_dfs = []
+
+    for k, v in factors.items():
+        corr_df = pd.DataFrame(np.corrcoef(v.X.T), index=model.factor_names, columns=model.factor_names)
+
+        corr_df["Factor1"] = model.factor_names
+        corr_df = corr_df.melt("Factor1")
+        corr_df.columns = ["Factor1", "Factor2", "Correlation"]
+        corr_df["Group"] = k
+        all_corr_dfs.append(corr_df)
+
+    final_df = pd.concat(all_corr_dfs, axis=0).reset_index(drop=True)
+    factor_order = [f"Factor {k+1}" for k in range(len(model.factor_names))]
+    final_df["Factor1"] = pd.Categorical(final_df["Factor1"], categories=factor_order, ordered=True)
+    final_df["Factor2"] = pd.Categorical(final_df["Factor2"], categories=factor_order, ordered=True)
+
+    plot = (
+        ggplot(final_df, aes(x="Factor1", y="Factor2", fill="Correlation"))
+        + geom_tile()
+        + scale_fill_gradient2(low=low, high=high, mid="white", midpoint=0, limits=(-1, 1), name="Correlation")
+        + coord_equal()
+        + labs(x="Factor", y="Factor")
+        + theme(
+            figure_size=figsize,
+            axis_text_x=element_text(angle=45),
+            panel_grid_major=element_blank(),
+            panel_grid_minor=element_blank(),
+        )
+        + facet_wrap("Group")
+    )
+
+    return plot
+
+
+# Code below is not curated yet
 
 
 def plot_overview(data):
@@ -77,20 +174,6 @@ def lined_heatmap(data, figsize=None, hlines=None, vlines=None, **kwargs):
     return g
 
 
-def plot_training_curve(model, figsize=(600, 400)):
-    """Plot the training curve, i.e. -ELBO vs epoch."""
-    model._check_if_trained()
-
-    if figsize is None:
-        figsize = (600, 400)
-
-    train_loss_elbo = model._cache["train_loss_elbo"]
-    df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
-    alt.Chart(df).mark_line(color="#214D83").encode(alt.Y("-ELBO").scale(zero=False), x="Epoch").properties(
-        title="Training Curve", width=figsize[0], height=figsize[1]
-    ).display()
-
-
 def plot_all_weights(model, clip=(-1, 1)):
     """Plot the weight matrices using Altair."""
     # Ensure the model has been trained
@@ -129,56 +212,6 @@ def plot_all_weights(model, clip=(-1, 1)):
         alt.hconcat(*charts).configure_view(strokeWidth=0).configure_concat(spacing=5).configure_title(fontSize=14)
     )
     combined_chart.display()
-
-
-def plot_factor_correlation(model):
-    """Plot the correlation between factors."""
-    # Check if the model has been trained
-    model._check_if_trained()
-
-    # Get the factors from the model's cache
-    factors = model._cache["factors"]
-
-    # Create an empty list to hold all the charts
-    charts = []
-
-    for k, v in factors.items():
-        # Calculate the correlation matrix
-        # and melt the DataFrame to long format
-        corr_df = pd.DataFrame(np.corrcoef(v.X.T), index=model.factor_names, columns=model.factor_names)
-        # Increase index by 1 to match the factor number and then melt the dataframe
-
-        corr_df["index"] = model.factor_names
-        corr_df = corr_df.melt("index")
-        corr_df.columns = ["Factor1", "Factor2", "Correlation"]
-
-        # Sort by Factor 1, and make sure "Factor 10" is behind "Factor 2"
-        # Extract factor id
-        corr_df["Factor1_int"] = corr_df["Factor1"].str.extract(r"(\d+)").astype(int)
-        corr_df["Factor2_int"] = corr_df["Factor2"].str.extract(r"(\d+)").astype(int)
-        corr_df = corr_df.sort_values(["Factor1_int", "Factor2_int"])
-
-        # Create the heatmap chart
-        heatmap = (
-            alt.Chart(corr_df)
-            .mark_rect()
-            .encode(
-                x=alt.X("Factor1:O", title="Factor", sort=None),
-                y=alt.Y("Factor2:O", title="Factor", sort=None),
-                color=alt.Color("Correlation:Q", scale=alt.Scale(scheme="redblue", domain=(-1, 1))),
-                tooltip=["Factor1", "Factor2", "Correlation"],
-            )
-            .properties(title=k, width=400, height=400)
-        )
-
-        # Add the chart to the list of charts
-        charts.append(heatmap)
-
-    # Concatenate all the charts horizontally
-    final_chart = alt.hconcat(*charts).resolve_scale(color="independent")
-
-    # Display the chart
-    final_chart.display()
 
 
 def plot_variance_explained(model, groupby="group"):

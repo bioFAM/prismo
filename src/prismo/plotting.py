@@ -18,6 +18,7 @@ from plotnine import (
     ggplot,
     labs,
     scale_fill_gradient2,
+    scale_fill_manual,
     theme,
 )
 
@@ -120,37 +121,58 @@ def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)
     return plot
 
 
-# Code below is not curated yet
+def plot_overview(data, missingcolor="#214D83", nonmissingcolor="#8AB6D4", figsize=(15, 5)):
+    """
+    Generate an overview plot of missing data across different views and groups.
 
-
-def plot_overview(data):
+    Parameters
+    ----------
+    data : dict
+        A nested dictionary where the first level keys are group names,
+        and the second level keys are view names. The keys are AnnData objects.
+    missingcolor : str
+        The color to use for missing data.
+    nonmissingcolor : str
+        The color to use for non-missing data.
+    figsize : tuple
+        The size of the figure.
+    """
+    missings_list = []
     for group_name, group_data in data.items():
-        missings = pd.DataFrame()
         for view_name, view_data in group_data.items():
-            # Concatenate all data into one matrix
-            missings = pd.concat(
-                [
-                    missings,
-                    pd.DataFrame(
-                        {
-                            "view": view_name,
-                            "group": group_name,
-                            "obs_name": view_data.obs_names,
-                            "missing": np.isnan(view_data.X).any(axis=1),
-                        }
-                    ),
-                ],
-                axis=0,
+            missings_list.append(
+                pd.DataFrame(
+                    {
+                        "view": view_name,
+                        "group": group_name,
+                        "obs_name": view_data.obs_names,
+                        "missing": np.isnan(view_data.X).any(axis=1),
+                    }
+                )
             )
 
-        alt.Chart(missings).mark_rect().encode(
-            x=alt.X("obs_name", axis=alt.Axis(labels=False, title=None)),
-            y=alt.Y("view", axis=alt.Axis(title=None)),
-            color=alt.Color("missing:N", scale=alt.Scale(range=["#214D83", "#8AB6D4"])),
-            facet=alt.Facet("group:N", columns=3, title=None),
-        ).properties(width=800, title="Missing Data Overview").configure_view(
-            strokeWidth=2, strokeOpacity=1, stroke="black"
-        ).display()
+    missings = pd.concat(missings_list, axis=0)
+    unique_obs_count = missings["obs_name"].nunique()
+    show_x_labels = unique_obs_count <= 100
+
+    plot = (
+        ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
+        + geom_tile()
+        + facet_wrap("~group")
+        + scale_fill_manual(values=[missingcolor, nonmissingcolor])
+        + theme(
+            axis_text_x=element_text(angle=90, hjust=1, vjust=0.5) if show_x_labels else element_blank(),
+            figure_size=figsize,
+        )
+        + labs(title="Missing Data Overview")
+    )
+
+    # The figure is only plotted when training is called. Therefore, we directly show the plot here
+    # instead of returning it.
+    plot.show()
+
+
+# Code below is not curated yet
 
 
 def _lines(ax, positions, ymin, ymax, horizontal=False, **kwargs):

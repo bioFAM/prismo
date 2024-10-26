@@ -6,7 +6,7 @@ import torch
 from anndata import AnnData
 from mudata import MuData
 
-from famo import utils_data
+from prismo import preprocessing
 
 
 def create_adata(X, var_names=None, obs_names=None):
@@ -65,7 +65,7 @@ def test_cast_data():
     )
 
     for data in datasets:
-        data_c = utils_data.cast_data(data, None)
+        data_c = preprocessing.cast_data(data, None)
         assert isinstance(data_c, dict)
         assert all([isinstance(v, dict) for v in data_c.values()])
         assert all([all([isinstance(vv, AnnData) for vv in v.values()]) for v in data_c.values()])
@@ -81,7 +81,7 @@ def test_infer_likelihoods():
         ),
     }
 
-    likelihoods = utils_data.infer_likelihoods(data)
+    likelihoods = preprocessing.infer_likelihoods(data)
 
     assert likelihoods["view1"] == "Normal"
     assert likelihoods["view2"] == "Bernoulli"
@@ -101,7 +101,7 @@ def test_validate_likelihoods():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    utils_data.validate_likelihoods(data, likelihoods)
+    preprocessing.validate_likelihoods(data, likelihoods)
 
 
 # def test_remove_constant_features():
@@ -163,7 +163,7 @@ def test_get_data_mean():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    feature_mean = utils_data.get_data_mean(data, likelihoods, how="feature")
+    feature_mean = preprocessing.get_data_mean(data, likelihoods, how="feature")
 
     assert isclose(feature_mean["group1"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
     assert isclose(feature_mean["group2"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
@@ -197,7 +197,7 @@ def test_center_data():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    data_c = utils_data.center_data(
+    data_c = preprocessing.center_data(
         data,
         likelihoods,
         nonnegative_weights={k: False for k in likelihoods},
@@ -228,12 +228,12 @@ def test_scale_data():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    data_c = utils_data.scale_data(data, scale_per_group=True, likelihoods=likelihoods)
+    data_c = preprocessing.scale_data(data, scale_per_group=True, likelihoods=likelihoods)
 
     assert np.allclose(data_c["group1"]["view1"].X.std(), 1)
     assert np.allclose(data_c["group2"]["view1"].X.std(), 1)
 
-    data_c = utils_data.scale_data(data, scale_per_group=False, likelihoods=likelihoods)
+    data_c = preprocessing.scale_data(data, scale_per_group=False, likelihoods=likelihoods)
 
     combined_view1 = np.concatenate([data_c["group1"]["view1"].X, data_c["group2"]["view1"].X], axis=0)
     assert np.allclose(combined_view1.std(), 1)
@@ -311,8 +311,8 @@ def test_align_obs_var():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
 
-    data_c = utils_data.align_obs(data, use_obs="union")
-    data_c = utils_data.align_var(data_c, use_var="union", likelihoods=likelihoods)
+    data_c = preprocessing.align_obs(data, use_obs="union")
+    data_c = preprocessing.align_var(data_c, use_var="union", likelihoods=likelihoods)
 
     feature_names = {}
     for k_groups, v_groups in data_c.items():

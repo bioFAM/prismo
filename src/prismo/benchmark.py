@@ -15,7 +15,7 @@ from sklearn.metrics import (
 )
 
 # import muvi
-from famo.core import CORE
+from prismo.prismo import PRISMO
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +295,7 @@ def train_muvi(data, mask, seed=0, terms=None, **kwargs):
     return model
 
 
-def train_famo(data, mask, seed=None, terms=None, **kwargs):
+def train_prismo(data, mask, seed=None, terms=None, **kwargs):
     adata = ad.AnnData(data)
     if terms is None:
         terms = [f"factor_{k}" for k in range(mask.shape[0])]
@@ -314,7 +314,7 @@ def train_famo(data, mask, seed=None, terms=None, **kwargs):
 
     early_stopper_patience = kwargs.pop("early_stopper_patience", 100)
 
-    model = CORE(device=device)
+    model = PRISMO(device=device)
     model.fit(
         mu.MuData({"view_0": adata}),
         n_factors=n_factors,
@@ -345,7 +345,7 @@ def train_famo(data, mask, seed=None, terms=None, **kwargs):
 def get_factor_loadings(model, with_dense=False):
     if type(model).__name__ == "NMF":
         return model.components_
-    if type(model).__name__ == "CORE":
+    if type(model).__name__ == "PRISMO":
         w_hat = model.get_weights("numpy")["view_0"]
         if not with_dense and model.n_dense_factors > 0:
             return w_hat[model.n_dense_factors :, :]
@@ -366,7 +366,7 @@ def get_factor_loadings(model, with_dense=False):
 def get_factor_scores(model, data, with_dense=False):
     if type(model).__name__ == "NMF":
         return model.transform(data)
-    if type(model).__name__ == "CORE":
+    if type(model).__name__ == "PRISMO":
         z_hat = model.get_factors("numpy")["group_1"]
         if not with_dense and model.n_dense_factors > 0:
             return z_hat[:, model.n_dense_factors :]
@@ -387,7 +387,7 @@ def get_factor_scores(model, data, with_dense=False):
 def get_reconstructed(model, data):
     if type(model).__name__ == "NMF":
         return get_factor_scores(model, data) @ get_factor_loadings(model)
-    if type(model).__name__ == "CORE":
+    if type(model).__name__ == "PRISMO":
         return get_factor_scores(model, data, with_dense=True) @ get_factor_loadings(model, with_dense=True)
     if type(model).__name__ == "MuVI":
         return model.get_reconstructed(as_df=False)["view_0"]

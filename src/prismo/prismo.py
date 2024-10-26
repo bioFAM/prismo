@@ -20,11 +20,11 @@ from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from famo import gp, utils_data
-from famo.model import Generative, Variational
-from famo.plotting import plot_overview
-from famo.utils_io import save_model
-from famo.utils_training import EarlyStopper
+from prismo import gp, preprocessing
+from prismo.model import Generative, Variational
+from prismo.plotting import plot_overview
+from prismo.io import save_model
+from prismo.training import EarlyStopper
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ class SmoothOptions(_Options):
     warp_reference_group: str | None = None
 
 
-class CORE:
+class PRISMO:
     def __init__(self):
         self._init()
 
@@ -255,17 +255,17 @@ class CORE:
 
         if likelihoods is None:
             logger.info("- No likelihoods provided. Inferring likelihoods from data.")
-            likelihoods = utils_data.infer_likelihoods(data_concatenated)
+            likelihoods = preprocessing.infer_likelihoods(data_concatenated)
 
         elif isinstance(likelihoods, dict):
             logger.info("- Checking compatibility of provided likelihoods with data.")
-            utils_data.validate_likelihoods(data_concatenated, likelihoods)
+            preprocessing.validate_likelihoods(data_concatenated, likelihoods)
 
         elif isinstance(likelihoods, str):
             logger.info("- Using provided likelihood for all views.")
             likelihoods = {k: likelihoods for k in view_names}
             # Still validate likelihoods
-            utils_data.validate_likelihoods(data_concatenated, likelihoods)
+            preprocessing.validate_likelihoods(data_concatenated, likelihoods)
 
         elif not (isinstance(likelihoods, dict) | isinstance(likelihoods, str)):
             raise ValueError("likelihoods must be a dictionary or string.")
@@ -532,8 +532,8 @@ class CORE:
             Options for training.
         """
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
-        self.data = utils_data.cast_data(data, group_by=None)
-        self.data = utils_data.anndata_to_dense(self.data)
+        self.data = preprocessing.cast_data(data, group_by=None)
+        self.data = preprocessing.anndata_to_dense(self.data)
 
         # extract group and view names / numbers from data
         self.group_names = list(self.data.keys())
@@ -578,9 +578,9 @@ class CORE:
         self.model_opts.likelihoods = self._setup_likelihoods(self.data, self.model_opts.likelihoods)
 
         # process data
-        self.data = utils_data.remove_constant_features(self.data, self.model_opts.likelihoods)
-        self.data = utils_data.scale_data(self.data, self.model_opts.likelihoods, self.data_opts.scale_per_group)
-        self.data = utils_data.center_data(
+        self.data = preprocessing.remove_constant_features(self.data, self.model_opts.likelihoods)
+        self.data = preprocessing.scale_data(self.data, self.model_opts.likelihoods, self.data_opts.scale_per_group)
+        self.data = preprocessing.center_data(
             self.data,
             self.model_opts.likelihoods,
             self.model_opts.nonnegative_weights,
@@ -589,13 +589,13 @@ class CORE:
 
         # align observations across views and variables across groups
         if self.data_opts.use_obs is not None:
-            self.data = utils_data.align_obs(self.data, self.data_opts.use_obs)
+            self.data = preprocessing.align_obs(self.data, self.data_opts.use_obs)
         if self.data_opts.use_var is not None:
-            self.data = utils_data.align_var(self.data, self.model_opts.likelihoods, self.data_opts.use_var)
+            self.data = preprocessing.align_var(self.data, self.model_opts.likelihoods, self.data_opts.use_var)
 
         # obtain observations DataFrame and covariates
-        self.metadata = utils_data.extract_obs(self.data)
-        self.covariates = utils_data.extract_covariate(
+        self.metadata = preprocessing.extract_obs(self.data)
+        self.covariates = preprocessing.extract_covariate(
             self.data, self.data_opts.covariates_obs_key, self.data_opts.covariates_obsm_key
         )
 
@@ -613,8 +613,8 @@ class CORE:
                     self.feature_names[view_name] = feature_names_base.unique()
 
         # compute feature means for intercept terms
-        self.feature_means = utils_data.get_data_mean(self.data, self.model_opts.likelihoods, how="feature")
-        self.sample_means = utils_data.get_data_mean(self.data, self.model_opts.likelihoods, how="sample")
+        self.feature_means = preprocessing.get_data_mean(self.data, self.model_opts.likelihoods, how="feature")
+        self.sample_means = preprocessing.get_data_mean(self.data, self.model_opts.likelihoods, how="sample")
 
         if self.data_opts.plot_data_overview:
             plot_overview(self.data)

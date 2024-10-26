@@ -1,6 +1,6 @@
 import logging
 
-from .core import CORE, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
+from .prismo import PRISMO, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
 
 _logger = logging.getLogger(__name__)
 _h = logging.StreamHandler()

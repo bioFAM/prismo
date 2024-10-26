@@ -3,8 +3,8 @@
 ## Preprocessing
 
 ```{eval-rst}
-.. module:: famo.pp
-.. currentmodule:: famo
+.. module:: prismo.pp
+.. currentmodule:: prismo
 
 .. autosummary::
     :toctree: generated
@@ -15,8 +15,8 @@
 ## Tools
 
 ```{eval-rst}
-.. module:: famo.tl
-.. currentmodule:: famo
+.. module:: prismo.tl
+.. currentmodule:: prismo
 
 .. autosummary::
     :toctree: generated
@@ -27,8 +27,8 @@
 ## Plotting
 
 ```{eval-rst}
-.. module:: famo.pl
-.. currentmodule:: famo
+.. module:: prismo.pl
+.. currentmodule:: prismo
 
 .. autosummary::
     :toctree: generated

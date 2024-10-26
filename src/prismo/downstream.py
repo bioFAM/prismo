@@ -28,8 +28,8 @@ def test(
 
     Parameters
     ----------
-    model : CORE
-        A CORE model
+    model : PRISMO
+        A PRISMO model
     view_name : str
         View name
     feature_sets : pd.DataFrame, optional

@@ -1,6 +1,6 @@
-# FAMO
+# PRISMO
 
-[![codecov](https://codecov.io/gh/bioFAM/famo/graph/badge.svg?token=IJP1IA4JEU)](https://codecov.io/gh/bioFAM/famo)
+[![codecov](https://codecov.io/gh/bioFAM/prismo/graph/badge.svg?token=IJP1IA4JEU)](https://codecov.io/gh/bioFAM/prismo)
 
 Factor Analysis Models
 
@@ -15,20 +15,20 @@ Please refer to the [documentation][link-docs]. In particular, the
 You need to have Python 3.10 or newer installed on your system. If you don't have
 Python installed, we recommend installing [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge).
 
-There are several alternative options to install famo:
+There are several alternative options to install prismo:
 
 <!--
-1) Install the latest release of `famo` from [PyPI][link-pypi]:
+1) Install the latest release of `prismo` from [PyPI][link-pypi]:
 
 ```bash
-pip install famo
+pip install prismo
 ```
 -->
 
 1. Install the latest development version:
 
 ```bash
-pip install git+https://github.com/bioFAM/famo.git@main
+pip install git+https://github.com/bioFAM/prismo.git@main
 ```
 
 ## Release notes
@@ -44,8 +44,8 @@ If you found a bug, please use the [issue tracker][issue-tracker].
 
 > t.b.a
 
-[issue-tracker]: https://github.com/martinrohbeck/famo/issues
-[changelog]: https://famo.readthedocs.io/latest/changelog.html
-[link-docs]: https://famo.readthedocs.io
-[link-api]: https://famo.readthedocs.io/latest/api.html
-[link-pypi]: https://pypi.org/project/famo
+[issue-tracker]: https://github.com/martinrohbeck/prismo/issues
+[changelog]: https://prismo.readthedocs.io/latest/changelog.html
+[link-docs]: https://prismo.readthedocs.io
+[link-api]: https://prismo.readthedocs.io/latest/api.html
+[link-pypi]: https://pypi.org/project/prismo

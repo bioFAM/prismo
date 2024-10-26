@@ -130,6 +130,12 @@ def plot_overview(data, missingcolor="#214D83", nonmissingcolor="#8AB6D4", figsi
     data : dict
         A nested dictionary where the first level keys are group names,
         and the second level keys are view names. The keys are AnnData objects.
+    missingcolor : str
+        The color to use for missing data.
+    nonmissingcolor : str
+        The color to use for non-missing data.
+    figsize : tuple
+        The size of the figure.
     """
     missings_list = []
     for group_name, group_data in data.items():

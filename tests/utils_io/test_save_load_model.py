@@ -7,7 +7,7 @@ import pyro
 import pytest
 import torch
 
-from prismo import CORE, DataOptions, ModelOptions, TrainingOptions
+from prismo import PRISMO, DataOptions, ModelOptions, TrainingOptions
 from prismo.io import load_model
 
 
@@ -29,8 +29,8 @@ def test_save_load_model(setup_teardown):
     # Prepare dummy data
     data = {"group1": {"view1": torch.rand(3, 10), "view2": torch.rand(3, 5)}}
 
-    # Create and train the CORE model for a single epoch
-    model = CORE()
+    # Create and train the PRISMO model for a single epoch
+    model = PRISMO()
     model.fit(
         data,
         DataOptions(scale_per_group=False),

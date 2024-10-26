@@ -295,7 +295,7 @@ def train_muvi(data, mask, seed=0, terms=None, **kwargs):
     return model
 
 
-def train_famo(data, mask, seed=None, terms=None, **kwargs):
+def train_prismo(data, mask, seed=None, terms=None, **kwargs):
     adata = ad.AnnData(data)
     if terms is None:
         terms = [f"factor_{k}" for k in range(mask.shape[0])]

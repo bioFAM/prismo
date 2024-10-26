@@ -3,7 +3,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [project]
-name = "famo"
+name = "prismo"
 version = "0.0.1"
 description = "Factor Analysis Models"
 readme = "README.md"
@@ -15,9 +15,9 @@ authors = [
 maintainers = [
     {name = "ABC", email = "abc@dkfz.de"},
 ]
-urls.Documentation = "https://famo.readthedocs.io/"
-urls.Source = "https://github.com/bioFAM/famo"
-urls.Home-page = "https://github.com/bioFAM/famo"
+urls.Documentation = "https://prismo.readthedocs.io/"
+urls.Source = "https://github.com/bioFAM/prismo"
+urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
     "anndata",
     "mudata",
@@ -65,7 +65,7 @@ test = [
 ]
 
 [tool.coverage.run]
-source = ["famo"]
+source = ["prismo"]
 omit = [
     "**/test_*.py",
 ]

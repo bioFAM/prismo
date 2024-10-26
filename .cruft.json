@@ -4,13 +4,13 @@
   "checkout": null,
   "context": {
     "cookiecutter": {
-      "project_name": "famo",
-      "package_name": "famo",
+      "project_name": "prismo",
+      "package_name": "prismo",
       "project_description": "Factor Analysis Models",
       "author_full_name": "ABC",
       "author_email": "abc@dkfz.de",
       "github_user": "martinrohbeck",
-      "project_repo": "https://github.com/bioFAM/famo",
+      "project_repo": "https://github.com/bioFAM/prismo",
       "license": "BSD 3-Clause License",
       "_copy_without_render": [
         ".github/workflows/build.yaml",

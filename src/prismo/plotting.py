@@ -433,7 +433,7 @@ def plot_factors_covariate_1d(model, covariate: str, color: str = None) -> None:
     Parameters
     ----------
     model
-        The FAMO model.
+        The PRISMO model.
     covariate: str
         The name of the covariate to plot against (needs to be in .obs DataFrame of data).
     color: list[str]
@@ -489,7 +489,7 @@ def plot_factors_scatter(model, x: int, y: int, color: list[str] = None) -> None
     Parameters
     ----------
     model
-        The FAMO model.
+        The PRISMO model.
     x : int
         The factor to plot on the x-axis.
     y : int
@@ -545,7 +545,7 @@ def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100, color: str = None)
     Parameters
     ----------
     model
-        The FAMO model.
+        The PRISMO model.
     x : torch.Tensor
         The input tensor to evaluate the GP at.
     n_samples : int
@@ -623,7 +623,7 @@ def plot_smoothness(model) -> None:
     Parameters
     ----------
     model
-        The FAMO model.
+        The PRISMO model.
 
     Returns
     -------

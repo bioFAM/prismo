@@ -7,8 +7,8 @@ from pyro.distributions import constraints
 from pyro.infer.autoguide.guides import deep_setattr
 from pyro.nn import PyroModule, PyroParam
 
-from famo.dist import ReinMaxBernoulli
-from famo.gp import GP
+from prismo.dist import ReinMaxBernoulli
+from prismo.gp import GP
 
 EPS = 1e-8
 

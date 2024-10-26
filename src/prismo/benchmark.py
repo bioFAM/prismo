@@ -15,7 +15,7 @@ from sklearn.metrics import (
 )
 
 # import muvi
-from famo.core import CORE
+from prismo.prismo import CORE
 
 logger = logging.getLogger(__name__)
 

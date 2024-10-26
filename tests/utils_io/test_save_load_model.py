@@ -7,8 +7,8 @@ import pyro
 import pytest
 import torch
 
-from famo import CORE, DataOptions, ModelOptions, TrainingOptions
-from famo.utils_io import load_model
+from prismo import CORE, DataOptions, ModelOptions, TrainingOptions
+from prismo.io import load_model
 
 
 @pytest.fixture

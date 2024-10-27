@@ -41,10 +41,8 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
     # single group cases
     if isinstance(data, MuData):
         data = data.copy()
-        metadata = data.obs.copy()
         if group_by is None:
-            for mod in data.mod:
-                data.mod[mod].obs = pd.merge(data.mod[mod].obs, metadata, left_index=True, right_index=True)
+            data.push_obs()
             data = {"group_1": data.mod}
         else:
             data = {

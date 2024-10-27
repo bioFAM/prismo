@@ -13,8 +13,11 @@ from plotnine import (
     element_blank,
     element_text,
     facet_wrap,
+    geom_hline,
     geom_line,
+    geom_point,
     geom_tile,
+    geom_vline,
     ggplot,
     labs,
     scale_fill_gradient2,
@@ -38,6 +41,61 @@ VIOLINPLOT = "violinplot"
 GROUP_PL_TYPES = [STRIPPLOT, BOXPLOT, BOXENPLOT, VIOLINPLOT]
 
 alt.data_transformers.enable("vegafusion")
+
+
+def plot_factors_scatter(
+    model, x: int, y: int, group: str = None, color: str = None, shape: str = None, figsize: tuple = (6, 6)
+):
+    """Plot two factors against each other and color by covariates.
+
+    Parameters
+    ----------
+    model
+        The PRISMO model.
+    x : int
+        The factor to plot on the x-axis.
+    y : int
+        The factor to plot on the y-axis.
+    group: str
+        The name of the group. If None, we use the first group.
+    color : str
+        The covariate name to color by.
+    shape : str
+        The covariate name to shape by.
+    figsize : tuple
+        The size of the figure.
+    """
+    model._check_if_trained()
+
+    if group is None:
+        group = model.group_names[0]
+
+    df_factors = pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
+
+    if color is not None and color not in df_factors.columns:
+        raise ValueError(f"Color variable {color} not found in the data.")
+    if shape is not None and shape not in df_factors.columns:
+        raise ValueError(f"Shape variable {shape} not found in the data.")
+
+    kwargs = {"x": f"Factor {x}", "y": f"Factor {y}"}
+    if color is None and shape is None:
+        plot = ggplot(df_factors, aes(**kwargs))
+    elif color is not None and shape is None:
+        plot = ggplot(df_factors, aes(**kwargs, color=color))
+    elif color is None and shape is not None:
+        plot = ggplot(df_factors, aes(**kwargs, shape=shape))
+    elif color is not None and shape is not None:
+        plot = ggplot(df_factors, aes(**kwargs, color=color, shape=shape))
+
+    plot = (
+        plot
+        + geom_point()
+        + geom_hline(yintercept=0, linetype="dashed", color="black")
+        + geom_vline(xintercept=0, linetype="dashed", color="black")
+        + theme(figure_size=figsize)
+    )
+
+    return plot
 
 
 def plot_training_curve(model, linecolor="#214D83", linewidth=1, figsize=(12, 4)):
@@ -161,7 +219,7 @@ def plot_overview(data, missingcolor="#214D83", nonmissingcolor="#8AB6D4", figsi
         + facet_wrap("~group")
         + scale_fill_manual(values=[missingcolor, nonmissingcolor])
         + theme(
-            axis_text_x=element_text(angle=90, hjust=1, vjust=0.5) if show_x_labels else element_blank(),
+            axis_text_x=(element_text(angle=90, hjust=1, vjust=0.5) if show_x_labels else element_blank()),
             figure_size=figsize,
         )
         + labs(title="Missing Data Overview")
@@ -492,62 +550,6 @@ def plot_factors_covariate_1d(model, covariate: str, color: str = None) -> None:
                 x=alt.X(covariate, title=covariate),
                 y=alt.Y("Factor " + str(factor + 1), title="Factor " + str(factor + 1)),
                 color=color,
-            )
-            .properties(width=200, height=200)
-            .interactive()
-        )
-
-        rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="black", strokeDash=[5, 5]).encode(y="y")
-        final_plot = scatter_plot + rule
-        charts.append(final_plot)
-
-    final_chart = alt.hconcat(*charts)
-    final_chart.display()
-
-
-def plot_factors_scatter(model, x: int, y: int, color: list[str] = None) -> None:
-    """Plot two factors against each other and color by covariates.
-
-    Parameters
-    ----------
-    model
-        The PRISMO model.
-    x : int
-        The factor to plot on the x-axis.
-    y : int
-        The factor to plot on the y-axis.
-    color : list[int]
-        The covariate name(s) to color by.
-
-    Returns
-    -------
-    None
-    """
-    model._check_if_trained()
-
-    df_factors = []
-    for group in model.group_names:
-        df_factors.append(
-            pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
-        )
-    df_factors = pd.concat(df_factors).T.drop_duplicates().T
-    if "view" in df_factors.columns:
-        df_factors.drop(columns=["view"], inplace=True)
-    df_factors["identity"] = 1
-
-    charts = []
-
-    if color is None:
-        color = ["identity"]
-
-    for color_name in color:
-        scatter_plot = (
-            alt.Chart(df_factors)
-            .mark_point(filled=True)
-            .encode(
-                x=alt.X("Factor " + str(x), title="Factor " + str(x)),
-                y=alt.Y("Factor " + str(y), title="Factor " + str(y)),
-                color=alt.Color(color_name, title=color_name),
             )
             .properties(width=200, height=200)
             .interactive()

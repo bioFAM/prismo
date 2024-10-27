@@ -982,7 +982,7 @@ class PRISMO:
         Parameters
         ----------
         missing_only: bool
-            Only impute missing values in the data frames. Default is False.
+            Only impute missing values in the data. Default is False.
         """
         self._check_if_trained()
 
@@ -993,13 +993,24 @@ class PRISMO:
 
         for k_groups in self.group_names:
             for k_views in self.view_names:
+                if missing_only and not np.isnan(imputed_data[k_groups][k_views].X).any():
+                    continue
+
+                imputation = factors[k_groups] @ weights[k_views]
+
+                if self.model_opts.likelihoods[k_views] != "Normal":
+                    if self.model_opts.likelihoods[k_views] == "Bernoulli":
+                        imputation = expit(imputation)
+                    else:
+                        raise NotImplementedError(
+                            f"Imputation for {self.model_opts.likelihoods[k_views]} not implemented."
+                        )
+
                 if not missing_only:
-                    imputed_data[k_groups][k_views].X = factors[k_groups] @ weights[k_views]
+                    imputed_data[k_groups][k_views].X = imputation
                 else:
-                    if np.isnan(imputed_data[k_groups][k_views].X).any():
-                        logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
-                        mask = np.isnan(imputed_data[k_groups][k_views].X)
-                        imputed_values = factors[k_groups] @ weights[k_views]
-                        imputed_data[k_groups][k_views].X[mask] = imputed_values[mask]
+                    logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
+                    mask = np.isnan(imputed_data[k_groups][k_views].X)
+                    imputed_data[k_groups][k_views].X[mask] = imputation[mask]
 
         return imputed_data

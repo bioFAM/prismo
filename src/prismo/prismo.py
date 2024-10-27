@@ -974,8 +974,16 @@ class PRISMO:
 
         return device
 
-    def impute_missings(self):
-        """Impute missing values in the training data using the trained model."""
+    def impute_data(self, missing_only=False):
+        """Impute (missing) values in the training data using the trained factorization.
+
+        By default, we use the factorization to impute all values in the data.
+
+        Parameters
+        ----------
+        missing_only: bool
+            Only impute missing values in the data frames. Default is False.
+        """
         self._check_if_trained()
 
         imputed_data = copy.deepcopy(self.data)
@@ -985,8 +993,13 @@ class PRISMO:
 
         for k_groups in self.group_names:
             for k_views in self.view_names:
-                if np.isnan(imputed_data[k_groups][k_views].X).any():
-                    logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
+                if not missing_only:
                     imputed_data[k_groups][k_views].X = factors[k_groups] @ weights[k_views]
+                else:
+                    if np.isnan(imputed_data[k_groups][k_views].X).any():
+                        logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
+                        mask = np.isnan(imputed_data[k_groups][k_views].X)
+                        imputed_values = factors[k_groups] @ weights[k_views]
+                        imputed_data[k_groups][k_views].X[mask] = imputed_values[mask]
 
         return imputed_data

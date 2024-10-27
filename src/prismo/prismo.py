@@ -913,6 +913,7 @@ class PRISMO:
         if return_type == "anndata":
             for group_name, group_adata in factors.items():
                 group_adata.obs = pd.concat(self.metadata[group_name].values(), axis=1)
+                group_adata.obs = group_adata.obs.loc[:, ~group_adata.obs.columns.duplicated()]
 
         return factors
 

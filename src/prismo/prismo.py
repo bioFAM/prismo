@@ -1,3 +1,4 @@
+import copy
 import logging
 import time
 from collections import defaultdict
@@ -21,9 +22,9 @@ from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
 from prismo import gp, preprocessing
+from prismo.io import save_model
 from prismo.model import Generative, Variational
 from prismo.plotting import plot_overview
-from prismo.io import save_model
 from prismo.training import EarlyStopper
 
 logger = logging.getLogger(__name__)
@@ -672,6 +673,7 @@ class PRISMO:
                         collate_fn=lambda x: x,
                         pin_memory=str(self.train_opts.device) != "cpu",
                         drop_last=False,
+                        generator=torch.Generator(device=self.train_opts.device),
                     )
                 )
 
@@ -971,3 +973,20 @@ class PRISMO:
             device = default_device
 
         return device
+
+    def impute_missings(self):
+        """Impute missing values in the training data using the trained model."""
+        self._check_if_trained()
+
+        imputed_data = copy.deepcopy(self.data)
+
+        factors = self.get_factors(return_type="numpy")
+        weights = self.get_weights(return_type="numpy")
+
+        for k_groups in self.group_names:
+            for k_views in self.view_names:
+                if np.isnan(imputed_data[k_groups][k_views].X).any():
+                    logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
+                    imputed_data[k_groups][k_views].X = factors[k_groups] @ weights[k_views]
+
+        return imputed_data

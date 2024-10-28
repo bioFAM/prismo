@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 Index = Union[int, str, list[int], list[str], np.ndarray, pd.Index]
 
 
-def test(
+def _test_single_view(
     model,
     view_name: str,
     feature_sets: pd.DataFrame = None,
@@ -53,13 +53,16 @@ def test(
     use_prior_mask = feature_sets is None
     adjust_p = p_adj_method is not None
 
-    if not isinstance(view_name, (str, int)) and view_name != "all":
-        raise IndexError(f"Invalid `view_name`, `{view_name}` must be a string or an integer.")
+    if not isinstance(view_name, str):
+        raise IndexError(f"Invalid `view_name`, `{view_name}` must be a string.")
     if view_name not in model.view_names:
         raise IndexError(f"`{view_name}` not found in the view names.")
-
-    if use_prior_mask and not model.annotations is not None:
-        raise ValueError("`feature_sets` is None, no feature sets provided for uninformed model.")
+    
+    informed = model.annotations is not None and len(model.annotations) > 0
+    if use_prior_mask and not informed:
+        raise ValueError(
+            "`feature_sets` is None, no feature sets provided for uninformed model."
+        )
 
     sign = sign.lower().strip()
     allowed_signs = ["all", "pos", "neg"]
@@ -68,7 +71,7 @@ def test(
 
     if use_prior_mask:
         logger.warning("No feature sets provided, extracting feature sets from prior mask.")
-        feature_sets = model.annotations[view_name]
+        feature_sets = model.get_annotations("dataframe")[view_name]
         if not feature_sets.any(axis=None):
             raise ValueError(f"Empty `feature_sets`, view `{view_name}` " "has not been informed prior to training.")
 
@@ -108,9 +111,8 @@ def test(
 
     t_stat_dict = {}
     prob_dict = {}
-    i = 0
+
     for feature_set in tqdm(feature_sets.index.tolist()):
-        i += 1
         fs_features = feature_sets.loc[feature_set, :]
 
         features_in = factor_loadings.loc[:, fs_features]
@@ -122,7 +124,10 @@ def test(
         df = n_in + n_out - 2.0
         mean_diff = features_in.mean(axis=1) - features_out.mean(axis=1)
         # why divide here by df and not denom later?
-        svar = ((n_in - 1) * features_in.var(axis=1) + (n_out - 1) * features_out.var(axis=1)) / df
+        svar = (
+            (n_in - 1) * features_in.var(axis=1)
+            + (n_out - 1) * features_out.var(axis=1)
+        ) / df
 
         vif = 1.0
         if corr_adjust:
@@ -145,7 +150,9 @@ def test(
     prob_df.fillna(1.0, inplace=True)
     if adjust_p:
         prob_adj_df = prob_df.apply(
-            lambda p: multitest.multipletests(p, method=p_adj_method)[1], axis=1, result_type="broadcast"
+            lambda p: multitest.multipletests(p, method=p_adj_method)[1],
+            axis=1,
+            result_type="broadcast",
         )
 
     if "all" not in sign:
@@ -159,6 +166,57 @@ def test(
         result["p_adj"] = prob_adj_df
 
     return result
+
+
+
+def test(
+    model,
+    feature_sets: pd.DataFrame = None,
+    corr_adjust: bool = True,
+    p_adj_method: str = "fdr_bh",
+    min_size: int = 10,
+):
+
+    use_prior_mask = feature_sets is None
+    if use_prior_mask:
+        view_names = [vi for vi in model.view_names if vi in model.annotations]
+
+    if len(view_names) == 0:
+        if use_prior_mask:
+            raise ValueError(
+                "`feature_sets` is None, and none of the selected views are informed."
+            )
+        raise ValueError(f"No valid views.")
+
+    signs = ["neg", "pos"]
+
+    results = {}
+
+    for sign in signs:
+        results[sign] = {}
+        for view_name in view_names:
+            try:
+                results[sign][view_name] = _test_single_view(
+                    model,
+                    view_name=view_name,
+                    feature_sets=feature_sets,
+                    sign=sign,
+                    corr_adjust=corr_adjust,
+                    p_adj_method=p_adj_method,
+                    min_size=min_size,
+                )
+            except ValueError as e:
+                logger.warning(e)
+                results[sign][view_name] = {
+                    "t": pd.DataFrame(),
+                    "p": pd.DataFrame(),
+                }
+                if p_adj_method is not None:
+                    results[sign][view_name]["p_adj"] = pd.DataFrame()
+                continue
+    return results
+
+
 
 
 def match(

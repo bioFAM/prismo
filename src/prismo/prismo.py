@@ -105,6 +105,7 @@ class ModelOptions(_Options):
         nonnegative_weights: Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
         nonnegative_factors: Non-negativity constraints for factors for each group (if dict) or for all groups (if bool).
         annotations: Dictionary with weight annotations for informed views.
+        annotations_varm_key: Key of .varm attribute of each AnnData object that contains annotation values.
         prior_penalty: Prior penalty for annotations. #TODO: add more detail
         init_factors: Initialization method for factors.
         init_scale: Initialization scale of Normal distribution for factors.
@@ -117,6 +118,7 @@ class ModelOptions(_Options):
     nonnegative_weights: dict[str, bool] | bool = False
     nonnegative_factors: dict[str, bool] | bool = False
     annotations: dict[str, pd.DataFrame] | dict[str, np.ndarray] | None = None
+    annotations_varm_key: dict[str, str] | str | None = None
     prior_penalty: float = 0.01
     init_factors: Literal["random", "orthogonal", "pca"] = "random"
     init_scale: float = 0.1
@@ -275,8 +277,19 @@ class PRISMO:
             logger.info(f"  - {k}: {v}")
 
         return likelihoods
-
-    def _setup_annotations(self, n_factors, annotations, prior_penalty):
+    
+    def _setup_annotations(self, n_factors, annotations, annotations_varm_key, prior_penalty):
+        
+        if annotations is None:
+            if annotations_varm_key is None:
+                raise ValueError("No annotations provided.")
+            annotations = {}
+            for gn in self.data.keys():
+                for vn in self.data[gn].keys():
+                    if annotations_varm_key[vn] in self.data[gn][vn].varm:
+                        annotations[vn] = self.data[gn][vn].varm[annotations_varm_key[vn]].fillna(0).T
+                        break
+                    
         informed = annotations is not None and len(annotations) > 0
         valid_n_factors = n_factors is not None and n_factors > 0
 
@@ -620,7 +633,7 @@ class PRISMO:
         if self.data_opts.plot_data_overview:
             plot_overview(self.data)
 
-        self._setup_annotations(self.model_opts.n_factors, self.model_opts.annotations, self.model_opts.prior_penalty)
+        self._setup_annotations(self.model_opts.n_factors, self.model_opts.annotations, self.model_opts.annotations_varm_key, self.model_opts.prior_penalty)
         self._initialize_factors(self.model_opts.init_factors, self.model_opts.init_scale)
         n_samples_total = sum(self.n_samples.values())
         if self.train_opts.batch_size is None or not (0 < self.train_opts.batch_size <= n_samples_total):
@@ -955,7 +968,7 @@ class PRISMO:
     def get_annotations(self, return_type="pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
-            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
+            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k]).astype(bool)
             for k, v in self.annotations.items()
         }
 

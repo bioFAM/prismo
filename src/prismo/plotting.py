@@ -215,10 +215,10 @@ def plot_overview(
     plot = (
         ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
         + geom_tile()
-        + facet_wrap("~group")
+        + facet_wrap("~group", scales="free_x")
         + scale_fill_manual(values=[missingcolor, nonmissingcolor])
         + theme(
-            axis_text_x=(element_text(angle=90, hjust=1, vjust=0.5) if show_x_labels else element_blank()),
+            axis_text_x=(element_text(angle=90, ha="center", va="top") if show_x_labels else element_blank()),
             figure_size=figsize,
         )
         + labs(title="Missing Data Overview")
@@ -230,8 +230,6 @@ def plot_overview(
 
 
 # Code below is not curated yet
-
-
 def _lines(ax, positions, ymin, ymax, horizontal=False, **kwargs):
     if horizontal:
         ax.hlines(positions, ymin, ymax, **kwargs)

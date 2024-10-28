@@ -518,7 +518,7 @@ def plot_factors_covariate_1d(model, covariate: str, color: str = None) -> None:
     color: list[str]
         The obs column to color by.
 
-    Returns
+    Returns:
     -------
     None
     """
@@ -576,7 +576,7 @@ def plot_gps_1d(model, x: torch.Tensor, n_samples: int = 100, color: str = None)
     color : str
         The variable to color by.
 
-    Returns
+    Returns:
     -------
     None
     """
@@ -648,7 +648,7 @@ def plot_smoothness(model) -> None:
     model
         The PRISMO model.
 
-    Returns
+    Returns:
     -------
     None
     """

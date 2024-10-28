@@ -279,9 +279,7 @@ class PRISMO:
         return likelihoods
 
     def _setup_annotations(self, n_factors, annotations, annotations_varm_key, prior_penalty):
-        if annotations is None:
-            if annotations_varm_key is None:
-                raise ValueError("No annotations provided.")
+        if annotations is None and annotations_varm_key is not None:
             annotations = {}
             for gn in self.data.keys():
                 for vn in self.data[gn].keys():

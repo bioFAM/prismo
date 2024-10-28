@@ -55,7 +55,7 @@ def plot_factors_scatter(
     """Plot two factors against each other and color by covariates.
 
     Args:
-        model: The PRISMO model.
+        model: A PRISMO model.
         x: The factor to plot on the x-axis.
         y: The factor to plot on the y-axis.
         group: The name of the group. If None, we use the first group. Defaults to None.
@@ -63,13 +63,9 @@ def plot_factors_scatter(
         shape: The covariate name to shape by. Defaults to None.
         figsize: The size of the figure. Defaults to (6, 6).
 
-    Raises
-    ------
-        ValueError: If the specified color or shape variable is not found in the data.
-
-    Returns
-    -------
+    Returns:
         ggplot: The scatter plot of the factors.
+
     """
     model._check_if_trained()
 
@@ -98,9 +94,9 @@ def plot_factors_scatter(
 
     plot = (
         plot
-        + geom_point()
         + geom_hline(yintercept=0, linetype="dashed", color="black")
         + geom_vline(xintercept=0, linetype="dashed", color="black")
+        + geom_point()
         + theme(figure_size=figsize)
     )
 

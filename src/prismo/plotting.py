@@ -63,7 +63,8 @@ def plot_factors_scatter(
         shape: The covariate name to shape by. Defaults to None.
         figsize: The size of the figure. Defaults to (6, 6).
 
-    Returns:
+    Returns
+    -------
         ggplot: The scatter plot of the factors.
 
     """
@@ -103,20 +104,18 @@ def plot_factors_scatter(
     return plot
 
 
-def plot_training_curve(model, linecolor="#214D83", linewidth=1, figsize=(12, 4)):
+def plot_training_curve(model, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)):
     """Plot the training curve: -ELBO vs epoch.
 
-    Parameters
-    ----------
-    model
-        The model to plot the training curve for.
-    linecolor: str
-        The color of the line.
-    linewidth: int
-        The width of the line.
-    figsize: tuple
-        The size of the figure.
+    Args:
+        model: The PRISMO model to plot the training curve for.
+        linecolor: The color of the line.
+        linewidth: The width of the line.
+        figsize: The size of the figure.
 
+    Returns
+    -------
+        ggplot: The plot object.
     """
     model._check_if_trained()
 
@@ -133,19 +132,18 @@ def plot_training_curve(model, linecolor="#214D83", linewidth=1, figsize=(12, 4)
     return plot
 
 
-def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)):
+def plot_factor_correlation(model, low: str = "#7D1B26", high: str = "#214D83", figsize: tuple[float, float] = (8, 8)):
     """Plot the correlation between factors.
 
-    Parameters
-    ----------
-    model
-        The model to plot the factor correlation for.
-    low: str
-        The color for low correlation.
-    high: str
-        The color for high correlation.
-    figsize: tuple
-        The size of the figure.
+    Args:
+        model: The model to plot the factor correlation for.
+        low: The color for low correlation.
+        high: The color for high correlation.
+        figsize: The size of the figure.
+
+    Returns
+    -------
+        ggplot: The plot object.
     """
     model._check_if_trained()
 
@@ -184,21 +182,17 @@ def plot_factor_correlation(model, low="#7D1B26", high="#214D83", figsize=(8, 8)
     return plot
 
 
-def plot_overview(data, missingcolor="#214D83", nonmissingcolor="#8AB6D4", figsize=(15, 5)):
-    """
-    Generate an overview plot of missing data across different views and groups.
+def plot_overview(
+    data, missingcolor: str = "#214D83", nonmissingcolor: str = "#8AB6D4", figsize: tuple[float, float] = (15, 5)
+):
+    """Generate an overview plot of missing data across different views and groups.
 
-    Parameters
-    ----------
-    data : dict
-        A nested dictionary where the first level keys are group names,
-        and the second level keys are view names. The keys are AnnData objects.
-    missingcolor : str
-        The color to use for missing data.
-    nonmissingcolor : str
-        The color to use for non-missing data.
-    figsize : tuple
-        The size of the figure.
+    Args:
+        data: A nested dictionary where the first level keys are group names,
+            and the second level keys are view names. The keys are AnnData objects.
+        missingcolor: The color to use for missing data.
+        nonmissingcolor: The color to use for non-missing data.
+        figsize: The size of the figure.
     """
     missings_list = []
     for group_name, group_data in data.items():

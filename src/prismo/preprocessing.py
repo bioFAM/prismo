@@ -40,7 +40,9 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
 
     # single group cases
     if isinstance(data, MuData):
+        data = data.copy()
         if group_by is None:
+            data.push_obs()
             data = {"group_1": data.mod}
         else:
             data = {

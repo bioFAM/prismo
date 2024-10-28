@@ -436,17 +436,22 @@ class PRISMO:
         # Sort factors by explained variance
         weights = self.variational.get_weights()
         factors = self.variational.get_factors()
-        df_r2, self.factor_order = self._sort_factors(weights=weights, factors=factors)
+        df_r2, self.factor_order = self._sort_factors(weights=weights.mean, factors=factors.mean)
 
         # Fill cache
         self._cache = {
-            "weights": self.get_weights(return_type="anndata"),
-            "factors": self.get_factors(return_type="anndata"),
+            "weights": weights,
+            "factors": factors,
+            "sparse_factors_probabilities": self.variational.get_sparse_factor_probabilities(),
+            "sparse_weights_probabilities": self.variational.get_sparse_weight_probabilities(),
+            "sparse_factors_precisions": self.variational.get_sparse_factor_precisions(),
+            "sparse_weights_precisions": self.variational.get_sparse_weight_precisions(),
+            "gps": self.variational.get_gps(self.covariates),
+            "dispersions": self.variational.get_dispersion(),
             "train_loss_elbo": self.train_loss_elbo,
             # "intercepts": intercepts,
             "df_r2": df_r2,
         }
-        self._cache["feature_names"] = self.feature_names
 
         if save:
             if save_path is None:
@@ -693,7 +698,6 @@ class PRISMO:
                         collate_fn=lambda x: x,
                         pin_memory=str(self.train_opts.device) != "cpu",
                         drop_last=False,
-                        generator=torch.Generator(device=self.train_opts.device),
                     )
                 )
 
@@ -701,15 +705,16 @@ class PRISMO:
                 epoch_loss = 0
 
                 for group_batch in zip(*data_loaders, strict=False):
-                    epoch_loss += self._svi.step(
-                        dict(
-                            zip(
-                                self.group_names,
-                                (batch.to(self.train_opts.device) for batch in group_batch),
-                                strict=False,
+                    with self.train_opts.device:
+                        epoch_loss += self._svi.step(
+                            dict(
+                                zip(
+                                    self.group_names,
+                                    (batch.to(self.train_opts.device) for batch in group_batch),
+                                    strict=False,
+                                )
                             )
                         )
-                    )
 
                 return epoch_loss
 
@@ -717,7 +722,8 @@ class PRISMO:
             tensor_dict = self._to_device(tensor_dict, self.train_opts.device)
 
             def step_fn():
-                return self._svi.step(tensor_dict)
+                with self.train_opts.device:
+                    return self._svi.step(tensor_dict)
 
         if self.train_opts.seed is not None:
             try:
@@ -736,37 +742,36 @@ class PRISMO:
         pyro.enable_validation(True)
         pyro.clear_param_store()
 
-        with self.train_opts.device:
-            # Train
-            self.train_loss_elbo = []
-            earlystopper = EarlyStopper(
-                mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
-            )
-            start_timer = time.time()
+        # Train
+        self.train_loss_elbo = []
+        earlystopper = EarlyStopper(
+            mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
+        )
+        start_timer = time.time()
 
-            try:
-                for i in range(self.train_opts.max_epochs):
-                    loss = step_fn()
-                    if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
-                        self._warp_covariates()
-                    self.train_loss_elbo.append(loss)
+        try:
+            for i in range(self.train_opts.max_epochs):
+                loss = step_fn()
+                if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
+                    self._warp_covariates()
+                self.train_loss_elbo.append(loss)
 
-                    if i % self.train_opts.print_every == 0:
-                        logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
+                if i % self.train_opts.print_every == 0:
+                    logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
-                    if earlystopper.step(loss):
-                        logger.info(f"Training finished after {i} steps.")
-                        break
+                if earlystopper.step(loss):
+                    logger.info(f"Training finished after {i} steps.")
+                    break
 
-            except KeyboardInterrupt:
-                logger.info("Keyboard interrupt, stopping training and saving progress...")
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt, stopping training and saving progress...")
 
-            self._is_trained = True
+        self._is_trained = True
 
-            return self._post_fit(self.train_opts.save, self.train_opts.save_path, self.covariates)
+        return self._post_fit(self.train_opts.save, self.train_opts.save_path, self.covariates)
 
     def _warp_covariates(self):
-        factormeans = self.variational.get_factors("mean")
+        factormeans = self.variational.get_factors().mean
         refgroup = self.gp_opts.warp_reference_group
         reffactormeans = factormeans[refgroup].mean(axis=0)
         refidx = self._gp_warp_groups_order[refgroup]
@@ -909,25 +914,51 @@ class PRISMO:
             raise ValueError("Model has not been trained yet. Please train first.")
 
     def _get_component(self, component, return_type="pandas"):
-        if return_type == "numpy":
-            component = {k: v.values for k, v in component.items()}
-        if return_type == "torch":
-            component = {k: torch.tensor(v.values, dtype=torch.float).clone().detach() for k, v in component.items()}
-        if return_type == "anndata":
-            component = {k: ad.AnnData(v) for k, v in component.items()}
+        match return_type:
+            case "numpy":
+                return component.to_numpy()
+            case "pandas":
+                return component
+            case "torch":
+                return {k: torch.tensor(v.values, dtype=torch.float).clone().detach() for k, v in component.items()}
+            case "anndata":
+                return {k: ad.AnnData(v) for k, v in component.items()}
 
-        return component
+    def _get_sparse(self, what, moment, sparse_type):
+        ret = {}
+        probs = self._cache[f"sparse_{what}_probabilities"]
+        vals = self._cache[what]
+        for name, cvals in getattr(vals, moment).items():
+            if name in probs:
+                if sparse_type == "mix":
+                    if moment == "mean":
+                        cvals = cvals * probs[name]
+                    else:
+                        p = probs[name]
+                        a = self._cache[f"sparse_{what}_precisions"].mean[name]
+                        cvals = np.sqrt(vals.mean[name] ** 2 * p * (1 - p) + p * cvals**2 + (1 - p) / a**2)
+                elif sparse_type == "thresh":
+                    if moment == "mean":
+                        cvals = cvals * (vals[name].mean >= 0.5)
+                    else:
+                        cvals = 1 / self._cache[f"sparse_{what}_precisions"].mean[name]
+            ret[name] = cvals
+        return ret
 
-    def get_factors(self, return_type="pandas", moment="mean"):
+    def get_factors(
+        self,
+        return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
+        moment: Literal["mean", "std"] = "mean",
+        sparse_type: Literal["raw", "mix", "thresh"] = "mix",
+    ):
         """Get all factor matrices, z_x."""
         self._check_if_trained()
         factors = {
             group_name: pd.DataFrame(
                 group_factors[self.factor_order, :].T, index=self.sample_names[group_name], columns=self.factor_names
             )
-            for group_name, group_factors in self.variational.get_factors(moment).items()
+            for group_name, group_factors in self._get_sparse("factors", moment, sparse_type).items()
         }
-
         factors = self._get_component(factors, return_type)
 
         if return_type == "anndata":
@@ -937,42 +968,68 @@ class PRISMO:
 
         return factors
 
-    def get_weights(self, return_type="pandas", moment="mean"):
+    def get_weights(
+        self,
+        return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
+        moment: Literal["mean", "std"] = "mean",
+        sparse_type: Literal["raw", "mix", "thresh"] = "mix",
+    ):
         """Get all weight matrices, w_x."""
         self._check_if_trained()
         weights = {
             view_name: pd.DataFrame(
                 view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
             )
-            for view_name, view_weights in self.variational.get_weights(moment).items()
+            for view_name, view_weights in self._get_sparse("weights", moment, sparse_type).items()
         }
 
         return self._get_component(weights, return_type)
 
-    def get_dispersion(self, return_type="pandas", moment="mean"):
+    def get_sparse_factor_probabilities(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
+        self._check_if_trained()
+        probs = {
+            group_name: pd.Series(group_prob, index=self.sample_names[group_name])
+            for group_name, group_prob in self._cache["sparse_factors_probabilities"].items()
+        }
+        return self._get_component(probs, return_type)
+
+    def get_sparse_weight_probabilities(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
+        self._check_if_trained()
+        probs = {
+            view_name: pd.Series(view_prob, index=self.feature_names[view_name])
+            for view_name, view_prob in self._cache["sparse_weights_probabilities"].items()
+        }
+        return self._get_component(probs, return_type)
+
+    def get_dispersion(
+        self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", moment: Literal["mean", "std"] = "mean"
+    ):
         """Get all dispersion vectors, dispersion_x."""
         self._check_if_trained()
         dispersion = {
             view_name: pd.Series(view_dispersion, index=self.feature_names[view_name])
-            for view_name, view_dispersion in self.variational.get_dispersion(moment).items()
+            for view_name, view_dispersion in getattr(self._cache["dispersions"], moment).items()
         }
 
         return self._get_component(dispersion, return_type)
 
     def get_gps(
-        self, return_type="pandas", moment="mean", x: dict[str, torch.Tensor] | None = None, n_samples: int = 100
+        self,
+        return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
+        moment: Literal["mean", "std"] = "mean",
+        x: dict[str, torch.Tensor] | None = None,
     ):
         """Get all latent functions."""
-        if x is None:
-            x = self.covariates
+        self._check_if_trained()
+        gps = getattr(self._cache["gps"] if x is None else self.variational.get_gps(x), moment)
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
-            for group_name, group_f in self.variational.get_gps(x, moment, n_samples).items()
+            for group_name, group_f in gps.items()
         }
 
         return self._get_component(gps, return_type)
 
-    def get_annotations(self, return_type="pandas"):
+    def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
             k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k]).astype(

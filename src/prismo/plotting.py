@@ -20,6 +20,7 @@ from plotnine import (
     geom_vline,
     ggplot,
     labs,
+    scale_fill_gradient,
     scale_fill_gradient2,
     scale_fill_manual,
     theme,
@@ -229,9 +230,50 @@ def plot_overview(
     plot.show()
 
 
+def plot_variance_explained(model, group_by="group"):
+    """Plot the variance explained per factor in each group and view.
+
+    Args:
+        model: The PRISMO model.
+        group_by: The grouping to use for the plots. Either "group" or "view". Defaults to "group".
+
+    Returns:
+        ggplot: The plot object.
+    """
+    model._check_if_trained()
+
+    if group_by == "group":
+        x = "view"
+    elif group_by == "view":
+        x = "group"
+    else:
+        raise ValueError("groupby must be either 'group' or 'view'.")
+
+    df_r2 = model._cache["df_r2"]
+
+    combined_df = pd.DataFrame()
+
+    for group_name in model.group_names:
+        r2_df = df_r2[group_name].reset_index().melt("index")
+        r2_df.columns = ["factor", "view", "Variance explained"]
+        r2_df["factor"] = r2_df["factor"] + 1
+        r2_df["group"] = group_name
+
+        combined_df = pd.concat([combined_df, r2_df], ignore_index=True)
+
+    combined_heatmap = (
+        ggplot(combined_df, aes(x=x, y="factor", fill="Variance explained"))
+        + geom_tile()
+        + scale_fill_gradient(low="white", high="blue", limits=(0, 1.1 * max(combined_df["Variance explained"])))
+        + labs(x=x.capitalize(), y="Factor")
+        + theme(axis_text_x=element_text(rotation=90, hjust=1), figure_size=(2 * len(model.group_names), 4))
+        + facet_wrap(f"~ {group_by}")
+    )
+
+    return combined_heatmap
+
+
 # Code below is not curated yet
-
-
 def _lines(ax, positions, ymin, ymax, horizontal=False, **kwargs):
     if horizontal:
         ax.hlines(positions, ymin, ymax, **kwargs)
@@ -291,92 +333,6 @@ def plot_all_weights(model, clip=(-1, 1)):
         alt.hconcat(*charts).configure_view(strokeWidth=0).configure_concat(spacing=5).configure_title(fontSize=14)
     )
     combined_chart.display()
-
-
-def plot_variance_explained(model, groupby="group"):
-    """Plot the variance explained by each factor in each view."""
-    # Check if the model has been trained
-    model._check_if_trained()
-
-    # Create an empty list to hold all the charts
-    charts = []
-
-    if groupby == "group":
-        # Get the variance explained DataFrame from the model's cache
-        df_r2 = model._cache["df_r2"]
-
-        # Loop over all groups
-        for group_name in model.group_names:
-            # Get the variance explained DataFrame for the current group
-            r2_df = df_r2[group_name]
-
-            # Convert the DataFrame to long format
-            r2_df = r2_df.reset_index().melt("index")
-            r2_df.columns = ["Factor", "View", "Variance Explained"]
-            # Increase Factor index by 1
-            r2_df["Factor"] = r2_df["Factor"] + 1
-
-            # Create the heatmap chart
-            heatmap = (
-                alt.Chart(r2_df)
-                .mark_rect()
-                .encode(
-                    x=alt.X("View:O", title="View"),
-                    y=alt.Y("Factor:O", title="Factor", sort="descending"),
-                    color=alt.Color(
-                        "Variance Explained:Q",
-                        scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2_df["Variance Explained"]))),
-                        title=None,
-                    ),
-                    tooltip=["Factor", "View", "Variance Explained"],
-                )
-                .properties(title=group_name, width=150, height=200)
-            )
-
-            # Add the chart to the list of charts
-            charts.append(heatmap)
-
-    elif groupby == "view":
-        # exchange dict keys (groups) and column names (views) in model cache df_r2
-        columns = list(next(iter(model._cache["df_r2"].values())).columns)
-        r2_df = {col: pd.concat({k: df[col] for k, df in model._cache["df_r2"].items()}, axis=1) for col in columns}
-
-        # Loop over all views
-        for view_name in model.view_names:
-            # Get the variance explained DataFrame for the current view
-            r2 = r2_df[view_name]
-
-            # Convert the DataFrame to long format
-            r2 = r2.reset_index().melt("index")
-            r2.columns = ["Factor", "Group", "Variance Explained"]
-            # Increase Factor index by 1
-            r2["Factor"] = r2["Factor"] + 1
-
-            # Create the heatmap chart
-            heatmap = (
-                alt.Chart(r2)
-                .mark_rect()
-                .encode(
-                    x=alt.X("Group:O", title="Group"),
-                    y=alt.Y("Factor:O", title="Factor", sort="descending"),
-                    color=alt.Color(
-                        "Variance Explained:Q",
-                        scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2["Variance Explained"]))),
-                        title=None,
-                    ),
-                    tooltip=["Factor", "Group", "Variance Explained"],
-                )
-                .properties(title=view_name, width=150, height=200)
-            )
-
-            # Add the chart to the list of charts
-            charts.append(heatmap)
-
-    # Concatenate all the charts horizontally
-    final_chart = alt.hconcat(*charts).resolve_scale(color="shared")
-
-    # Display the chart
-    final_chart.display()
 
 
 def plot_factor(model, factor=1):

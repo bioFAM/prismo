@@ -44,31 +44,42 @@ alt.data_transformers.enable("vegafusion")
 
 
 def plot_factors_scatter(
-    model, x: int, y: int, group: str = None, color: str = None, shape: str = None, figsize: tuple = (6, 6)
+    model,
+    x: int,
+    y: int,
+    group: str = None,
+    color: str = None,
+    shape: str = None,
+    figsize: tuple[float, float] = (6, 6),
 ):
     """Plot two factors against each other and color by covariates.
 
-    Parameters
-    ----------
-    model
-        The PRISMO model.
-    x : int
-        The factor to plot on the x-axis.
-    y : int
-        The factor to plot on the y-axis.
-    group: str
-        The name of the group. If None, we use the first group.
-    color : str
-        The covariate name to color by.
-    shape : str
-        The covariate name to shape by.
-    figsize : tuple
-        The size of the figure.
+    Args:
+        model: The PRISMO model.
+        x: The factor to plot on the x-axis.
+        y: The factor to plot on the y-axis.
+        group: The name of the group. If None, we use the first group. Defaults to None.
+        color: The covariate name to color by. Defaults to None.
+        shape: The covariate name to shape by. Defaults to None.
+        figsize: The size of the figure. Defaults to (6, 6).
+
+    Raises
+    ------
+        ValueError: If the specified color or shape variable is not found in the data.
+
+    Returns
+    -------
+        ggplot: The scatter plot of the factors.
     """
     model._check_if_trained()
 
     if group is None:
         group = model.group_names[0]
+
+    if x < 0 or y < 0:
+        raise ValueError("Factors x and y must be non-negative.")
+    if x >= model.model_opts.n_factors or y >= model.model_opts.n_factors:
+        raise ValueError("Factors x and y must be in range of the number of factors.")
 
     df_factors = pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
 
@@ -77,15 +88,13 @@ def plot_factors_scatter(
     if shape is not None and shape not in df_factors.columns:
         raise ValueError(f"Shape variable {shape} not found in the data.")
 
-    kwargs = {"x": f"Factor {x}", "y": f"Factor {y}"}
-    if color is None and shape is None:
-        plot = ggplot(df_factors, aes(**kwargs))
-    elif color is not None and shape is None:
-        plot = ggplot(df_factors, aes(**kwargs, color=color))
-    elif color is None and shape is not None:
-        plot = ggplot(df_factors, aes(**kwargs, shape=shape))
-    elif color is not None and shape is not None:
-        plot = ggplot(df_factors, aes(**kwargs, color=color, shape=shape))
+    aes_kwargs = {}
+    if color is not None:
+        aes_kwargs["color"] = color
+    if shape is not None:
+        aes_kwargs["shape"] = shape
+
+    plot = ggplot(df_factors, aes(x=f"Factor {x}", y=f"Factor {y}", **aes_kwargs))
 
     plot = (
         plot

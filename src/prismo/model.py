@@ -96,11 +96,14 @@ class Generative(PyroModule):
         subsample = kwargs.get("subsample", None)
 
         for group_name in self.group_names:
+            if subsample is not None and subsample[group_name] is not None:
+                csubsample = subsample[group_name]
+            else:
+                csubsample = torch.arange(
+                    self.n_samples[group_name]
+                )  # FIXME: workaround for https://github.com/pyro-ppl/pyro/pull/3405
             plates[f"samples_{group_name}"] = pyro.plate(
-                "plate_samples_" + group_name,
-                self.n_samples[group_name],
-                dim=-1,
-                subsample=subsample[group_name] if subsample is not None else None,
+                "plate_samples_" + group_name, self.n_samples[group_name], dim=-1, subsample=csubsample
             )
 
         gp_subsample = None

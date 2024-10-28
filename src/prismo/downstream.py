@@ -57,12 +57,10 @@ def _test_single_view(
         raise IndexError(f"Invalid `view_name`, `{view_name}` must be a string.")
     if view_name not in model.view_names:
         raise IndexError(f"`{view_name}` not found in the view names.")
-    
+
     informed = model.annotations is not None and len(model.annotations) > 0
     if use_prior_mask and not informed:
-        raise ValueError(
-            "`feature_sets` is None, no feature sets provided for uninformed model."
-        )
+        raise ValueError("`feature_sets` is None, no feature sets provided for uninformed model.")
 
     sign = sign.lower().strip()
     allowed_signs = ["all", "pos", "neg"]
@@ -124,10 +122,7 @@ def _test_single_view(
         df = n_in + n_out - 2.0
         mean_diff = features_in.mean(axis=1) - features_out.mean(axis=1)
         # why divide here by df and not denom later?
-        svar = (
-            (n_in - 1) * features_in.var(axis=1)
-            + (n_out - 1) * features_out.var(axis=1)
-        ) / df
+        svar = ((n_in - 1) * features_in.var(axis=1) + (n_out - 1) * features_out.var(axis=1)) / df
 
         vif = 1.0
         if corr_adjust:
@@ -150,9 +145,7 @@ def _test_single_view(
     prob_df.fillna(1.0, inplace=True)
     if adjust_p:
         prob_adj_df = prob_df.apply(
-            lambda p: multitest.multipletests(p, method=p_adj_method)[1],
-            axis=1,
-            result_type="broadcast",
+            lambda p: multitest.multipletests(p, method=p_adj_method)[1], axis=1, result_type="broadcast"
         )
 
     if "all" not in sign:
@@ -168,24 +161,16 @@ def _test_single_view(
     return result
 
 
-
 def test(
-    model,
-    feature_sets: pd.DataFrame = None,
-    corr_adjust: bool = True,
-    p_adj_method: str = "fdr_bh",
-    min_size: int = 10,
+    model, feature_sets: pd.DataFrame = None, corr_adjust: bool = True, p_adj_method: str = "fdr_bh", min_size: int = 10
 ):
-
     use_prior_mask = feature_sets is None
     if use_prior_mask:
         view_names = [vi for vi in model.view_names if vi in model.annotations]
 
     if len(view_names) == 0:
         if use_prior_mask:
-            raise ValueError(
-                "`feature_sets` is None, and none of the selected views are informed."
-            )
+            raise ValueError("`feature_sets` is None, and none of the selected views are informed.")
         raise ValueError(f"No valid views.")
 
     signs = ["neg", "pos"]
@@ -207,16 +192,11 @@ def test(
                 )
             except ValueError as e:
                 logger.warning(e)
-                results[sign][view_name] = {
-                    "t": pd.DataFrame(),
-                    "p": pd.DataFrame(),
-                }
+                results[sign][view_name] = {"t": pd.DataFrame(), "p": pd.DataFrame()}
                 if p_adj_method is not None:
                     results[sign][view_name]["p_adj"] = pd.DataFrame()
                 continue
     return results
-
-
 
 
 def match(

@@ -277,9 +277,8 @@ class PRISMO:
             logger.info(f"  - {k}: {v}")
 
         return likelihoods
-    
+
     def _setup_annotations(self, n_factors, annotations, annotations_varm_key, prior_penalty):
-        
         if annotations is None:
             if annotations_varm_key is None:
                 raise ValueError("No annotations provided.")
@@ -289,7 +288,7 @@ class PRISMO:
                     if annotations_varm_key[vn] in self.data[gn][vn].varm:
                         annotations[vn] = self.data[gn][vn].varm[annotations_varm_key[vn]].fillna(0).T
                         break
-                    
+
         informed = annotations is not None and len(annotations) > 0
         valid_n_factors = n_factors is not None and n_factors > 0
 
@@ -633,7 +632,12 @@ class PRISMO:
         if self.data_opts.plot_data_overview:
             plot_overview(self.data)
 
-        self._setup_annotations(self.model_opts.n_factors, self.model_opts.annotations, self.model_opts.annotations_varm_key, self.model_opts.prior_penalty)
+        self._setup_annotations(
+            self.model_opts.n_factors,
+            self.model_opts.annotations,
+            self.model_opts.annotations_varm_key,
+            self.model_opts.prior_penalty,
+        )
         self._initialize_factors(self.model_opts.init_factors, self.model_opts.init_scale)
         n_samples_total = sum(self.n_samples.values())
         if self.train_opts.batch_size is None or not (0 < self.train_opts.batch_size <= n_samples_total):
@@ -968,7 +972,9 @@ class PRISMO:
     def get_annotations(self, return_type="pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
-            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k]).astype(bool)
+            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k]).astype(
+                bool
+            )
             for k, v in self.annotations.items()
         }
 

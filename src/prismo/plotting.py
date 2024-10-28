@@ -63,8 +63,7 @@ def plot_factors_scatter(
         shape: The covariate name to shape by. Defaults to None.
         figsize: The size of the figure. Defaults to (6, 6).
 
-    Returns
-    -------
+    Returns:
         ggplot: The scatter plot of the factors.
 
     """
@@ -113,8 +112,7 @@ def plot_training_curve(model, linecolor: str = "#214D83", linewidth: int = 1, f
         linewidth: The width of the line.
         figsize: The size of the figure.
 
-    Returns
-    -------
+    Returns:
         ggplot: The plot object.
     """
     model._check_if_trained()
@@ -141,8 +139,7 @@ def plot_factor_correlation(model, low: str = "#7D1B26", high: str = "#214D83", 
         high: The color for high correlation.
         figsize: The size of the figure.
 
-    Returns
-    -------
+    Returns:
         ggplot: The plot object.
     """
     model._check_if_trained()
@@ -193,6 +190,9 @@ def plot_overview(
         missingcolor: The color to use for missing data.
         nonmissingcolor: The color to use for non-missing data.
         figsize: The size of the figure.
+
+    Returns:
+        ggplot: The plot object.
     """
     missings_list = []
     for group_name, group_data in data.items():

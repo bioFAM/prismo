@@ -66,8 +66,7 @@ class _Options:
 
 @dataclass(kw_only=True)
 class DataOptions(_Options):
-    """
-    Options for the data.
+    """Options for the data.
 
     Args:
         group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
@@ -94,8 +93,7 @@ class DataOptions(_Options):
 
 @dataclass(kw_only=True)
 class ModelOptions(_Options):
-    """
-    Options for the model.
+    """Options for the model.
 
     Args:
         n_factors: Number of latent factors.
@@ -124,8 +122,7 @@ class ModelOptions(_Options):
 
 @dataclass(kw_only=True)
 class TrainingOptions(_Options):
-    """
-    Options for training.
+    """Options for training.
 
     Args:
         device: Device to run training on.
@@ -154,8 +151,7 @@ class TrainingOptions(_Options):
 
 @dataclass(kw_only=True)
 class SmoothOptions(_Options):
-    """
-    Options for Gaussian processes.
+    """Options for Gaussian processes.
 
     Args:
         n_inducing: Number of inducing points.
@@ -478,6 +474,11 @@ class PRISMO:
                         ],
                         dim=-1,
                     )
+                    # Check if device type is cuda
+                    if str(self.train_opts.device) != "cpu":
+                        logger.info("Converting to CPU")
+                        concat_data = concat_data.cpu()
+
                     # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error
                     if torch.isnan(concat_data).any():
                         if impute_missings:
@@ -485,17 +486,23 @@ class PRISMO:
 
                             imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
                             imp.fit(concat_data)
-                            concat_data = torch.tensor(imp.transform(concat_data), dtype=torch.float)
+                            concat_data = torch.tensor(imp.transform(concat_data), dtype=torch.float).to(
+                                self.train_opts.device
+                            )
                         else:
                             raise ValueError(
                                 "Data has missing values. Please impute missings or set `impute_missings=True`."
                             )
                     if init_factors == "pca":
                         pca.fit(concat_data)
-                        init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data))
+                        init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data)).to(
+                            self.train_opts.device
+                        )
                     elif init_factors == "nmf":
                         nmf.fit(concat_data)
-                        init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data))
+                        init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data)).to(
+                            self.train_opts.device
+                        )
 
             else:
                 raise ValueError(
@@ -516,8 +523,7 @@ class PRISMO:
         self.init_tensor = init_tensor
 
     def fit(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
-        """
-        Fit the model using the provided data.
+        """Fit the model using the provided data.
 
         Parameters
         ----------

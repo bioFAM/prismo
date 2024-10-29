@@ -476,7 +476,6 @@ class PRISMO:
                     )
                     # Check if device type is cuda
                     if str(self.train_opts.device) != "cpu":
-                        logger.info("Converting to CPU")
                         logger.debug("Converting to CPU")
                         concat_data = concat_data.cpu()
 

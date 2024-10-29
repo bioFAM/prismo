@@ -477,6 +477,7 @@ class PRISMO:
                     # Check if device type is cuda
                     if str(self.train_opts.device) != "cpu":
                         logger.info("Converting to CPU")
+                        logger.debug("Converting to CPU")
                         concat_data = concat_data.cpu()
 
                     # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error

@@ -1,7 +1,6 @@
 import os
-import shutil
+import tempfile
 from itertools import chain
-from pathlib import Path
 
 import pyro
 import pytest
@@ -14,17 +13,17 @@ from prismo.io import load_model
 @pytest.fixture
 def setup_teardown():
     # Setup: Create a temporary directory for saving models
-    temp_dir = Path("./temp_model_dir")
-    temp_dir.mkdir(exist_ok=True)
+    temp_file = tempfile.mkstemp(suffix=".h5")
+    os.close(temp_file[0])
 
-    yield temp_dir
+    yield temp_file[1]
 
     # Teardown: Remove the temporary directory and its contents
-    shutil.rmtree(temp_dir)
+    os.unlink(temp_file[1])
 
 
 def test_save_load_model(setup_teardown):
-    temp_dir = setup_teardown
+    temp_file = setup_teardown
 
     # Prepare dummy data
     data = {"group1": {"view1": torch.rand(3, 10), "view2": torch.rand(3, 5)}}
@@ -45,13 +44,12 @@ def test_save_load_model(setup_teardown):
             lr=0.001,
             max_epochs=1,  # Train for a single epoch
             save=True,
-            save_path=temp_dir,
+            save_path=temp_file,
         ),
     )
 
     # Check if files are saved
-    assert os.path.exists(temp_dir / "model.pkl")
-    assert os.path.exists(temp_dir / "params.save")
+    assert os.path.exists(temp_file)
 
     # model params
     prev_generator_params = chain(model.generative.parameters(), model.variational.parameters())
@@ -65,7 +63,7 @@ def test_save_load_model(setup_teardown):
     assert len(pyro.get_param_store().get_all_param_names()) == 0
 
     # Load the model and its parameters
-    loaded_model = load_model(dir_path=temp_dir)
+    loaded_model = load_model(path=temp_file)
     # Check if the model's parameter is correctly loaded
     for original_param, loaded_param in zip(
         prev_generator_params,

@@ -22,7 +22,7 @@ dependencies = [
     "anndata",
     "mudata",
     "scanpy",
-    "IPython",
+    "h5py",
     "pyro-ppl",
     "torch",
     "numpy",

@@ -1,50 +1,48 @@
+import logging
+from io import BytesIO
 from pathlib import Path
 
 import dill
+import h5py
+import numpy as np
 import pyro
 import torch
 
-
-def save_model(model, dir_path="."):
-    model_path = Path(dir_path) / "model.pkl"
-    params_path = Path(dir_path) / "params.save"
-    for pth in [model_path, params_path]:
-        if pth.exists():
-            print(f"`{pth}` already exists, overwriting.")
-
-    Path(dir_path).mkdir(parents=True, exist_ok=True)
-
-    # first, save results
-    # TODO:
-
-    # second, save parameters
-    pyro.get_param_store().save(params_path)
-
-    # third, save model
-    with open(model_path, "wb") as f:
-        torch.save(model, f, pickle_module=dill)
-
-    print(f"- Model saved to {model_path}")
-    print(f"- Parameters saved to {params_path}")
+logger = logging.getLogger(__name__)
 
 
-def load_model(dir_path=".", with_params=True, map_location=None):
-    model_path = Path(dir_path) / "model.pkl"
-    params_path = Path(dir_path) / "params.save"
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model file `{model_path}` not found.")
-    if not params_path.exists():
-        raise FileNotFoundError(f"Parameter file `{params_path}` not found.")
+def save_model(model, path: str | Path):
+    dset_kwargs = {"compression": "gzip", "compression_opts": 9}
 
-    # first, load model
-    with open(model_path, "rb") as f:
-        model = torch.load(f, map_location=map_location, pickle_module=dill)
+    path = Path(path)
+    if path.exists():
+        logger.warning("`path` already exists, overwriting")
+    with h5py.File(path, "w") as f:
+        prismogrp = f.create_group("prismo")
 
-    # second, load parameters
-    if with_params:
-        pyro.get_param_store().load(params_path, map_location=map_location)
+        paramspkl, modelpkl = BytesIO(), BytesIO()
+        torch.save(pyro.get_param_store().get_state(), paramspkl, pickle_module=dill)
+        torch.save(model, modelpkl, pickle_module=dill)
 
-    print(f"Model loaded from {model_path}")
-    print(f"Parameters loaded from {params_path}")
+        prismogrp.create_dataset(
+            "param_store", data=np.frombuffer(paramspkl.getbuffer(), dtype=np.uint8), **dset_kwargs
+        )
+        prismogrp.create_dataset("model", data=np.frombuffer(modelpkl.getbuffer(), dtype=np.uint8), **dset_kwargs)
+
+    logger.info(f"Saved model to {path}")
+
+
+def load_model(path: str | Path, with_params=True, map_location=None):
+    path = Path(path)
+    with h5py.File(path, "r") as f:
+        prismogrp = f["prismo"]
+        paramspkl = BytesIO(prismogrp["param_store"][()].tobytes())
+        modelpkl = BytesIO(prismogrp["model"][()].tobytes())
+
+        model = torch.load(modelpkl, map_location=map_location, pickle_module=dill)
+        if with_params:
+            pyro.get_param_store().set_state(torch.load(paramspkl, map_location=map_location, pickle_module=dill))
+
+    logger.info(f"Loaded model from {path}")
 
     return model

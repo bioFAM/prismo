@@ -454,8 +454,7 @@ class PRISMO:
         }
 
         if save:
-            if save_path is None:
-                save_path = f"model_{time.strftime('%Y%m%d_%H%M%S')}"
+            save_path = save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
             logger.info("Saving results...")
             save_model(self, save_path)
 

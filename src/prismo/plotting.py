@@ -216,10 +216,10 @@ def plot_overview(
     plot = (
         ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
         + geom_tile()
-        + facet_wrap("~group")
+        + facet_wrap("~group", scales="free_x")
         + scale_fill_manual(values=[missingcolor, nonmissingcolor])
         + theme(
-            axis_text_x=(element_text(angle=90, hjust=1, vjust=0.5) if show_x_labels else element_blank()),
+            axis_text_x=(element_text(angle=90, ha="center", va="top") if show_x_labels else element_blank()),
             figure_size=figsize,
         )
         + labs(title="Missing Data Overview")
@@ -986,7 +986,7 @@ def _get_color_dict(factor_adata, groupby, include_rest=True):
 
 
 # plot groups of observations against (subset of) factors
-def group(model, factor_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
+def group(model, factor_idx, group_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
     if isinstance(factor_idx, int):
         factor_idx = model.factor_names[factor_idx - 1]
     pl_type = pl_type.lower().strip()
@@ -1012,7 +1012,7 @@ def group(model, factor_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
         raise ValueError(f"`{pl_type}` is not valid. Select one of {','.join(PL_TYPES)}.") from e
 
     factor_adata = model._cache["factors"]
-    factor_adata = factor_adata[list(factor_adata.keys())[0]]
+    factor_adata = factor_adata[group_idx]
 
     return pl_fn(
         factor_adata[_subset_df(factor_adata.obs.copy(), groupby, groups, include_rest=False).index, :],
@@ -1023,9 +1023,9 @@ def group(model, factor_idx, groupby, groups=None, pl_type=HEATMAP, **kwargs):
 
 
 # plot ranked factors against groups of observations
-def rank(model, n_factors=10, pl_type=None, sep_groups=True, **kwargs):
+def rank(model, group_idx, n_factors=10, pl_type=None, sep_groups=True, **kwargs):
     factor_adata = model._cache["factors"]
-    factor_adata = factor_adata[list(factor_adata.keys())[0]]
+    factor_adata = factor_adata[group_idx]
     if "rank_genes_groups" not in factor_adata.uns:
         raise ValueError("No group-wise ranking found, run `muvi.tl.rank first.`")
 
@@ -1103,6 +1103,7 @@ def rank(model, n_factors=10, pl_type=None, sep_groups=True, **kwargs):
 def _groupplot(
     model,
     factor_idx,
+    group_idx,
     groupby,
     pl_type=STRIPPLOT,
     groups=None,
@@ -1115,7 +1116,7 @@ def _groupplot(
     if isinstance(factor_idx, int):
         factor_idx = model.factor_names[factor_idx - 1]
     factor_adata = model._cache["factors"]
-    factor_adata = factor_adata[list(factor_adata.keys())[0]]
+    factor_adata = factor_adata[group_idx]
     if groupby not in factor_adata.obs.columns:
         raise ValueError(
             f"`{groupby}` not found in the metadata, " " add a new column onto `model._cache.factor_adata.obs`."
@@ -1256,7 +1257,7 @@ def violinplot(
     )
 
 
-def scatter(model, x, y, groupby=None, groups=None, include_rest=True, style=None, markers=True, **kwargs):
+def scatter(model, x, y, group_idx, groupby=None, groups=None, include_rest=True, style=None, markers=True, **kwargs):
     if isinstance(x, int):
         x = model.factor_names[x - 1]
 
@@ -1265,7 +1266,7 @@ def scatter(model, x, y, groupby=None, groups=None, include_rest=True, style=Non
 
     kwargs["color"] = groupby
     factor_adata = model._cache["factors"]
-    factor_adata = factor_adata[list(factor_adata.keys())[0]]
+    factor_adata = factor_adata[group_idx]
 
     data = pd.concat([factor_adata.to_df(), factor_adata.obs.copy()], axis=1)
 
@@ -1310,9 +1311,9 @@ def scatter(model, x, y, groupby=None, groups=None, include_rest=True, style=Non
         return g
 
 
-def scatter_rank(model, groups=None, **kwargs):
+def scatter_rank(model, group_idx, groups=None, **kwargs):
     factor_adata = model._cache["factors"]
-    factor_adata = factor_adata[list(factor_adata.keys())[0]]
+    factor_adata = factor_adata[group_idx]
     try:
         groupby = factor_adata.uns["rank_genes_groups"]["params"]["groupby"]
     except KeyError as e:
@@ -1340,9 +1341,9 @@ def scatter_rank(model, groups=None, **kwargs):
         return gs
 
 
-def groupplot_rank(model, groups=None, pl_type=STRIPPLOT, top=1, **kwargs):
+def groupplot_rank(model, group_idx, groups=None, pl_type=STRIPPLOT, top=1, **kwargs):
     factor_adata = model._cache["factors"]
-    factor_adata = factor_adata[list(factor_adata.keys())[0]]
+    factor_adata = factor_adata[group_idx]
     try:
         groupby = factor_adata.uns["rank_genes_groups"]["params"]["groupby"]
     except KeyError as e:
@@ -1361,5 +1362,5 @@ def groupplot_rank(model, groups=None, pl_type=STRIPPLOT, top=1, **kwargs):
     save = kwargs.pop("save", None)
 
     return relevant_factors, _groupplot(
-        model, relevant_factors, groupby, pl_type=pl_type, groups=groups, show=show, save=save, **kwargs
+        model, relevant_factors, group_idx, groupby, pl_type=pl_type, groups=groups, show=show, save=save, **kwargs
     )

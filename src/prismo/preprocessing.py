@@ -555,10 +555,11 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
                 # expand varm matrices
                 expanded_varm = {}
                 for varm_k in data[k_groups][k_views].varm.keys():
-                    expanded_varm[varm_k] = (
-                        np.ones(shape=(len(var_names_union), data[k_groups][k_views].varm[varm_k].shape[1])) * np.nan
-                    )
-                    expanded_varm[varm_k][ix] = data[k_groups][k_views].varm[varm_k]
+                    varm_v = data[k_groups][k_views].varm[varm_k]
+                    columns = varm_v.columns if isinstance(varm_v, pd.DataFrame) else range(varm_v.shape[1])
+                    expanded_varm[varm_k] = np.ones(shape=(len(var_names_union), varm_v.shape[1])) * np.nan
+                    expanded_varm[varm_k][ix, :] = varm_v
+                    expanded_varm[varm_k] = pd.DataFrame(expanded_varm[varm_k], index=var_names_union, columns=columns)
 
                 # expand layer matrices
                 expanded_layers = {}
@@ -574,7 +575,7 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
                     obs=data[k_groups][k_views].obs,
                     var=expanded_var,
                     obsm=data[k_groups][k_views].obsm,
-                    # varm=expanded_varm,
+                    varm=expanded_varm,
                 )
 
     return data_aligned

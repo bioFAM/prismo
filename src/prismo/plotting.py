@@ -275,7 +275,7 @@ def plot_variance_explained(model, group_by: str = "group", figsize: tuple[float
     elif group_by == "view":
         x = "group"
     else:
-        raise ValueError("groupby must be either 'group' or 'view'.")
+        raise ValueError("`group_by` argument must be either 'group' or 'view'.")
 
     df_r2 = model._cache["df_r2"]
 

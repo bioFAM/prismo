@@ -10,9 +10,11 @@ import torch
 from plotnine import (
     aes,
     coord_equal,
+    coord_flip,
     element_blank,
     element_text,
     facet_wrap,
+    geom_bar,
     geom_hline,
     geom_line,
     geom_point,
@@ -20,6 +22,7 @@ from plotnine import (
     geom_vline,
     ggplot,
     labs,
+    scale_fill_gradient,
     scale_fill_gradient2,
     scale_fill_manual,
     theme,
@@ -180,7 +183,12 @@ def plot_factor_correlation(model, low: str = "#7D1B26", high: str = "#214D83", 
 
 
 def plot_overview(
-    data, missingcolor: str = "#214D83", nonmissingcolor: str = "#8AB6D4", figsize: tuple[float, float] = (15, 5)
+    data,
+    missingcolor: str = "#214D83",
+    nonmissingcolor: str = "#8AB6D4",
+    figsize: tuple[float, float] = (15, 5),
+    max_plot_obs: int = 400,
+    max_plot_x_labels: int = 150,
 ):
     """Generate an overview plot of missing data across different views and groups.
 
@@ -190,6 +198,10 @@ def plot_overview(
         missingcolor: The color to use for missing data.
         nonmissingcolor: The color to use for non-missing data.
         figsize: The size of the figure.
+        max_plot_obs: The maximum number of observations to plot. If the number of observations is greater than this value in any group,
+            a horizontal bar plot is created instead of a tile plot.
+        max_plot_x_labels: The maximum number of x-axis labels to show. If the number of observations is greater than this value in any group,
+            the x-axis labels are not shown.
 
     Returns:
         ggplot: The plot object.
@@ -209,24 +221,84 @@ def plot_overview(
             )
 
     missings = pd.concat(missings_list, axis=0)
-    unique_obs_count = missings["obs_name"].nunique()
-    show_x_labels = unique_obs_count <= 100
+    n_obs_groups = missings.groupby("group").size()
 
-    plot = (
-        ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
-        + geom_tile()
-        + facet_wrap("~group", scales="free_x")
-        + scale_fill_manual(values=[missingcolor, nonmissingcolor])
-        + theme(
-            axis_text_x=(element_text(angle=90, ha="center", va="top") if show_x_labels else element_blank()),
-            figure_size=figsize,
+    # if the number of observations in every group is low, plot every observation
+    if n_obs_groups.max() < max_plot_obs:
+        plot_x_labels = n_obs_groups.max() < max_plot_x_labels
+
+        plot = (
+            ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
+            + geom_tile()
+            + facet_wrap("~group", scales="free_x")
+            + scale_fill_manual(values=[missingcolor, nonmissingcolor])
+            + theme(
+                axis_text_x=(element_text(angle=90, ha="center", va="top") if plot_x_labels else element_blank()),
+                figure_size=figsize,
+            )
+            + labs(title="Data Overview", x="Observation", y="View")
         )
-        + labs(title="Missing Data Overview")
-    )
+
+    # otherwise, make a barplot showing the number of observations
+    else:
+        obs_counts = missings[~missings.missing].groupby(["group", "view"]).size().reset_index(name="count")
+
+        plot = (
+            ggplot(obs_counts, aes(x="view", y="count"))
+            + geom_bar(stat="identity", fill=missingcolor)
+            + facet_wrap("~group")
+            + theme(axis_text_x=(element_text(angle=90, ha="center", va="top")), figure_size=figsize)
+            + labs(title="Data Overview", y="Number of non-missing observations", x="View")
+            + coord_flip()
+        )
 
     # The figure is only plotted when training is called. Therefore, we directly show the plot here
     # instead of returning it.
     plot.show()
+
+
+def plot_variance_explained(model, group_by: str = "group", figsize: tuple[float, float] = (15, 5)):
+    """Plot the variance explained per factor in each group and view.
+
+    Args:
+        model: The PRISMO model.
+        group_by: The grouping to use for the plots. Either "group" or "view". Defaults to "group".
+        figsize: The size of the figure. Defaults to (15, 5).
+
+    Returns:
+        ggplot: The plot object.
+    """
+    model._check_if_trained()
+
+    if group_by == "group":
+        x = "view"
+    elif group_by == "view":
+        x = "group"
+    else:
+        raise ValueError("`group_by` argument must be either 'group' or 'view'.")
+
+    df_r2 = model._cache["df_r2"]
+
+    combined_df = pd.DataFrame()
+
+    for group_name in model.group_names:
+        r2_df = df_r2[group_name].reset_index().melt("index")
+        r2_df.columns = ["factor", "view", "Variance explained"]
+        r2_df["factor"] = r2_df["factor"] + 1
+        r2_df["group"] = group_name
+
+        combined_df = pd.concat([combined_df, r2_df], ignore_index=True)
+
+    combined_heatmap = (
+        ggplot(combined_df, aes(x=x, y="factor", fill="Variance explained"))
+        + geom_tile()
+        + scale_fill_gradient(low="white", high="blue", limits=(0, 1.1 * max(combined_df["Variance explained"])))
+        + labs(x=x.capitalize(), y="Factor")
+        + theme(axis_text_x=element_text(rotation=90, hjust=1), figure_size=figsize)
+        + facet_wrap(f"~ {group_by}")
+    )
+
+    return combined_heatmap
 
 
 # Code below is not curated yet
@@ -289,92 +361,6 @@ def plot_all_weights(model, clip=(-1, 1)):
         alt.hconcat(*charts).configure_view(strokeWidth=0).configure_concat(spacing=5).configure_title(fontSize=14)
     )
     combined_chart.display()
-
-
-def plot_variance_explained(model, groupby="group"):
-    """Plot the variance explained by each factor in each view."""
-    # Check if the model has been trained
-    model._check_if_trained()
-
-    # Create an empty list to hold all the charts
-    charts = []
-
-    if groupby == "group":
-        # Get the variance explained DataFrame from the model's cache
-        df_r2 = model._cache["df_r2"]
-
-        # Loop over all groups
-        for group_name in model.group_names:
-            # Get the variance explained DataFrame for the current group
-            r2_df = df_r2[group_name]
-
-            # Convert the DataFrame to long format
-            r2_df = r2_df.reset_index().melt("index")
-            r2_df.columns = ["Factor", "View", "Variance Explained"]
-            # Increase Factor index by 1
-            r2_df["Factor"] = r2_df["Factor"] + 1
-
-            # Create the heatmap chart
-            heatmap = (
-                alt.Chart(r2_df)
-                .mark_rect()
-                .encode(
-                    x=alt.X("View:O", title="View"),
-                    y=alt.Y("Factor:O", title="Factor", sort="descending"),
-                    color=alt.Color(
-                        "Variance Explained:Q",
-                        scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2_df["Variance Explained"]))),
-                        title=None,
-                    ),
-                    tooltip=["Factor", "View", "Variance Explained"],
-                )
-                .properties(title=group_name, width=150, height=200)
-            )
-
-            # Add the chart to the list of charts
-            charts.append(heatmap)
-
-    elif groupby == "view":
-        # exchange dict keys (groups) and column names (views) in model cache df_r2
-        columns = list(next(iter(model._cache["df_r2"].values())).columns)
-        r2_df = {col: pd.concat({k: df[col] for k, df in model._cache["df_r2"].items()}, axis=1) for col in columns}
-
-        # Loop over all views
-        for view_name in model.view_names:
-            # Get the variance explained DataFrame for the current view
-            r2 = r2_df[view_name]
-
-            # Convert the DataFrame to long format
-            r2 = r2.reset_index().melt("index")
-            r2.columns = ["Factor", "Group", "Variance Explained"]
-            # Increase Factor index by 1
-            r2["Factor"] = r2["Factor"] + 1
-
-            # Create the heatmap chart
-            heatmap = (
-                alt.Chart(r2)
-                .mark_rect()
-                .encode(
-                    x=alt.X("Group:O", title="Group"),
-                    y=alt.Y("Factor:O", title="Factor", sort="descending"),
-                    color=alt.Color(
-                        "Variance Explained:Q",
-                        scale=alt.Scale(scheme="blues", domain=(0, 1.5 * max(r2["Variance Explained"]))),
-                        title=None,
-                    ),
-                    tooltip=["Factor", "Group", "Variance Explained"],
-                )
-                .properties(title=view_name, width=150, height=200)
-            )
-
-            # Add the chart to the list of charts
-            charts.append(heatmap)
-
-    # Concatenate all the charts horizontally
-    final_chart = alt.hconcat(*charts).resolve_scale(color="shared")
-
-    # Display the chart
-    final_chart.display()
 
 
 def plot_factor(model, factor=1):

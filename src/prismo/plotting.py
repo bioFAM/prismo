@@ -10,9 +10,11 @@ import torch
 from plotnine import (
     aes,
     coord_equal,
+    coord_flip,
     element_blank,
     element_text,
     facet_wrap,
+    geom_bar,
     geom_hline,
     geom_line,
     geom_point,
@@ -181,7 +183,12 @@ def plot_factor_correlation(model, low: str = "#7D1B26", high: str = "#214D83", 
 
 
 def plot_overview(
-    data, missingcolor: str = "#214D83", nonmissingcolor: str = "#8AB6D4", figsize: tuple[float, float] = (15, 5)
+    data,
+    missingcolor: str = "#214D83",
+    nonmissingcolor: str = "#8AB6D4",
+    figsize: tuple[float, float] = (15, 5),
+    max_plot_obs: int = 400,
+    max_plot_x_labels: int = 150,
 ):
     """Generate an overview plot of missing data across different views and groups.
 
@@ -191,6 +198,10 @@ def plot_overview(
         missingcolor: The color to use for missing data.
         nonmissingcolor: The color to use for non-missing data.
         figsize: The size of the figure.
+        max_plot_obs: The maximum number of observations to plot. If the number of observations is greater than this value in any group,
+            a horizontal bar plot is created instead of a tile plot.
+        max_plot_x_labels: The maximum number of x-axis labels to show. If the number of observations is greater than this value in any group,
+            the x-axis labels are not shown.
 
     Returns:
         ggplot: The plot object.
@@ -210,20 +221,36 @@ def plot_overview(
             )
 
     missings = pd.concat(missings_list, axis=0)
-    unique_obs_count = missings["obs_name"].nunique()
-    show_x_labels = unique_obs_count <= 100
+    n_obs_groups = missings.groupby("group").size()
 
-    plot = (
-        ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
-        + geom_tile()
-        + facet_wrap("~group", scales="free_x")
-        + scale_fill_manual(values=[missingcolor, nonmissingcolor])
-        + theme(
-            axis_text_x=(element_text(angle=90, ha="center", va="top") if show_x_labels else element_blank()),
-            figure_size=figsize,
+    # if the number of observations in every group is low, plot every observations
+    if n_obs_groups.max() < max_plot_obs:
+        plot_x_labels = n_obs_groups.max() < max_plot_x_labels
+
+        plot = (
+            ggplot(missings, aes(x="obs_name", y="view", fill="missing"))
+            + geom_tile()
+            + facet_wrap("~group", scales="free_x")
+            + scale_fill_manual(values=[missingcolor, nonmissingcolor])
+            + theme(
+                axis_text_x=(element_text(angle=90, ha="center", va="top") if plot_x_labels else element_blank()),
+                figure_size=figsize,
+            )
+            + labs(title="Data Overview", x="Observation", y="View")
         )
-        + labs(title="Missing Data Overview")
-    )
+
+    # otherwise, make a barplot showing the number of observations
+    else:
+        obs_counts = missings[~missings.missing].groupby(["group", "view"]).size().reset_index(name="count")
+
+        plot = (
+            ggplot(obs_counts, aes(x="view", y="count"))
+            + geom_bar(stat="identity", fill=missingcolor)
+            + facet_wrap("~group")
+            + theme(axis_text_x=(element_text(angle=90, ha="center", va="top")), figure_size=figsize)
+            + labs(title="Data Overview", y="Number of non-missing observations", x="View")
+            + coord_flip()
+        )
 
     # The figure is only plotted when training is called. Therefore, we directly show the plot here
     # instead of returning it.

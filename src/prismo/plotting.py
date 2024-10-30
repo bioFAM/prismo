@@ -223,7 +223,7 @@ def plot_overview(
     missings = pd.concat(missings_list, axis=0)
     n_obs_groups = missings.groupby("group").size()
 
-    # if the number of observations in every group is low, plot every observations
+    # if the number of observations in every group is low, plot every observation
     if n_obs_groups.max() < max_plot_obs:
         plot_x_labels = n_obs_groups.max() < max_plot_x_labels
 
@@ -257,12 +257,13 @@ def plot_overview(
     plot.show()
 
 
-def plot_variance_explained(model, group_by="group"):
+def plot_variance_explained(model, group_by: str = "group", figsize: tuple[float, float] = (15, 5)):
     """Plot the variance explained per factor in each group and view.
 
     Args:
         model: The PRISMO model.
         group_by: The grouping to use for the plots. Either "group" or "view". Defaults to "group".
+        figsize: The size of the figure. Defaults to (15, 5).
 
     Returns:
         ggplot: The plot object.
@@ -293,7 +294,7 @@ def plot_variance_explained(model, group_by="group"):
         + geom_tile()
         + scale_fill_gradient(low="white", high="blue", limits=(0, 1.1 * max(combined_df["Variance explained"])))
         + labs(x=x.capitalize(), y="Factor")
-        + theme(axis_text_x=element_text(rotation=90, hjust=1), figure_size=(2 * len(model.group_names), 4))
+        + theme(axis_text_x=element_text(rotation=90, hjust=1), figure_size=figsize)
         + facet_wrap(f"~ {group_by}")
     )
 

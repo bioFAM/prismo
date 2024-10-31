@@ -215,7 +215,6 @@ class PRISMO:
         self._svi = None
 
         # training related attributes
-        self.train_loss_elbo = []
         self._is_trained = False
         self._cache = None
 
@@ -432,11 +431,11 @@ class PRISMO:
 
         return self._svi
 
-    def _post_fit(self, save, save_path, covariates: dict[str, torch.Tensor] = None):
+    def _post_fit(self, save, save_path, train_loss_elbo, covariates: dict[str, torch.Tensor] = None):
         # Sort factors by explained variance
         weights = self.variational.get_weights()
         factors = self.variational.get_factors()
-        df_r2, self.factor_order = self._sort_factors(weights=weights.mean, factors=factors.mean)
+        df_r2_full, df_r2_factors, self.factor_order = self._sort_factors(weights=weights.mean, factors=factors.mean)
 
         # Fill cache
         self._cache = {
@@ -448,10 +447,15 @@ class PRISMO:
             "sparse_weights_precisions": self.variational.get_sparse_weight_precisions(),
             "gps": self.variational.get_gps(self.covariates),
             "dispersions": self.variational.get_dispersion(),
-            "train_loss_elbo": self.train_loss_elbo,
-            # "intercepts": intercepts,
-            "df_r2": df_r2,
+            "train_loss_elbo": train_loss_elbo,
+            "df_r2_full": df_r2_full,
+            "df_r2_factors": df_r2_factors,
         }
+
+        orig_covars = self._orig_covariates
+        if orig_covars is not None:
+            self._cache["warped_covariates"] = {g: c.numpy() for g, c in self.covariates.items()}
+            self._covariates = orig_covars
 
         if save:
             save_path = save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
@@ -558,7 +562,7 @@ class PRISMO:
         # extract group and view names / numbers from data
         self.group_names = list(self.data.keys())
         self.n_groups = len(self.group_names)
-        self.view_names = list(self.data[list(self.data.keys())[0]].keys())
+        self.view_names = list(self.data[next(iter(self.data.keys()))].keys())
         self.n_views = len(self.view_names)
 
         # process parameters
@@ -598,6 +602,7 @@ class PRISMO:
         self.model_opts.likelihoods = self._setup_likelihoods(self.data, self.model_opts.likelihoods)
 
         # process data
+        self.intercepts = preprocessing.get_data_mean(self.data, self.model_opts.likelihoods)
         self.data = preprocessing.remove_constant_features(self.data, self.model_opts.likelihoods)
         self.data = preprocessing.scale_data(self.data, self.model_opts.likelihoods, self.data_opts.scale_per_group)
         self.data = preprocessing.center_data(
@@ -615,7 +620,7 @@ class PRISMO:
 
         # obtain observations DataFrame and covariates
         self.metadata = preprocessing.extract_obs(self.data)
-        self.covariates = preprocessing.extract_covariate(
+        self.covariates, self.covariates_names = preprocessing.extract_covariate(
             self.data, self.data_opts.covariates_obs_key, self.data_opts.covariates_obsm_key
         )
 
@@ -670,7 +675,7 @@ class PRISMO:
             tensor_dict[group_name] = {}
             if self.covariates is not None and group_name in self.covariates:
                 if self.covariates[group_name] is not None:
-                    tensor_dict[group_name]["covariates"] = self.covariates[group_name]
+                    tensor_dict[group_name]["covariates"] = torch.as_tensor(self.covariates[group_name])
 
             for view_name, view_adata in group_dict.items():
                 tensor_dict[group_name][view_name] = torch.from_numpy(view_adata.X)
@@ -742,7 +747,7 @@ class PRISMO:
         pyro.clear_param_store()
 
         # Train
-        self.train_loss_elbo = []
+        train_loss_elbo = []
         earlystopper = EarlyStopper(
             mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
         )
@@ -753,7 +758,7 @@ class PRISMO:
                 loss = step_fn()
                 if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
                     self._warp_covariates()
-                self.train_loss_elbo.append(loss)
+                train_loss_elbo.append(loss)
 
                 if i % self.train_opts.print_every == 0:
                     logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
@@ -767,7 +772,7 @@ class PRISMO:
 
         self._is_trained = True
 
-        return self._post_fit(self.train_opts.save, self.train_opts.save_path, self.covariates)
+        return self._post_fit(self.train_opts.save, self.train_opts.save_path, train_loss_elbo, self.covariates)
 
     def _warp_covariates(self):
         factormeans = self.variational.get_factors().mean
@@ -846,7 +851,7 @@ class PRISMO:
             logger.info(
                 f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
             )
-            return [0.0] * factors.shape[0]
+            return r2_full, [0.0] * factors.shape[0]
 
         r2s = []
         if self.model_opts.likelihoods[view_name] == "Normal":
@@ -865,11 +870,11 @@ class PRISMO:
                 cweights = np.delete(weights, k, 0)
                 cr2 = self._r2_impl(y_true, cfactors, cweights, view_name)
                 r2s.append(max(0.0, r2_full - cr2))
-        return r2s
+        return r2_full, r2s
 
     def _sort_factors(self, weights, factors, subsample=1000):
         # Loop over all groups
-        dfs = {}
+        dfs_factors, dfs_full = {}, {}
 
         for group_name, group_data in self.data.items():
             n_samples = self.n_samples[group_name]
@@ -879,33 +884,36 @@ class PRISMO:
             if subsample is not None and subsample > 0 and subsample < n_samples:
                 sample_idx = np.random.choice(sample_idx, subsample, replace=False)
 
-            group_r2 = {}
+            group_r2_factors, group_r2_full = {}, {}
             for view_name, view_data in group_data.items():
                 try:
-                    group_r2[view_name] = self._r2(
+                    group_r2_full[view_name], group_r2_factors[view_name] = self._r2(
                         view_data.X[sample_idx, :], factors[group_name][:, sample_idx], weights[view_name], view_name
                     )
                 except NotImplementedError:
-                    "R2 not yet implemented."
+                    logger.warning(
+                        f"R2 calculation for {self.model_opts.likelihoods[view_name]} likelihood has not yet been implemented. Skipping view {view_name} for group {group_name}."
+                    )
+            if len(group_r2_factors) == 0:
+                logging.warning(f"No R2 values found for group {group_name}. Skipping...")
+                continue
 
-            dfs[group_name] = pd.DataFrame(group_r2)
+            dfs_factors[group_name] = pd.DataFrame(group_r2_factors)
+            dfs_full[group_name] = pd.Series(group_r2_full)
 
         # sum the R2 values across all groups
-        df_concat = pd.concat(dfs.values())
+        df_concat = pd.concat(dfs_factors.values())
         df_sum = df_concat.groupby(df_concat.index).sum()
 
         try:
             # sort factors according to mean R2 across all views
             sorted_r2_means = df_sum.mean(axis=1).sort_values(ascending=False)
-            factor_order = np.array(sorted_r2_means.index)
+            factor_order = sorted_r2_means.index.to_numpy()
         except NameError:
             logger.info("Sorting factors failed. Using default order.")
             factor_order = np.array(list(range(self.model_opts.n_factors)))
 
-        for group_name in self.data.keys():
-            dfs[group_name] = dfs[group_name].loc[factor_order].reset_index(drop=True)
-
-        return dfs, factor_order
+        return dfs_full, dfs_factors, factor_order
 
     def _check_if_trained(self):
         """Check if the model has been trained."""
@@ -915,7 +923,7 @@ class PRISMO:
     def _get_component(self, component, return_type="pandas"):
         match return_type:
             case "numpy":
-                return component.to_numpy()
+                return {k: v.to_numpy() for k, v in component.items()}
             case "pandas":
                 return component
             case "torch":
@@ -966,6 +974,15 @@ class PRISMO:
                 group_adata.obs = group_adata.obs.loc[:, ~group_adata.obs.columns.duplicated()]
 
         return factors
+
+    def get_r2(self, total=False, ordered=True):
+        self._check_if_trained()
+        if total:
+            return self._cache["df_r2_full"]
+        elif not ordered:
+            return self._cache["df_r2_factors"]
+        else:
+            return {g: df.iloc[self.factor_order, :] for g, df in self._cache["df_r2_factors"].items()}
 
     def get_weights(
         self,
@@ -1028,6 +1045,12 @@ class PRISMO:
 
         return self._get_component(gps, return_type)
 
+    def get_warped_covariates(self):
+        self._check_if_trained()
+        if "warped_covariates" in self._cache:
+            return self._cache["warped_covariates"]
+        return None
+
     def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
         """Get all annotation matrices, a_x."""
         annotations = {
@@ -1038,6 +1061,10 @@ class PRISMO:
         }
 
         return self._get_component(annotations, return_type)
+
+    def get_training_loss(self):
+        self._check_if_trained()
+        return self._cache["train_loss_elbo"]
 
     def _setup_device(self, device):
         logger.info("Setting up device...")

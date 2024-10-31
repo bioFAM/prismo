@@ -50,9 +50,9 @@ def plot_factors_scatter(
     model,
     x: int,
     y: int,
-    group: str = None,
-    color: str = None,
-    shape: str = None,
+    group: str | None = None,
+    color: str | None = None,
+    shape: str | None = None,
     figsize: tuple[float, float] = (6, 6),
 ):
     """Plot two factors against each other and color by covariates.
@@ -80,7 +80,8 @@ def plot_factors_scatter(
     if x >= model.model_opts.n_factors or y >= model.model_opts.n_factors:
         raise ValueError("Factors x and y must be in range of the number of factors.")
 
-    df_factors = pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
+    facs = model.get_factors(return_type="anndata")[group]
+    df_factors = pd.concat([facs.to_df(), facs.obs], axis=1)
 
     if color is not None and color not in df_factors.columns:
         raise ValueError(f"Color variable {color} not found in the data.")
@@ -120,7 +121,7 @@ def plot_training_curve(model, linecolor: str = "#214D83", linewidth: int = 1, f
     """
     model._check_if_trained()
 
-    train_loss_elbo = model._cache["train_loss_elbo"]
+    train_loss_elbo = model.get_training_loss()
     df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
 
     plot = (
@@ -147,11 +148,11 @@ def plot_factor_correlation(model, low: str = "#7D1B26", high: str = "#214D83", 
     """
     model._check_if_trained()
 
-    factors = model._cache["factors"]
+    factors = model.get_factors()
     all_corr_dfs = []
 
     for k, v in factors.items():
-        corr_df = pd.DataFrame(np.corrcoef(v.X.T), index=model.factor_names, columns=model.factor_names)
+        corr_df = pd.DataFrame(np.corrcoef(v.to_numpy().T), index=model.factor_names, columns=model.factor_names)
 
         corr_df["Factor1"] = model.factor_names
         corr_df = corr_df.melt("Factor1")
@@ -329,7 +330,7 @@ def plot_all_weights(model, clip=(-1, 1)):
     model._check_if_trained()
 
     # Extract weights data
-    weights = model._cache["weights"]
+    weights = model.get_weights()
 
     charts = []
     for k, v in weights.items():
@@ -370,12 +371,12 @@ def plot_factor(model, factor=1):
     # Create an empty list to hold all the charts
     charts = []
 
-    factors = model._cache["factors"]
+    factors = model.get_factors()
 
     for group_name in model.group_names:
-        df = factors[group_name].to_df()
+        df = factors[group_name]
         df["id"] = df.index
-        df.columns = [f"Factor {i}" for i in range(1, model.n_factors + 1)] + ["id"]
+        df.columns = [f"Factor {i}" for i in range(1, df.shape[1])] + ["id"]
         factor_name = f"Factor {factor}"
 
         # Create the scatter plot chart
@@ -414,7 +415,7 @@ def plot_factors_covariate_2d(model, covariate: str):
 
     group_charts = []
 
-    factors = model._cache["factors"]
+    factors = model.get_factors()
     covariates = model.covariates
 
     for group_name in model.group_names:
@@ -455,7 +456,7 @@ def plot_gps_covariate_2d(model, covariate: str):
 
     group_charts = []
 
-    gps = model._cache["gps"]
+    gps = model.get_gps()
     covariates = model.covariates
 
     for group_name in model.group_names:
@@ -509,10 +510,9 @@ def plot_factors_covariate_1d(model, covariate: str, color: str = None) -> None:
     model._check_if_trained()
 
     df_factors = []
+    facs = model.get_factors(return_type="anndata")
     for group in model.group_names:
-        df_factors.append(
-            pd.concat([model._cache["factors"][group].to_df(), model._cache["factors"][group].obs], axis=1)
-        )
+        df_factors.append(pd.concat([facs[group].to_df(), facs[group].obs], axis=1))
     df_factors = pd.concat(df_factors).T.drop_duplicates().T
     if "view" in df_factors.columns:
         df_factors.drop(columns=["view"], inplace=True)
@@ -668,7 +668,7 @@ def plot_top_weights(model, views: list[str] = None, n_features: int = 10, facto
     charts = []
 
     for view in views:
-        weights = model._cache["weights"][view].to_df()
+        weights = model.get_weights()[view]
         weights = weights.iloc[factors]
         weights = weights.iloc[:, weights.abs().max(axis=0).argsort()[-n_features:]]
         weights_melted = weights.reset_index().melt("index")
@@ -1039,7 +1039,7 @@ def group(model, factor_idx, group_idx, groupby, groups=None, pl_type=HEATMAP, *
     except KeyError as e:
         raise ValueError(f"`{pl_type}` is not valid. Select one of {','.join(PL_TYPES)}.") from e
 
-    factor_adata = model._cache["factors"]
+    factor_adata = model.get_factors()
     factor_adata = factor_adata[group_idx]
 
     return pl_fn(
@@ -1052,7 +1052,7 @@ def group(model, factor_idx, group_idx, groupby, groups=None, pl_type=HEATMAP, *
 
 # plot ranked factors against groups of observations
 def rank(model, group_idx, n_factors=10, pl_type=None, sep_groups=True, **kwargs):
-    factor_adata = model._cache["factors"]
+    factor_adata = model.get_factors()
     factor_adata = factor_adata[group_idx]
     if "rank_genes_groups" not in factor_adata.uns:
         raise ValueError("No group-wise ranking found, run `muvi.tl.rank first.`")
@@ -1143,7 +1143,7 @@ def _groupplot(
 ):
     if isinstance(factor_idx, int):
         factor_idx = model.factor_names[factor_idx - 1]
-    factor_adata = model._cache["factors"]
+    factor_adata = model.get_factors(return_type="anndata")
     factor_adata = factor_adata[group_idx]
     if groupby not in factor_adata.obs.columns:
         raise ValueError(
@@ -1293,7 +1293,7 @@ def scatter(model, x, y, group_idx, groupby=None, groups=None, include_rest=True
         y = model.factor_names[y - 1]
 
     kwargs["color"] = groupby
-    factor_adata = model._cache["factors"]
+    factor_adata = model.get_factors(return_type="anndata")
     factor_adata = factor_adata[group_idx]
 
     data = pd.concat([factor_adata.to_df(), factor_adata.obs.copy()], axis=1)
@@ -1340,7 +1340,7 @@ def scatter(model, x, y, group_idx, groupby=None, groups=None, include_rest=True
 
 
 def scatter_rank(model, group_idx, groups=None, **kwargs):
-    factor_adata = model._cache["factors"]
+    factor_adata = model.get_factors()
     factor_adata = factor_adata[group_idx]
     try:
         groupby = factor_adata.uns["rank_genes_groups"]["params"]["groupby"]
@@ -1370,7 +1370,7 @@ def scatter_rank(model, group_idx, groups=None, **kwargs):
 
 
 def groupplot_rank(model, group_idx, groups=None, pl_type=STRIPPLOT, top=1, **kwargs):
-    factor_adata = model._cache["factors"]
+    factor_adata = model.get_factors()
     factor_adata = factor_adata[group_idx]
     try:
         groupby = factor_adata.uns["rank_genes_groups"]["params"]["groupby"]

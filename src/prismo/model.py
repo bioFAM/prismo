@@ -237,7 +237,7 @@ class Generative(PyroModule):
         with plates["gp_batch"]:
             f = pyro.sample("gp.f", f_dist.mask(False)).unsqueeze(-2)
 
-        outputscale = gp.covar_module.outputscale.reshape(-1, 1, 1)
+        outputscale = gp.outputscale.reshape(-1, 1, 1)
 
         with plates["factors"]:
             return pyro.sample("z", dist.Normal(f, (1 - outputscale).clamp(1e-3, 1 - 1e-3)))

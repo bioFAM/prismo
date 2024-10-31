@@ -44,8 +44,10 @@ class MefistoKernel(Kernel):
             return base_mat
 
     @property
-    def outputscale(self):
-        return self.base_kernel.outputscale
+    def group_corr(self):
+        covar = self.group_kernel.covar_matrix.to_dense()
+        diag = covar.diagonal(dim1=-1, dim2=-2).sqrt()
+        return covar / diag[..., None] / diag[..., None, :]
 
 
 class GP(ApproximateGP):
@@ -115,6 +117,18 @@ class GP(ApproximateGP):
         base_kernel.base_kernel.lengthscale = max_dist * torch.rand(batch_shape).to(device=device).clamp(0.1)
 
         self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
+
+    @property
+    def outputscale(self):
+        return self.covar_module.base_kernel.outputscale.detach()
+
+    @property
+    def lengthscale(self):
+        return self.covar_module.base_kernel.base_kernel.lengthscale.detach().squeeze()
+
+    @property
+    def group_corr(self):
+        return self.covar_module.group_corr.detach()
 
     def __call__(self, group_idx: torch.Tensor | None, inputs: torch.Tensor | None, prior: bool = False, **kwargs):
         if group_idx is not None and inputs is not None:

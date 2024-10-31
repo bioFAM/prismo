@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 def save_model(model, path: str | Path, mofa_compat: bool = False):
+    from . import __version__
+
     dset_kwargs = {"compression": "gzip", "compression_opts": 9}
 
     path = Path(path)
@@ -30,6 +32,7 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
             "param_store", data=np.frombuffer(paramspkl.getbuffer(), dtype=np.uint8), **dset_kwargs
         )
         prismogrp.create_dataset("model", data=np.frombuffer(modelpkl.getbuffer(), dtype=np.uint8), **dset_kwargs)
+        prismogrp.attrs["version"] = __version__
 
         if mofa_compat:
             # save MOFA-compatible output
@@ -182,9 +185,13 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
 
 
 def load_model(path: str | Path, with_params=True, map_location=None):
+    from . import __version__
+
     path = Path(path)
     with h5py.File(path, "r") as f:
         prismogrp = f["prismo"]
+        if prismogrp.attrs["version"] != __version__:
+            logger.warning("The stored model was created with a different version of PRISMO. Stuff may not work.")
         paramspkl = BytesIO(prismogrp["param_store"][()].tobytes())
         modelpkl = BytesIO(prismogrp["model"][()].tobytes())
 

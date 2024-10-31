@@ -1,10 +1,10 @@
 [build-system]
 build-backend = "hatchling.build"
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 
 [project]
 name = "prismo"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Factor Analysis Models"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -63,6 +63,12 @@ test = [
     "pytest",
     "coverage",
 ]
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/prismo/_version.py"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.coverage.run]
 source = ["prismo"]

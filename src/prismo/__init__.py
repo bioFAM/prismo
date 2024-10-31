@@ -1,5 +1,6 @@
 import logging
 
+from ._version import __version__, __version_tuple__
 from .prismo import PRISMO, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
 
 _logger = logging.getLogger(__name__)

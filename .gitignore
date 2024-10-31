@@ -10,6 +10,7 @@ buck-out/
 __pycache__/
 .mypy_cache/
 .ruff_cache/
+/src/prismo/_version.py
 
 # Distribution / packaging
 /build/
@@ -36,15 +37,3 @@ __pycache__/
 *.hdf5
 *.h5
 *.svg
-
-# Data directories
-notebooks/allelic_mouse_fibroblasts/data/**
-notebooks/allelic_mouse_spermatids/data/**
-notebooks/mofa_cll/data/**
-notebooks/mefisto_evodevo/data/**
-notebooks/mefisto_microbiome/data/**
-notebooks/mefisto_umap/data/**
-notebooks/mefisto_visium/data/**
-notebooks/nsf_slideseq/data/**
-notebooks/xenium_breast_cancer/data/**
-notebooks/xenium_breast_cancer_old/data/**

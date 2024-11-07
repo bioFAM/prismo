@@ -21,19 +21,18 @@ urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
     "anndata",
     "mudata",
-    "scanpy",
     "h5py",
     "pyro-ppl",
     "torch",
     "numpy",
     "pandas",
-    "matplotlib",
     "dill",
     "tensordict",
-    "altair",
     "gpytorch",
     "dtw-python",
     "plotnine",
+    "mizani",
+    "adjusttext",
     # for debug logging (referenced from the issue template)
     "session-info",
 ]

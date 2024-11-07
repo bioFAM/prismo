@@ -199,7 +199,6 @@ class PRISMO:
         self._factor_order = []
 
         self.nmf = {}
-        self.prior_masks = None
         self.prior_scales = None
 
         # Training settings
@@ -301,7 +300,7 @@ class PRISMO:
             n_dense_factors = n_factors
             factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
-        prior_masks = None
+        prior_masks = {}
         prior_scales = None
 
         if annotations is not None:
@@ -347,7 +346,6 @@ class PRISMO:
         # storing prior_masks as full annotations instead of partial annotations
         self.annotations = prior_masks
         self.prior_penalty = prior_penalty
-        self.prior_masks = prior_masks
         self.prior_scales = prior_scales
         return self.annotations
 
@@ -435,7 +433,7 @@ class PRISMO:
         # Sort factors by explained variance
         weights = self.variational.get_weights()
         factors = self.variational.get_factors()
-        df_r2_full, df_r2_factors, self.factor_order = self._sort_factors(weights=weights.mean, factors=factors.mean)
+        df_r2_full, df_r2_factors, self._factor_order = self._sort_factors(weights=weights.mean, factors=factors.mean)
 
         # Fill cache
         self._cache = {
@@ -957,6 +955,7 @@ class PRISMO:
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
+        ordered=True,
     ):
         """Get all factor matrices, z_x."""
         self._check_if_trained()
@@ -964,6 +963,8 @@ class PRISMO:
             group_name: pd.DataFrame(
                 group_factors[self.factor_order, :].T, index=self.sample_names[group_name], columns=self.factor_names
             )
+            if ordered
+            else pd.DataFrame(group_factors.T, index=self.sample_names[group_name], columns=self._factor_names)
             for group_name, group_factors in self._get_sparse("factors", moment, sparse_type).items()
         }
         factors = self._get_component(factors, return_type)
@@ -980,15 +981,21 @@ class PRISMO:
         if total:
             return self._cache["df_r2_full"]
         elif not ordered:
-            return self._cache["df_r2_factors"]
+            return {
+                group_name: df.set_index(self._factor_names) for group_name, df in self._cache["df_r2_factors"].items()
+            }
         else:
-            return {g: df.iloc[self.factor_order, :] for g, df in self._cache["df_r2_factors"].items()}
+            return {
+                group_name: df.iloc[self.factor_order, :].set_index(self.factor_names)
+                for group_name, df in self._cache["df_r2_factors"].items()
+            }
 
     def get_weights(
         self,
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
+        ordered=True,
     ):
         """Get all weight matrices, w_x."""
         self._check_if_trained()
@@ -996,6 +1003,8 @@ class PRISMO:
             view_name: pd.DataFrame(
                 view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
             )
+            if ordered
+            else pd.DataFrame(view_weights, index=self._factor_names, columns=self.feature_names[view_name])
             for view_name, view_weights in self._get_sparse("weights", moment, sparse_type).items()
         }
 
@@ -1051,12 +1060,14 @@ class PRISMO:
             return self._cache["warped_covariates"]
         return None
 
-    def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
+    def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered=True):
         """Get all annotation matrices, a_x."""
         annotations = {
-            k: pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k]).astype(
-                bool
-            )
+            k: (
+                pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
+                if ordered
+                else pd.DataFrame(v, index=self._factor_names, columns=self.feature_names[k])
+            ).astype(bool)
             for k, v in self.annotations.items()
         }
 

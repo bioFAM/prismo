@@ -52,7 +52,7 @@ class Generative(PyroModule):
         if isinstance(nonnegative_factors, bool):
             nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
 
-        if isinstance(prior_scales, dict):
+        if isinstance(prior_scales, dict) and len(prior_scales):
             for vn, ps in prior_scales.items():
                 self.register_buffer(f"prior_scales_{vn}", torch.as_tensor(ps), persistent=False)
             self._have_prior_scales = True

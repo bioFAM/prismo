@@ -104,11 +104,11 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
 
             exp_grp = f.create_group("expectations")
             factor_grp = exp_grp.create_group("Z")
-            for group_name, factors in model.get_factors(return_type="numpy").items():
+            for group_name, factors in model.get_factors(return_type="numpy", ordered=False).items():
                 factor_grp.create_dataset(group_name, data=factors.T, **dset_kwargs)
 
             weight_grp = exp_grp.create_group("W")
-            for view_name, weights in model.get_weights(return_type="numpy").items():
+            for view_name, weights in model.get_weights(return_type="numpy", ordered=False).items():
                 weight_grp.create_dataset(view_name, data=weights, **dset_kwargs)
 
             # save Sigma?

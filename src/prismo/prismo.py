@@ -275,8 +275,8 @@ class PRISMO:
     def _setup_annotations(self, n_factors, annotations, annotations_varm_key, prior_penalty):
         if annotations is None and annotations_varm_key is not None:
             annotations = {}
-            for gn in self.data.keys():
-                for vn in self.data[gn].keys():
+            for vn in annotations_varm_key.keys():
+                for gn in self.data.keys():
                     if annotations_varm_key[vn] in self.data[gn][vn].varm:
                         annotations[vn] = self.data[gn][vn].varm[annotations_varm_key[vn]].fillna(0).T
                         break
@@ -300,7 +300,7 @@ class PRISMO:
             n_dense_factors = n_factors
             factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
-        prior_masks = {}
+        prior_masks = None
         prior_scales = None
 
         if annotations is not None:
@@ -327,13 +327,17 @@ class PRISMO:
                     for vn, vm in annotations.items()
                 }
 
+            for vn in self.view_names:
+                if vn not in prior_masks:
+                    prior_masks[vn] = np.zeros((n_dense_factors + n_informed_factors, self.n_features[vn]), dtype=bool)
+
             prior_scales = {
                 vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0) for vn, vm in prior_masks.items()
             }
 
             if n_dense_factors > 0:
                 dense_scale = 1.0
-                for vn in self.view_names:
+                for vn in prior_masks.keys():
                     prior_scales[vn][:n_dense_factors, :] = dense_scale
 
         self.n_dense_factors = n_dense_factors
@@ -346,6 +350,7 @@ class PRISMO:
         # storing prior_masks as full annotations instead of partial annotations
         self.annotations = prior_masks
         self.prior_penalty = prior_penalty
+        self.prior_masks = prior_masks
         self.prior_scales = prior_scales
         return self.annotations
 

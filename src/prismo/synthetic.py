@@ -13,6 +13,27 @@ logger = logging.getLogger(__name__)
 
 
 class DataGenerator:
+    """Generator class for creating synthetic multi-view data with latent factors.
+
+    This class generates synthetic data with specified properties including shared and private
+    latent factors, different likelihoods, and optional covariates and response variables.
+
+    Attributes:
+        n_samples: Number of samples to generate.
+        n_features: List of feature counts for each view.
+        n_views: Number of views in the dataset.
+        n_fully_shared_factors: Number of factors shared across all views.
+        n_partially_shared_factors: Number of factors shared between some views.
+        n_private_factors: Number of factors unique to individual views.
+        n_covariates: Number of observed covariates.
+        n_response: Number of response variables.
+        likelihoods: List of likelihood types for each view.
+        factor_size_params: Parameters for factor size distribution.
+        factor_size_dist: Type of distribution for factor sizes.
+        n_active_factors: Number or fraction of active factors.
+        nmf: List indicating which views should use non-negative matrix factorization.
+    """
+
     def __init__(
         self,
         n_samples: int = 1000,
@@ -29,40 +50,6 @@ class DataGenerator:
         nmf: Optional[list[bool]] = None,
         **kwargs,
     ) -> None:
-        """Generate synthetic data
-
-        Parameters
-        ----------
-        n_samples : int, optional
-            Number of samples, by default 1000
-        n_features : list[int], optional
-            Number of features for each view, by default None
-        likelihoods : list[str], optional
-            Likelihoods for each view, 'normal' or 'bernoulli', by default None
-        n_fully_shared_factors : int, optional
-            Number of fully shared latent factors, by default 2
-        n_partially_shared_factors : int, optional
-            Number of partially shared latent factors, by default 15
-        n_private_factors : int, optional
-            Number of private latent factors, by default 3
-        factor_size_params : tuple[float], optional
-            Parameters for the distribution of the number
-            of active factor loadings for the latent factors,
-            by default None
-        factor_size_dist : str, optional
-            Distribution of the number of active factor loadings,
-            either "uniform" or "gamma",
-            by default "uniform"
-        n_active_factors : float, optional
-            Number or fraction of active factors, by default 1.0 (all)
-        n_covariates : int, optional
-            Number of observed covariates, by default 0
-        n_response : int, optional
-            Number of response variables from the latent factors, by default 0
-        nmf : list[bool], optional
-            Whether to generate data from a non-negative matrix factorization,
-            by default False
-        """
         self.n_samples = n_samples
         self.n_features = n_features
         self.n_views = len(self.n_features)

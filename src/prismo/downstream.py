@@ -26,29 +26,24 @@ def _test_single_view(
 ):
     """Perform significance test of factor loadings against feature sets.
 
-    Parameters
-    ----------
-    model : PRISMO
-        A PRISMO model
-    view_name : str
-        View name
-    feature_sets : pd.DataFrame, optional
-        Boolean dataframe with feature sets in each row, by default None
-    sign : str, optional
-        Two sided ("all") or one-sided ("neg" or "pos"), by default "all"
-    corr_adjust : bool, optional
-        Whether to adjust for multiple testing, by default True
-    p_adj_method : str, optional
-        Adjustment method for multiple testing, by default "fdr_bh"
-    min_size : int, optional
-        Lower size limit for feature sets to be considered, by default 10
+    Args:
+        model: A PRISMO model instance.
+        view_name: Name of the view to test.
+        feature_sets: Boolean dataframe with feature sets in each row. If None, uses model annotations.
+        sign: Test direction - "all" for two-sided, "neg" or "pos" for one-sided tests.
+        corr_adjust: Whether to adjust for correlations between features.
+        p_adj_method: Method for multiple testing adjustment (e.g. "fdr_bh").
+        min_size: Minimum size threshold for feature sets.
 
-    Returns
-    -------
-    dict
-        Dictionary of test results with "t", "p" and "p_adj" keys
-        and pd.DataFrame values with factor_names as indices,
-        and feature_sets as columns
+    Returns:
+        dict: Test results containing:
+            - "t": DataFrame of t-statistics
+            - "p": DataFrame of p-values
+            - "p_adj": DataFrame of adjusted p-values (if p_adj_method is not None)
+
+    Raises:
+        IndexError: If view_name is invalid or not found in model.
+        ValueError: If feature_sets is invalid or empty after filtering.
     """
     use_prior_mask = feature_sets is None
     adjust_p = p_adj_method is not None
@@ -164,6 +159,23 @@ def _test_single_view(
 def test(
     model, feature_sets: pd.DataFrame = None, corr_adjust: bool = True, p_adj_method: str = "fdr_bh", min_size: int = 10
 ):
+    """Perform significance testing across multiple views and sign directions.
+
+    Args:
+        model: A PRISMO model instance.
+        feature_sets: Boolean dataframe with feature sets in each row. If None, uses model annotations.
+        corr_adjust: Whether to adjust for correlations between features.
+        p_adj_method: Method for multiple testing adjustment.
+        min_size: Minimum size threshold for feature sets.
+
+    Returns:
+        dict: Nested dictionary with structure:
+            {sign: {view_name: test_results}}
+            where test_results contains t-statistics, p-values, and adjusted p-values.
+
+    Raises:
+        ValueError: If no valid views are found or feature sets are invalid.
+    """
     use_prior_mask = feature_sets is None
     if use_prior_mask:
         view_names = [vi for vi in model.view_names if vi in model.annotations]
@@ -171,7 +183,7 @@ def test(
     if len(view_names) == 0:
         if use_prior_mask:
             raise ValueError("`feature_sets` is None, and none of the selected views are informed.")
-        raise ValueError(f"No valid views.")
+        raise ValueError("No valid views.")
 
     signs = ["neg", "pos"]
 
@@ -202,26 +214,26 @@ def test(
 def match(
     reference: torch.Tensor | np.ndarray, permutable: torch.Tensor | np.ndarray, dim: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Find the permutation and sign of permutable along one dimension to maximize correlation with reference.
+    """Find optimal permutation and signs to match two tensors along specified dimension.
 
-    This is useful for comparing ground truth factor scores / loadings with inferred values because the factor order
-    and sign is arbitrary.
+    Finds the permutation and sign of permutable along one dimension to maximize
+    correlation with reference. Useful for comparing ground truth factor scores/loadings
+    with inferred values where factor order and sign is arbitrary.
 
-    Parameters
-    ----------
-    reference : torch.Tensor | np.ndarray
-        The reference tensor.
-    permutable : torch.Tensor | np.ndarray
-        The permutable tensor.
-    dim : int
-        The dimension along which to permute the tensor.
+    Args:
+        reference: Reference tensor to match against.
+        permutable: Tensor to be permuted and sign-adjusted.
+        dim: Dimension along which to perform matching.
 
-    Returns
-    -------
-    permutation : torch.tensor
-        The permutation of permutable that maximizes the correlation with reference.
-    signs : torch.tensor
-        The sign of permutable that maximizes the correlation with reference.
+    Returns:
+        tuple:
+            - np.ndarray: Optimal permutation indices
+            - np.ndarray: Optimal signs (+1 or -1) for each permuted element
+
+    Notes:
+        - Handles various input types (torch.Tensor, np.ndarray, pd.DataFrame)
+        - Special handling for non-negative tensors
+        - Uses linear sum assignment to find optimal matching
     """
     # convert all tensors to numpy arrays
     if isinstance(reference, torch.Tensor):

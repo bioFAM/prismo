@@ -20,6 +20,12 @@ class _ReinMaxMixin:
 
 
 class ReinMaxBernoulli(_ReinMaxMixin, Bernoulli):
+    """ReinMax version of the Bernoulli distribution.
+
+    This class implements a Bernoulli distribution with ReinMax gradient estimation
+    based on https://arxiv.org/pdf/2304.08612
+    """
+
     arg_constraints = _ReinMaxMixin.arg_constraints | Bernoulli.arg_constraints
 
     def rsample(self, sample_shape: torch.Size = torch.Size()):

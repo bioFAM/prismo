@@ -11,6 +11,19 @@ from gpytorch.variational import CholeskyVariationalDistribution, VariationalStr
 
 
 class MefistoKernel(Kernel):
+    """A kernel that combines a base kernel with group-specific correlations.
+
+    This kernel implements a combination of a base kernel with
+    a learned group correlation structure through an IndexKernel.
+
+    Args:
+        base_kernel: The base kernel to use for computing similarities between inputs.
+        n_groups: Number of groups to model correlations between.
+        rank: Rank of the low-rank approximation for group correlations.
+        lowrank_covar_prior: Optional prior for the low-rank covariance.
+        **kwargs: Additional arguments passed to parent class.
+    """
+
     def __init__(
         self,
         base_kernel: Kernel | None,
@@ -51,7 +64,20 @@ class MefistoKernel(Kernel):
 
 
 class GP(ApproximateGP):
-    """Gaussian Process model with RBF kernel."""
+    """Gaussian Process model.
+
+    A variational Gaussian Process model that combines a base kernel with group-specific
+    correlations through a MefistoKernel.
+
+    Args:
+        n_inducing: Number of inducing points.
+        covariates: Iterable of covariate tensors to choose inducing points from.
+        n_factors: Number of factors in the model.
+        n_groups: Number of groups to model correlations between.
+        kernel: Kernel type, either "RBF" or "Matern".
+        rank: Rank of the group correlation kernel.
+        **kwargs: Additional kernel-specific parameters.
+    """
 
     def __init__(
         self,
@@ -63,23 +89,6 @@ class GP(ApproximateGP):
         rank: int = 1,
         **kwargs,
     ):
-        """Initialize the GP model.
-
-        Parameters
-        ----------
-        n_inducing
-            Number of inducing points.
-        covariates
-            Covariates to choose the inducing points from.
-        n_factors
-            Number of factors.
-        n_groups
-            Number of groups.
-        kernel
-            Can be "RBF" or "Matern".
-        rank
-            Rank of the group correlation kernel.
-        """
         covariates = tuple(covariates)
         self._inducing_points_idx = get_inducing_points_idx(covariates, n_inducing, n_factors)
         self._n_inducing = n_inducing
@@ -147,7 +156,19 @@ class GP(ApproximateGP):
         )
 
 
-def get_inducing_points_idx(covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int):
+def get_inducing_points_idx(
+    covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int
+) -> tuple[tuple[torch.Tensor]]:
+    """Generate random indices for selecting inducing points from covariates.
+
+    Args:
+        covariates: Iterable of covariate tensors.
+        n_inducing: Number of inducing points to select.
+        n_factors: Number of factors in the model.
+
+    Returns:
+        tuple: Nested tuple of indices for each factor and covariate.
+    """
     n = [0] + [c.shape[0] for c in covariates]
     totaln = sum(n)
     offsets = torch.cumsum(torch.as_tensor(n), 0)
@@ -158,17 +179,17 @@ def get_inducing_points_idx(covariates: Iterable[torch.Tensor], n_inducing: int,
     )
 
 
-def setup_inducing_points(covariates: Iterable[torch.Tensor], idx, n_inducing, *, out=None):
-    """Randomly initialize inducing points from the covariates.
+def setup_inducing_points(covariates: Iterable[torch.Tensor], idx, n_inducing, *, out=None) -> torch.Tensor:
+    """Initialize inducing points from covariates using provided indices.
 
-    Parameters
-    ----------
-    covariates
-        tensors of shape (n_samples, n_dims).
-    idx
-        output of get_inducing_points_idx
-    n_inducing
-        Number of inducing points.
+    Args:
+        covariates: Iterable of covariate tensors.
+        idx: Indices from get_inducing_points_idx.
+        n_inducing: Number of inducing points.
+        out: Optional pre-allocated tensor for output.
+
+    Returns:
+        torch.Tensor: Tensor of inducing points.
     """
     if covariates is None:
         return None

@@ -13,6 +13,19 @@ logger = logging.getLogger(__name__)
 
 
 def save_model(model, path: str | Path, mofa_compat: bool = False):
+    """Save a PRISMO model to an HDF5 file.
+
+    Saves both the model state and parameters, with optional MOFA-compatible format.
+
+    Args:
+        model: The PRISMO model to save.
+        path: File path where to save the model.
+        mofa_compat: If True, saves additional data in MOFA-compatible format.
+
+    Raises:
+        IOError: If there are issues writing to the file.
+        ValueError: If the model contains invalid data structures.
+    """
     from . import __version__
 
     dset_kwargs = {"compression": "gzip", "compression_opts": 9}
@@ -184,7 +197,22 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
     logger.info(f"Saved model to {path}")
 
 
-def load_model(path: str | Path, with_params=True, map_location=None):
+def load_model(path: str | Path, with_params=True, map_location=None) -> torch.nn.Module:
+    """Load a PRISMO model from an HDF5 file.
+
+    Args:
+        path: Path to the HDF5 file containing the saved model.
+        with_params: If True, loads and restores model parameters.
+        map_location: Optional device specification for loading the model.
+
+    Returns:
+        The loaded PRISMO model.
+
+    Raises:
+        IOError: If there are issues reading the file.
+        ValueError: If the file format is invalid.
+        ImportError: If version compatibility issues are detected.
+    """
     from . import __version__
 
     path = Path(path)

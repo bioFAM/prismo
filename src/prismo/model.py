@@ -1040,7 +1040,7 @@ class Variational(PyroModule):
             if self.generative.factor_prior[group_name] == "SnS":
                 d = dist.Gamma(*self._get_shape_and_rate(f"alpha_z_{group_name}"))
                 alphas.mean[group_name] = d.mean
-                alphas.std[group_name] = d.stdev
+                alphas.std[group_name] = d.stddev
         return alphas
 
     @torch.no_grad()
@@ -1073,7 +1073,7 @@ class Variational(PyroModule):
             if self.generative.weight_prior[view_name] == "SnS":
                 d = dist.Gamma(*self._get_shape_and_rate(f"alpha_w_{view_name}"))
                 alphas.mean[view_name] = d.mean
-                alphas.std[view_name] = d.stdev
+                alphas.std[view_name] = d.stddev
         return alphas
 
     @torch.no_grad()

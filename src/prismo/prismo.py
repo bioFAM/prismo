@@ -1,5 +1,6 @@
 import copy
 import logging
+import random
 import time
 from collections import defaultdict
 from dataclasses import MISSING, dataclass, field, fields
@@ -743,7 +744,12 @@ class PRISMO:
             self.train_opts.seed = int(time.strftime("%y%m%d%H%M"))
 
         logger.info(f"Setting training seed to `{self.train_opts.seed}`.")
+        random.seed(self.train_opts.seed)
+        np.random.seed(self.train_opts.seed)
+        torch.manual_seed(self.train_opts.seed)
+        torch.cuda.manual_seed_all(self.train_opts.seed)
         pyro.set_rng_seed(self.train_opts.seed)
+        
         # clean start
         logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)

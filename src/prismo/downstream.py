@@ -69,7 +69,7 @@ def _test_single_view(
 
     if use_prior_mask:
         logger.warning("No feature sets provided, extracting feature sets from prior mask.")
-        feature_sets = model.get_annotations("dataframe")[view_name]
+        feature_sets = model.get_annotations("pandas")[view_name]
         if not feature_sets.any(axis=None):
             raise ValueError(f"Empty `feature_sets`, view `{view_name}` " "has not been informed prior to training.")
 

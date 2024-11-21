@@ -29,7 +29,7 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
         - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
         - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -106,7 +106,7 @@ def anndata_to_dense(data: dict) -> dict:
     data: dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -136,7 +136,7 @@ def infer_likelihoods(data: dict) -> dict:
     data: dict
         Dictionary with view names as keys and AnnData objects as values.
 
-    Returns
+    Returns:
     -------
     dict
         Dictionary with view names as keys and likelihoods as values.
@@ -217,7 +217,7 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     likelihoods: dict
         Dictionary with view names as keys and likelihoods as values.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -256,7 +256,7 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
     likelihoods: dict
         Dictionary with view names as keys and likelihoods as values.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of torch.Tensor objects with group names as keys and view names as subkeys,
@@ -308,7 +308,7 @@ def center_data(data: dict, likelihoods: dict, nonnegative_weights: dict, nonneg
     nonnegative_factors: dict
         Dictionary with view names as keys and boolean values indicating whether factors should be non-negative.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -342,7 +342,7 @@ def scale_data(data: dict, likelihoods: dict, scale_per_group: bool = True) -> d
     scale_per_group: bool
         If True, scale to unit variance per group. Otherwise across all groups.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -378,7 +378,7 @@ def align_obs(data: dict, use_obs: str = "union", cov_key: str = "x") -> dict:
     use_obs: str
         If "union", use the union of observations across views. If "intersection", use the intersection.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -469,7 +469,7 @@ def extract_obs(data: dict) -> dict:
     data: dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of pandas.DataFrame objects with group names as keys and view names as subkeys.
@@ -498,7 +498,7 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
     use_var_intersection: bool
         If True, use the intersection of features across groups.
 
-    Returns
+    Returns:
     -------
     dict
         Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -592,35 +592,73 @@ def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_ob
     covariates_obsm_key: dict
         Dictionary with group names as keys and covariate obsm keys as values.
 
-    Returns
+    Returns:
     -------
     dict | None
         Dictionary of Tensors with group names as keys or None if no covariate keys provided.
     """
-    if covariates_obs_key is None and covariates_obsm_key is None:
-        return None
+    # ensure that covariates_obs_key and covariates_obsm_key are dictionaries
+    if isinstance(covariates_obs_key, str) or covariates_obs_key is None:
+        covariates_obs_key = {k: covariates_obs_key for k in data.keys()}
+    if isinstance(covariates_obsm_key, str) or covariates_obsm_key is None:
+        covariates_obsm_key = {k: covariates_obsm_key for k in data.keys()}
 
-    if covariates_obs_key is not None and covariates_obsm_key is not None:
-        raise ValueError("Please provide either covariates_obs_key or covariates_obsm_key, not both.")
+    # dictionaries to store covariate data and names
+    covariates = {}
+    covariates_names = {}
 
-    else:
-        covariates = {}
+    # iterate over groups to extract covariate data and names
+    for group_name, group_dict in data.items():
+        # ensure that the group_name is in the covariates_obs_kets and covariates_obsm_keys dictionaries
+        if group_name not in covariates_obs_key.keys():
+            covariates_obs_key[group_name] = None
+        if group_name not in covariates_obsm_key.keys():
+            covariates_obsm_key[group_name] = None
 
-        for group_name, group_dict in data.items():
-            group_covariates = []
+        # lists to store covariate data and names for current group
+        covariates_group = []
+
+        # check if both covariates_obs_key and covariates_obsm_key are provided and not None for current group (not allowed)
+        if covariates_obs_key[group_name] is not None and covariates_obsm_key[group_name] is not None:
+            raise ValueError(
+                f"Provide either covariates_obs_key or covariates_obsm_key for group {group_name}, not both."
+            )
+
+        # check if no covariate keys are provided for current group (skip group)
+        if covariates_obs_key[group_name] is None and covariates_obsm_key[group_name] is None:
+            continue
+
+        # extract covariate data and names from obs attribute
+        obs_key = covariates_obs_key[group_name]
+        if obs_key is not None:
             for view_adata in group_dict.values():
-                if isinstance(covariates_obs_key, dict) and covariates_obs_key[group_name] is not None:
-                    group_covariates.append(
-                        torch.tensor(view_adata.obs[covariates_obs_key[group_name]], dtype=torch.float).unsqueeze(-1)
-                    )
+                if obs_key in view_adata.obs.columns:
+                    covariates_group.append(torch.tensor(view_adata.obs[obs_key], dtype=torch.float).unsqueeze(-1))
+            if len(covariates_group) > 0:
+                covariates_names[group_name] = obs_key
+            else:
+                warnings.warn(f"No covariate data found in obs attribute for group {group_name}.", stacklevel=2)
 
-                elif isinstance(covariates_obsm_key, dict) and covariates_obsm_key[group_name] is not None:
-                    group_covariates.append(
-                        torch.tensor(view_adata.obsm[covariates_obsm_key[group_name]], dtype=torch.float)
-                    )
+        # extract covariate data and names from obsm attribute
+        obsm_key = covariates_obsm_key[group_name]
+        if obsm_key is not None:
+            covar_dim = []
+            for view_adata in group_dict.values():
+                if obsm_key in view_adata.obsm.keys():
+                    covar_dim.append(view_adata.obsm[obsm_key].shape[1])
+                    covariates_group.append(torch.tensor(view_adata.obsm[obsm_key], dtype=torch.float))
 
-            if len(group_covariates) == 0:
-                continue
-            covariates[group_name] = torch.stack(group_covariates, dim=0).nanmean(dim=0)
+            if len(set(covar_dim)) > 1:
+                raise ValueError(f"Number of covariate dimensions in group {group_name} must be the same across views.")
+
+            if len(covariates_group) > 0:
+                if isinstance(view_adata.obsm[obsm_key], pd.DataFrame):
+                    covariates_names[group_name] = view_adata.obsm[obsm_key].columns.to_numpy()
+                if isinstance(view_adata.obsm[obsm_key], pd.Series):
+                    covariates_names[group_name] = np.asarray(view_adata.obsm[obsm_key].name, dtype=object)
+                if isinstance(view_adata.obsm[obsm_key], np.ndarray):
+                    covariates_names[group_name] = np.asarray([None] * view_adata.obsm[obsm_key].shape[1])
+
+        covariates[group_name] = torch.stack(covariates_group, dim=0).nanmean(dim=0)
 
         return covariates

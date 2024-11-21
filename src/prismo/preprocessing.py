@@ -17,29 +17,26 @@ logger = logging.getLogger(__name__)
 def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None) -> dict:
     """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
 
-    Parameters
-    ----------
-    data: dict or MuData
-        Allowed input structures are:
-        - Adata object (single group, single view)
-        - MuData object (single group, multiple views)
-        - dict with view names as keys and AnnData objects as values (single group, multiple views)
-        - dict with view names as keys and torch.Tensor objects as values (single group, multiple views)
-        - dict with group names as keys and MuData objects as values (multiple groups, multiple views)
-        - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
-        - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
+    Args:
+        data: Input data. Allowed input structures are:
+            - Adata object (single group, single view)
+            - MuData object (single group, multiple views)
+            - dict with view names as keys and AnnData objects as values (single group, multiple views)
+            - dict with view names as keys and torch.Tensor objects as values (single group, multiple views)
+            - dict with group names as keys and MuData objects as values (multiple groups, multiple views)
+            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
+            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
+        group_by: Key in obs to group the data by. If provided, the data will be split into groups based on this key.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
     """
     # single group, single view case
     if isinstance(data, AnnData):
         data = {"group_1": {"view_1": data.copy()}}
 
     # single group cases
-    if isinstance(data, MuData):
+    elif isinstance(data, MuData):
         data = data.copy()
         if group_by is None:
             data.push_obs()
@@ -101,15 +98,17 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
 def anndata_to_dense(data: dict) -> dict:
     """Convert sparse arrays in AnnData objects to dense.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+    This function takes a nested dictionary of AnnData objects and converts
+    any sparse arrays within them to dense arrays.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys, where all sparse arrays have been
+            converted to dense arrays.
     """
     for _, v_groups in data.items():
         for _, adata in v_groups.items():
@@ -129,17 +128,17 @@ def anndata_to_dense(data: dict) -> dict:
 
 
 def infer_likelihoods(data: dict) -> dict:
-    """Infer likelihoods ("Normal", "Bernoulli", "BetaBinomial", "GammaPoisson") for each view based on the data distribution.
+    """Infer likelihoods for each view based on the data distribution.
 
-    Parameters
-    ----------
-    data: dict
-        Dictionary with view names as keys and AnnData objects as values.
+    This function analyzes the data distribution in each view and infers the
+    appropriate likelihood model. The possible likelihoods are "Normal",
+    "Bernoulli", "BetaBinomial", and "GammaPoisson".
+
+    Args:
+        data: Dictionary with view names as keys and AnnData objects as values.
 
     Returns:
-    -------
-    dict
-        Dictionary with view names as keys and likelihoods as values.
+        dict: Dictionary with view names as keys and inferred likelihoods as values.
     """
     likelihoods = {}
 
@@ -173,14 +172,19 @@ def infer_likelihoods(data: dict) -> dict:
 
 
 def validate_likelihoods(data: dict, likelihoods: dict) -> dict:
-    """Validate likelihoods ("Normal", "Bernoulli", "BetaBinomial", "GammaPoisson") for each view based on the data distribution.
+    """Validate likelihoods for each view based on the data distribution.
 
-    Parameters
-    ----------
-    data: dict
-        Dictionary with view names as keys and AnnData objects as values.
-    likelihoods: dict
-        Dictionary with view names as keys and likelihoods as values.
+    This function validates the specified likelihoods ("Normal", "Bernoulli",
+    "BetaBinomial", "GammaPoisson") for each view by comparing them against
+    the actual data distribution.
+
+    Args:
+        data: Dictionary with view names as keys and AnnData objects as values.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
+
+    Returns:
+        dict: Dictionary with view names as keys and validated likelihoods as values.
+
     """
     for k, v in data.items():
         v_X = torch.tensor(v.X, dtype=torch.float).clone().detach()
@@ -210,17 +214,17 @@ def validate_likelihoods(data: dict, likelihoods: dict) -> dict:
 def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     """Remove features with constant values.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    likelihoods: dict
-        Dictionary with view names as keys and likelihoods as values.
+    This function removes features that have constant values across all samples
+    from each AnnData object in the nested dictionary.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys and
+            view names as subkeys, with constant features removed.
     """
     mask_keep_var = {}
     for view_name in likelihoods.keys():
@@ -247,20 +251,22 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
 
 
 def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
-    """Compute the mean of each feature across all observations in a group. For BetaBinomial data, the mean is computed from the ratio of the first occurence of a feature to the sum of both occurences.
+    """Compute the mean of each feature across all observations in a group.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    likelihoods: dict
-        Dictionary with view names as keys and likelihoods as values.
+    This function calculates the mean of each feature for all observations within a group.
+    For BetaBinomial data, the mean is computed as the ratio of the first occurrence
+    of a feature to the sum of both occurrences.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
+        how: Specifies whether to compute the mean across features or samples.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of torch.Tensor objects with group names as keys and view names as subkeys,
-        representing the feature means in the respective group.
+        dict: Nested dictionary of np.ndarray objects with group names as keys
+            and view names as subkeys, representing the feature means in the
+            respective group.
     """
     if how not in ["feature", "sample"]:
         raise ValueError("how must be either 'feature' or 'sample'.")
@@ -297,21 +303,21 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
 def center_data(data: dict, likelihoods: dict, nonnegative_weights: dict, nonnegative_factors: dict) -> dict:
     """Center features to have zero mean in each group individually.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    likelihoods: dict
-        Dictionary with view names as keys and likelihoods as values.
-    nonnegative_weights: dict
-        Dictionary with view names as keys and boolean values indicating whether weights should be non-negative.
-    nonnegative_factors: dict
-        Dictionary with view names as keys and boolean values indicating whether factors should be non-negative.
+    This function centers the features within each group by subtracting the group-specific
+    mean from each feature, ensuring zero mean across observations within each group.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
+        nonnegative_weights: Dictionary with view names as keys and boolean values
+            indicating whether weights should be non-negative.
+        nonnegative_factors: Dictionary with view names as keys and boolean values
+            indicating whether factors should be non-negative.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys and
+            view names as subkeys, containing the centered feature data.
     """
     for k_groups, v_groups in data.items():
         for k_views, v_views in v_groups.items():
@@ -333,19 +339,19 @@ def center_data(data: dict, likelihoods: dict, nonnegative_weights: dict, nonneg
 def scale_data(data: dict, likelihoods: dict, scale_per_group: bool = True) -> dict:
     """Scale each view to have unit variance in every group or across all groups.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    likelihoods: dict
-        Dictionary with view names as keys and likelihoods as values.
-    scale_per_group: bool
-        If True, scale to unit variance per group. Otherwise across all groups.
+    This function scales the data in each view to achieve unit variance. The scaling
+    can be performed either independently for each group or globally across all groups.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
+        scale_per_group: If True, scales to unit variance independently for
+            each group. If False, scales to unit variance across all groups combined.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys and
+            view names as subkeys, containing the scaled data.
     """
     if scale_per_group:
         for v_groups in data.values():
@@ -369,19 +375,23 @@ def scale_data(data: dict, likelihoods: dict, scale_per_group: bool = True) -> d
 
 
 def align_obs(data: dict, use_obs: str = "union", cov_key: str = "x") -> dict:
-    """Align observations across views. After alignment, each view will have the same set of observations (with nans for missings) and observations will be sorted alphabetically according to their obs_names.
+    """Align observations across views.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    use_obs: str
-        If "union", use the union of observations across views. If "intersection", use the intersection.
+    This function aligns observations across different views, ensuring each view has
+    the same set of observations. Missing values are filled with nans. After alignment,
+    observations are sorted alphabetically by their obs_names.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        use_obs: Strategy for observation alignment. Must be either:
+            - "union": Include all observations from all views
+            - "intersection": Include only observations present in all views
+        cov_key: Key in obsm to merge covariate values across views.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys and
+            view names as subkeys, containing aligned observations.
     """
     if use_obs not in ["union", "intersection"]:
         raise ValueError("use_obs must be either 'union' or 'intersection'.")
@@ -464,15 +474,16 @@ def align_obs(data: dict, use_obs: str = "union", cov_key: str = "x") -> dict:
 def extract_obs(data: dict) -> dict:
     """Extract obs DataFrames from AnnData objects.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+    This function extracts the observation (obs) DataFrames from each AnnData object
+    in the nested dictionary structure.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
 
     Returns:
-    -------
-    dict
-        Nested dictionary of pandas.DataFrame objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of pandas.DataFrame objects with group names as keys
+            and view names as subkeys, containing the extracted observation data.
     """
     metadata = {}
 
@@ -487,21 +498,21 @@ def extract_obs(data: dict) -> dict:
 def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> dict:
     """Align features across groups.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    likelihoods: dict
-        Dictionary with view names as keys and likelihoods as values.
-    use_var_union: bool
-        If True, use the union of features across groups.
-    use_var_intersection: bool
-        If True, use the intersection of features across groups.
+    This function aligns features across different groups in the data. The alignment
+    can be done using either the union or intersection of features across groups,
+    as specified by the input parameters.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
+        use_var: Strategy for feature alignment. Must be either:
+            - "union": Include all features from all groups
+            - "intersection": Include only features present in all groups
 
     Returns:
-    -------
-    dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
+        dict: Nested dictionary of AnnData objects with group names as keys and
+            view names as subkeys, containing the aligned features.
     """
     if use_var not in ["union", "intersection"]:
         raise ValueError("use_var must be either 'union' or 'intersection'.")
@@ -555,10 +566,11 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
                 # expand varm matrices
                 expanded_varm = {}
                 for varm_k in data[k_groups][k_views].varm.keys():
-                    expanded_varm[varm_k] = (
-                        np.ones(shape=(len(var_names_union), data[k_groups][k_views].varm[varm_k].shape[1])) * np.nan
-                    )
-                    expanded_varm[varm_k][ix] = data[k_groups][k_views].varm[varm_k]
+                    varm_v = data[k_groups][k_views].varm[varm_k]
+                    columns = varm_v.columns if isinstance(varm_v, pd.DataFrame) else range(varm_v.shape[1])
+                    expanded_varm[varm_k] = np.ones(shape=(len(var_names_union), varm_v.shape[1])) * np.nan
+                    expanded_varm[varm_k][ix, :] = varm_v
+                    expanded_varm[varm_k] = pd.DataFrame(expanded_varm[varm_k], index=var_names_union, columns=columns)
 
                 # expand layer matrices
                 expanded_layers = {}
@@ -574,7 +586,7 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
                     obs=data[k_groups][k_views].obs,
                     var=expanded_var,
                     obsm=data[k_groups][k_views].obsm,
-                    # varm=expanded_varm,
+                    varm=expanded_varm,
                 )
 
     return data_aligned
@@ -583,14 +595,8 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
 def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None) -> dict | None:
     """Extract covariate data from AnnData objects.
 
-    Parameters
-    ----------
-    data: dict
-        Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
-    covariates_obs_key: dict
-        Dictionary with group names as keys and covariate obs keys as values.
-    covariates_obsm_key: dict
-        Dictionary with group names as keys and covariate obsm keys as values.
+    This function extracts covariate data from either the obs or obsm attributes
+    of AnnData objects based on the provided keys.
 
     Returns:
     -------
@@ -661,4 +667,4 @@ def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_ob
 
         covariates[group_name] = torch.stack(covariates_group, dim=0).nanmean(dim=0)
 
-        return covariates
+        return covariates, covariates_names

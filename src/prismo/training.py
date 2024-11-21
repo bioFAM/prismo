@@ -10,7 +10,14 @@ class EarlyStopper:
     """
 
     def __init__(self, mode: str = "min", min_delta: float = 0.0, patience: int = 10, percentage: bool = False):
-        """Initialize the EarlyStopper."""
+        """Initialize the EarlyStopper.
+
+        Args:
+            mode: The mode to use for comparison (min or max).
+            min_delta: The minimum change in the monitored metric to be considered an improvement.
+            patience: The number of epochs to wait before stopping.
+            percentage: Whether the minimum delta is a percentage of the current value.
+        """
         self.mode = mode
         self.min_delta = min_delta
         self.patience = patience
@@ -23,7 +30,11 @@ class EarlyStopper:
             self.step = lambda metrics: False
 
     def step(self, metrics: float) -> bool:
-        """Determine if the training should stop."""
+        """Determine if the training should stop.
+
+        Args:
+            metrics: The current value of the metric being monitored.
+        """
         if self.best is None:
             self.best = metrics
             return False
@@ -42,7 +53,13 @@ class EarlyStopper:
         return self.num_bad_epochs >= self.patience
 
     def _init_is_better(self, mode: str, min_delta: float, percentage: bool) -> None:
-        """Initialize the comparator based on the mode."""
+        """Initialize the comparator based on the mode.
+
+        Args:
+            mode: The mode to use for comparison (min or max)
+            min_delta: The minimum change in the monitored metric to be considered an improvement.
+            percentage: Whether the minimum delta is a percentage of the current value.
+        """
         if mode not in {"min", "max"}:
             raise ValueError(f"mode {mode} is unknown!")
         if not percentage:

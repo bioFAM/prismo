@@ -82,6 +82,83 @@ def plot_factors_scatter(
     return plot
 
 
+def plot_covariates_factor_scatter(
+    model,
+    factor: int,
+    group: str | None = None,
+    covariate_dims: list[int] | None = None,
+    color: str | None = None,
+    shape: str | None = None,
+    figsize: tuple[float, float] = (6, 6),
+) -> p9.ggplot:
+    """Plot a factor against one or two covariate dimensions.
+
+    Args:
+        model: A PRISMO model.
+        factor: The factor to plot.
+        group: The name of the group. If None, we use the first group with a covariate. Defaults to None.
+        covariate_dims: The dimensions of the covariates to plot against. If a list of length 1, plot covariate
+            on the x-axis and factor on the y-axis. If a list of length 2, plot the first covariate on the x-axis,
+            the second covariate on the y-axis, and factor as color. If None, use all dimensions. Defaults to None.
+        color: The covariate name to color by. Only used when one covariate dimension is plotted. Defaults to None.
+        shape: The covariate name to shape by. Defaults to None.
+        figsize: Figure size in inches.
+    """
+    if group is None:
+        for group_name in model.group_names:
+            if group_name in model.covariates:
+                group = group_name
+                break
+
+    if factor not in range(1, model.generative.n_factors + 1):
+        raise ValueError(f"Factors must be between 1 and {model.generative.n_factors}.")
+
+    # create factor DataFrame
+    facs = model.get_factors(return_type="anndata")[group]
+    df_factors = pd.concat([facs.to_df(), facs.obs], axis=1)
+
+    # create covariate DataFrame
+    df_covariates = pd.DataFrame(model.covariates[group], index=df_factors.index)
+
+    # add column names to covariate DataFrame
+    column_names = [col if col is not None else None for col in model.covariates_names[group]]
+    for i, col in enumerate(column_names):
+        if col is None:
+            column_names[i] = f"Unnamed_{i}"
+    df_covariates.columns = column_names
+
+    if len(covariate_dims) == 2 and color is not None:
+        raise ValueError("Cannot specify a color variable when plotting two covariate dimensions.")
+    if color is not None and color not in df_factors.columns:
+        raise ValueError(f"Color variable {color} not found in the data.")
+    if shape is not None and shape not in df_factors.columns:
+        raise ValueError(f"Shape variable {shape} not found in the data.")
+    if len(covariate_dims) not in (1, 2):
+        raise ValueError("Covariate dimensions must be a list of length 1 or 2.")
+
+    # combine factor and covariate DataFrames
+    df = pd.concat([df_factors, df_covariates], axis=1)
+
+    aes_kwargs = {}
+    if len(covariate_dims) == 1:
+        x = df_covariates.columns[covariate_dims[0]]
+        y = f"Factor {factor}"
+        if color is not None:
+            aes_kwargs["color"] = color
+
+    elif len(covariate_dims) == 2:
+        x = df_covariates.columns[covariate_dims[0]]
+        y = df_covariates.columns[covariate_dims[1]]
+        aes_kwargs["color"] = f"Factor {factor}"
+
+    if shape is not None:
+        aes_kwargs["shape"] = shape
+
+    plot = p9.ggplot(df, p9.aes(x=x, y=y, **aes_kwargs)) + p9.geom_point(size=0.1) + p9.theme(figure_size=figsize)
+
+    return plot
+
+
 def plot_training_curve(
     model, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
 ) -> p9.ggplot:

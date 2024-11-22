@@ -38,7 +38,7 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
 
         paramspkl, modelpkl = BytesIO(), BytesIO()
         torch.save(pyro.get_param_store().get_state(), paramspkl, pickle_module=dill)
-        torch.save(model, modelpkl, pickle_module=dill, pickle_protocol=4)
+        torch.save(model, modelpkl, pickle_module=dill)
 
         # TODO: a lot of things are stored twice: In the pickle and in the MOFA compat layer. Figure out how to reduce this
         prismogrp.create_dataset(

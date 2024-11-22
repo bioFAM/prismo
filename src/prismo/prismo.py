@@ -449,7 +449,7 @@ class PRISMO:
             "sparse_weights_probabilities": self.variational.get_sparse_weight_probabilities(),
             "sparse_factors_precisions": self.variational.get_sparse_factor_precisions(),
             "sparse_weights_precisions": self.variational.get_sparse_weight_precisions(),
-            "gps": self.variational.get_gps(self.covariates),
+            "gps": self.variational.get_gps(self.covariates, self.train_opts.batch_size),
             "dispersions": self.variational.get_dispersion(),
             "train_loss_elbo": train_loss_elbo,
             "df_r2_full": df_r2_full,
@@ -749,7 +749,7 @@ class PRISMO:
         torch.manual_seed(self.train_opts.seed)
         torch.cuda.manual_seed_all(self.train_opts.seed)
         pyro.set_rng_seed(self.train_opts.seed)
-        
+
         # clean start
         logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)
@@ -1054,10 +1054,14 @@ class PRISMO:
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         x: dict[str, torch.Tensor] | None = None,
+        batch_size: int | None = None,
     ):
         """Get all latent functions."""
+        if batch_size is None:
+            batch_size = self.train_opts.batch_size
+
         self._check_if_trained()
-        gps = getattr(self._cache["gps"] if x is None else self.variational.get_gps(x), moment)
+        gps = getattr(self._cache["gps"] if x is None else self.variational.get_gps(x, batch_size), moment)
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
             for group_name, group_f in gps.items()

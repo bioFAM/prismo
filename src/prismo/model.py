@@ -1,6 +1,7 @@
 from collections import namedtuple
 from operator import attrgetter
 
+import numpy as np
 import pyro
 import pyro.distributions as dist
 import torch
@@ -1100,15 +1101,30 @@ class Variational(PyroModule):
         return dispersion
 
     @torch.no_grad()
-    def get_gps(self, x: dict[str, torch.Tensor]):
+    def get_gps(self, x: dict[str, torch.Tensor], batch_size: int = None):
         """Get all latent functions."""
         f = _MeanStd({}, {})
         for group_name in self.generative.gp_group_names:
             gidx = self.generative.get_gp_group_idx(group_name)
-            gp_dist = self.generative.gp(
-                gidx.expand(x[group_name].shape[0], 1), x[group_name].to(gidx.device), prior=False
-            )
-            f.mean[group_name] = gp_dist.mean.cpu().numpy().squeeze()
-            f.std[group_name] = gp_dist.stddev.cpu().numpy().squeeze()
+            group_data = x[group_name]
+            n_samples = group_data.shape[0]
+
+            if batch_size is None:
+                batch_size = n_samples
+
+            f.mean[group_name] = []
+            f.std[group_name] = []
+
+            for start_idx in range(0, n_samples, batch_size):
+                end_idx = min(start_idx + batch_size, n_samples)
+                minibatch = group_data[start_idx:end_idx]
+
+                gp_dist = self.generative.gp(gidx.expand(minibatch.shape[0], 1), minibatch.to(gidx.device), prior=False)
+
+                f.mean[group_name].append(gp_dist.mean.cpu().numpy().squeeze())
+                f.std[group_name].append(gp_dist.stddev.cpu().numpy().squeeze())
+
+            f.mean[group_name] = np.concatenate(f.mean[group_name], axis=1)
+            f.std[group_name] = np.concatenate(f.std[group_name], axis=1)
 
         return f

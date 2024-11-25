@@ -159,6 +159,9 @@ class TrainingOptions(_Options):
     save_path: str | None = None
     seed: int | None = None
 
+    def __post_init__(self):
+        self.device = torch.device(self.device)
+
 
 @dataclass(kw_only=True)
 class SmoothOptions(_Options):
@@ -397,7 +400,7 @@ class PRISMO:
         self._annotations = prior_masks
 
     def _setup_gp(self, full_setup=True):
-        gp_group_names = tuple(g for g in self.group_names if self._model_opts.factor_prior[g] == "GP")
+        gp_group_names = [g for g in self.group_names if self._model_opts.factor_prior[g] == "GP"]
 
         gp_warp_groups_order = None
         if len(gp_group_names):
@@ -430,12 +433,14 @@ class PRISMO:
                 len(gp_group_names),
                 self._gp_opts.kernel,
             ).to(self._train_opts.device)
+            self._gp_group_names = gp_group_names
         else:
             self._gp = None
-        return gp_warp_groups_order, gp_group_names
+            self._gp_group_names = None
+        return gp_warp_groups_order
 
     def _setup_svi(self, prior_scales, init_tensor, feature_means, sample_means):
-        gp_warp_groups_order, gp_group_names = self._setup_gp()
+        gp_warp_groups_order = self._setup_gp()
         generative = Generative(
             n_samples=self.n_samples,
             n_features=self.n_features,
@@ -447,7 +452,7 @@ class PRISMO:
             nonnegative_factors=self._model_opts.nonnegative_factors,
             nonnegative_weights=self._model_opts.nonnegative_weights,
             gp=self._gp,
-            gp_group_names=gp_group_names,
+            gp_group_names=self._gp_group_names,
             feature_means=feature_means,
             sample_means=sample_means,
         ).to(self._train_opts.device)
@@ -481,7 +486,7 @@ class PRISMO:
         self._sparse_weights_probabilities = variational.get_sparse_weight_probabilities()
         self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
         self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
-        self._gps = variational.get_gps(self._covariates)
+        self._gps = self._get_gps(self._covariates)
         self._dispersions = variational.get_dispersion()
         self._train_loss_elbo = train_loss_elbo
 
@@ -1026,13 +1031,37 @@ class PRISMO:
         """Get all latent functions."""
         if batch_size is None:
             batch_size = self._train_opts.batch_size
-        gps = getattr(self._gps if x is None else self.variational.get_gps(x, batch_size), moment)  # FIXME
+        gps = getattr(self._gps if x is None else self._get_gps(x, batch_size), moment)
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
             for group_name, group_f in gps.items()
         }
 
         return self._get_component(gps, return_type)
+
+    def _get_gps(self, x: dict[str, np.ndarray | torch.Tensor], batch_size: int):
+        gps = MeanStd({}, {})
+        with (
+            torch.inference_mode(),
+            self._train_opts.device,
+        ):  # FIXME: allow user to run this in a `with device` context?
+            for group_idx, group_name in enumerate(self._gp_group_names):
+                gidx = torch.as_tensor(group_idx)
+                gdata = x[group_name]
+                mean, std = [], []
+
+                for start_idx in range(0, gdata.shape[0], batch_size):
+                    end_idx = min(start_idx + batch_size, gdata.shape[0])
+                    minibatch = group_data[start_idx:end_idx]
+
+                    gp_dist = self._gp(gidx.expand(minibatch.shape[0], 1), torch.as_tensor(minibatch), prior=False)
+
+                    mean.append(gp_dist.mean.cpu().numpy().squeeze())
+                    std.append(gp_dist.stddev.cpu().numpy().squeeze())
+
+                gps.mean[group_name] = np.concatenate(mean, axis=1)
+                gps.std[group_name] = np.concatenate(std, axis=1)
+        return gps
 
     def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered=True):
         """Get all annotation matrices, a_x."""
@@ -1144,15 +1173,12 @@ class PRISMO:
         state["train_opts"]["device"] = str(state["train_opts"]["device"])
         if hasattr(self, "_orig_covariates"):
             state["orig_covariates"] = self._orig_covariates
-        save_model(
-            state,
-            self._gp.state_dict() if self._gp is not None else None,
-            save_path,
-            mofa_compat,
-            self,
-            data,
-            intercepts,
-        )
+
+        pickle = None
+        if self._gp is not None and self._gp_group_names is not None:
+            pickle = self._gp.state_dict()
+            state["gp_group_names"] = self._gp_group_names
+        save_model(state, pickle, save_path, mofa_compat, self, data, intercepts)
 
     @classmethod
     def load(cls, save_path: str | Path, map_location=None) -> "PRISMO":
@@ -1178,6 +1204,8 @@ class PRISMO:
         model._dispersions = MeanStd(**state["dispersions"])
         model._train_loss_elbo = state["train_loss_elbo"]
         model._group_names = state["group_names"]
+        if "gp_group_names" in state:
+            model._gp_group_names = state["gp_group_names"]
         model._view_names = state["view_names"]
         model._feature_names = state["feature_names"]
         model._sample_names = state["sample_names"]

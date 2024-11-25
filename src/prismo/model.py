@@ -1011,7 +1011,7 @@ class Variational(PyroModule):
 
         return self.sample_dict
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_factors(self):
         """Get all factor matrices, z_x."""
         factors = MeanStd({}, {})
@@ -1031,7 +1031,7 @@ class Variational(PyroModule):
 
         return factors
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_sparse_factor_precisions(self):
         alphas = MeanStd({}, {})
         for group_name in self.generative.group_names:
@@ -1041,7 +1041,7 @@ class Variational(PyroModule):
                 alphas.std[group_name] = d.stddev
         return alphas
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_sparse_factor_probabilities(self):
         probs = {}
         for group_name in self.generative.group_names:
@@ -1049,7 +1049,7 @@ class Variational(PyroModule):
                 probs[group_name] = self._get_prob(f"s_z_{group_name}").cpu().numpy().squeeze()
         return probs
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_weights(self):
         """Get all weight matrices, w_x."""
         weights = MeanStd({}, {})
@@ -1064,7 +1064,7 @@ class Variational(PyroModule):
 
         return weights
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_sparse_weight_precisions(self):
         alphas = MeanStd({}, {})
         for view_name in self.generative.view_names:
@@ -1074,7 +1074,7 @@ class Variational(PyroModule):
                 alphas.std[view_name] = d.stddev
         return alphas
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_sparse_weight_probabilities(self):
         probs = {}
         for view_name in self.generative.view_names:
@@ -1082,7 +1082,7 @@ class Variational(PyroModule):
                 probs[view_name] = self._get_prob(f"s_w_{view_name}").cpu().numpy().squeeze()
         return probs
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_dispersion(self):
         """Get all dispersion vectors, dispersion_x."""
         dispersion = MeanStd({}, {})
@@ -1097,7 +1097,7 @@ class Variational(PyroModule):
 
         return dispersion
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_gps(self, x: dict[str, torch.Tensor], batch_size: int = None):
         """Get all latent functions."""
         f = MeanStd({}, {})

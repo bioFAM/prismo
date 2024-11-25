@@ -24,10 +24,11 @@ from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
 from . import gp, preprocessing
-from .io import save_model
+from .io import load_model, save_model
 from .model import Generative, Variational
 from .plotting import plot_overview
 from .training import EarlyStopper
+from .utils import MeanStd
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,12 @@ class _Options:
             ):
                 setattr(self, f.name, val)
         return self
+
+    def __post_init__(self):
+        # after an HDF5 roundtrip, these are numpy scalars, which PyTorch doesn't handle well'
+        for f in fields(self):
+            if f.type in (float, int, bool):
+                setattr(self, f.name, f.type(getattr(self, f.name)))
 
 
 @dataclass(kw_only=True)
@@ -389,35 +396,36 @@ class PRISMO:
         # storing prior_masks as full annotations instead of partial annotations
         self._annotations = prior_masks
 
-    def _setup_gp(self):
+    def _setup_gp(self, full_setup=True):
         gp_group_names = tuple(g for g in self.group_names if self._model_opts.factor_prior[g] == "GP")
 
         gp_warp_groups_order = None
         if len(gp_group_names):
-            if len(self._gp_opts.warp_groups) > 1:
-                if not set(self._gp_opts.warp_groups) <= set(gp_group_names):
-                    raise ValueError(
-                        "The set of groups with dynamic time warping must be a subset of groups with a GP factor prior."
-                    )
-                gp_warp_groups_order = {}
-                for g in self._gp_opts.warp_groups:
-                    ccov = self._covariates[g].squeeze()
-                    if ccov.ndim > 1:
+            if full_setup:
+                if len(self._gp_opts.warp_groups) > 1:
+                    if not set(self._gp_opts.warp_groups) <= set(gp_group_names):
                         raise ValueError(
-                            f"Warping can only be performed with 1D covariates, but the covariate for group {g} has {ccov.ndim} dimensions."
+                            "The set of groups with dynamic time warping must be a subset of groups with a GP factor prior."
                         )
-                    gp_warp_groups_order[g] = ccov.argsort()
-                self._orig_covariates = {g: c.clone() for g, c in self._covariates.items()}
+                    gp_warp_groups_order = {}
+                    for g in self._gp_opts.warp_groups:
+                        ccov = self._covariates[g].squeeze()
+                        if ccov.ndim > 1:
+                            raise ValueError(
+                                f"Warping can only be performed with 1D covariates, but the covariate for group {g} has {ccov.ndim} dimensions."
+                            )
+                        gp_warp_groups_order[g] = ccov.argsort()
+                    self._orig_covariates = {g: c.clone() for g, c in self._covariates.items()}
 
-                if self._gp_opts.warp_reference_group is None:
-                    self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
-            elif len(self._gp_opts.warp_groups) == 1:
-                logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
-                self._gp_opts.warp_groups = []
+                    if self._gp_opts.warp_reference_group is None:
+                        self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
+                elif len(self._gp_opts.warp_groups) == 1:
+                    logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
+                    self._gp_opts.warp_groups = []
 
             self._gp = gp.GP(
                 self._gp_opts.n_inducing,
-                (self._covariates[g] for g in gp_group_names),
+                (torch.as_tensor(self._covariates[g]) for g in gp_group_names),
                 self._model_opts.n_factors,
                 len(gp_group_names),
                 self._gp_opts.kernel,
@@ -1127,11 +1135,11 @@ class PRISMO:
             "feature_names": self._feature_names,
             "sample_names": self._sample_names,
             "annotations": self._annotations,
+            "metadata": self._metadata,
             "data_opts": asdict(self._data_opts),
             "model_opts": asdict(self._model_opts),
             "train_opts": asdict(self._train_opts),
             "gp_opts": asdict(self._gp_opts),
-            "metadata": self._metadata,
         }
         state["train_opts"]["device"] = str(state["train_opts"]["device"])
         if hasattr(self, "_orig_covariates"):
@@ -1145,3 +1153,43 @@ class PRISMO:
             data,
             intercepts,
         )
+
+    @classmethod
+    def load(cls, save_path: str | Path, map_location=None) -> "PRISMO":
+        state, pickle = load_model(save_path)
+
+        model = cls.__new__(cls)
+        model._weights = MeanStd(**state["weights"])
+        model._factors = MeanStd(**state["factors"])
+        model._covariates = state["covariates"]
+        if "orig_covariates" in state:
+            model._orig_covariates = state["orig_covariates"]
+        model._covariates_names = state["covariates_names"]
+        model._df_r2_full = state["df_r2_full"].iloc[:, 0]
+        model._df_r2_factors = state["df_r2_factors"]
+        model._n_dense_factors = state["n_dense_factors"]
+        model._n_informed_factors = state["n_informed_factors"]
+        model._factor_names = state["factor_names"]
+        model._factor_order = state["factor_order"]
+        model._sparse_factors_probabilities = state["sparse_factors_probabilities"]
+        model._sparse_weights_probabilities = state["sparse_weights_probabilities"]
+        model._sparse_factors_precisions = MeanStd(**state["sparse_factors_precisions"])
+        model._gps = MeanStd(**state["gps"])
+        model._dispersions = MeanStd(**state["dispersions"])
+        model._train_loss_elbo = state["train_loss_elbo"]
+        model._group_names = state["group_names"]
+        model._view_names = state["view_names"]
+        model._feature_names = state["feature_names"]
+        model._sample_names = state["sample_names"]
+        model._annotations = state["annotations"]
+        model._metadata = state["metadata"]
+        model._data_opts = DataOptions(**state["data_opts"])
+        model._model_opts = ModelOptions(**state["model_opts"])
+        model._train_opts = TrainingOptions(**state["train_opts"])
+        model._gp_opts = SmoothOptions(**state["gp_opts"])
+
+        model._setup_gp(False)
+        if model._gp is not None and len(pickle):
+            model._gp.load_state_dict(pickle)
+
+        return model

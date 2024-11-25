@@ -8,7 +8,6 @@ import anndata as ad
 import h5py
 import numpy as np
 import pandas as pd
-import pyro
 import torch
 
 logger = logging.getLogger(__name__)
@@ -210,15 +209,12 @@ def save_model(
                 train_stats_grp.create_dataset("scales", data=model.gp_scale, **dset_kwargs)
                 train_stats_grp.create_dataset("Kg", data=model.gp_group_correlation, **dset_kwargs)
 
-    logger.info(f"Saved model to {path}")
 
-
-def load_model(path: str | Path, with_params=True, map_location=None) -> torch.nn.Module:
+def load_model(path: str | Path, map_location=None):
     """Load a PRISMO model from an HDF5 file.
 
     Args:
         path: Path to the HDF5 file containing the saved model.
-        with_params: If True, loads and restores model parameters.
         map_location: Optional device specification for loading the model.
 
     Returns:
@@ -236,13 +232,9 @@ def load_model(path: str | Path, with_params=True, map_location=None) -> torch.n
         prismogrp = f["prismo"]
         if prismogrp.attrs["version"] != __version__:
             logger.warning("The stored model was created with a different version of PRISMO. Stuff may not work.")
-        paramspkl = BytesIO(prismogrp["param_store"][()].tobytes())
-        modelpkl = BytesIO(prismogrp["model"][()].tobytes())
+        state = ad.io.read_elem(prismogrp["state"])
+        pickle = BytesIO(prismogrp["pickle"][()].tobytes())
 
-        model = torch.load(modelpkl, map_location=map_location)
-        if with_params:
-            pyro.get_param_store().set_state(torch.load(paramspkl, map_location=map_location))
+        pickle = torch.load(pickle, map_location=map_location)
 
-    logger.info(f"Loaded model from {path}")
-
-    return model
+    return state, pickle

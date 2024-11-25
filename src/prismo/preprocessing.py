@@ -14,7 +14,9 @@ from scipy.sparse._csr import csr_matrix
 logger = logging.getLogger(__name__)
 
 
-def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None) -> dict:
+def cast_data(
+    data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None
+) -> dict[dict[str, AnnData]]:
     """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
 
     Args:

@@ -2,7 +2,7 @@ import copy
 import logging
 import random
 import time
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from dataclasses import MISSING, dataclass, field, fields
 from functools import reduce
 from typing import Literal
@@ -22,11 +22,10 @@ from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from prismo import gp, preprocessing
-from prismo.io import save_model
-from prismo.model import Generative, Variational
-from prismo.plotting import plot_overview
-from prismo.training import EarlyStopper
+from . import gp, preprocessing
+from .model import Generative, Variational
+from .plotting import plot_overview
+from .training import EarlyStopper
 
 logger = logging.getLogger(__name__)
 
@@ -175,48 +174,84 @@ class SmoothOptions(_Options):
     warp_reference_group: str | None = None
 
 
+_GPTrainingAuxiliary = namedtuple("GPTrainingAuxiliary", ["warp_groups_order", "orig_covariates"])
+
+
+def _to_device(data, device):
+    tensor_dict = {}
+    for k, v in data.items():
+        if isinstance(v, dict):
+            tensor_dict[k] = _to_device(v, device)
+        else:
+            tensor_dict[k] = v.to(device)
+
+    return tensor_dict
+
+
 class PRISMO:
-    def __init__(self):
-        self._init()
+    def __init__(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
+        data = preprocessing.cast_data(data, group_by=None)
+        self._metadata = preprocessing.extract_obs(data)
 
-    def _init(self):
-        # data related attributes
-        self.data = None
-        self.metadata = None
-        self.covariates = None
-        self.intercepts = None
-        self.annotations = None
-        self.n_groups = 0
-        self.n_views = 0
-        self.n_samples = {}
-        self.n_features = {}
+        # extract group and view names / numbers from data
+        self._group_names = list(data.keys())
+        self._view_names = list(data[next(iter(data.keys()))].keys())
 
-        self.group_names = []
-        self.view_names = []
-        self.sample_names = {}
-        self.feature_names = {}
-        self.gp_group_names = []
-        self._factor_names = []
-        self._factor_order = []
+        # extract feature and samples names / numbers from data
+        self._feature_names = {k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names}
+        self._sample_names = {k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()}
 
-        self.nmf = {}
-        self.prior_scales = None
+        self._process_options(data, *args)
 
-        # Training settings
-        self.init_tensor = None
+        for view_name in self.view_names:
+            if self._model_opts.likelihoods[view_name] == "BetaBinomial":
+                feature_names_base = pd.Series(self._feature_names[view_name]).str.rsplit("_", n=1, expand=True)[0]
+                unique_feature_names = feature_names_base.unique()
+                if len(unique_feature_names) == len(feature_names_base) // 2:
+                    self._feature_names[view_name] = unique_feature_names
 
-        # SVI related attributes
-        self.generative = None
-        self.variational = None
-        self.gp = None
-        self._orig_covariates = None
-        self._gp_warp_groups_order = None
-        self._optimizer = None
-        self._svi = None
+        self._setup_annotations(data)
 
-        # training related attributes
-        self._is_trained = False
-        self._cache = None
+        if self._data_opts.plot_data_overview:
+            plot_overview(data).show()
+
+        self._fit(data)
+
+    @property
+    def group_names(self) -> list[str]:
+        return self._group_names
+
+    @property
+    def n_groups(self) -> int:
+        return len(self.group_names)
+
+    @property
+    def view_names(self) -> list[str]:
+        return self._view_names
+
+    @property
+    def n_views(self) -> int:
+        return len(self.view_names)
+
+    @property
+    def feature_names(self) -> dict[str, list[str]]:
+        return self._feature_names
+
+    @property
+    def n_features(self) -> dict[str, int]:
+        return {k: len(v) for k, v in self.feature_names.items()}
+
+    @property
+    def sample_names(self) -> dict[str, list[str]]:
+        return self._sample_names
+
+    @property
+    def n_samples(self) -> dict[str, int]:
+        return {k: len(v) for k, v in self.sample_names.items()}
+
+    @property
+    def n_samples_total(self) -> int:
+        return sum(self.n_samples.values())
 
     @property
     def factor_order(self):
@@ -229,16 +264,6 @@ class PRISMO:
     @property
     def factor_names(self):
         return self._factor_names[np.array(self.factor_order)]
-
-    def _to_device(self, data, device):
-        tensor_dict = {}
-        for k, v in data.items():
-            if isinstance(v, dict):
-                tensor_dict[k] = self._to_device(v, device)
-            else:
-                tensor_dict[k] = v.to(device)
-
-        return tensor_dict
 
     def _setup_likelihoods(self, data, likelihoods):
         group_names = tuple(data.keys())
@@ -273,17 +298,18 @@ class PRISMO:
 
         return likelihoods
 
-    def _setup_annotations(self, n_factors, annotations, annotations_varm_key, prior_penalty):
-        if annotations is None and annotations_varm_key is not None:
+    def _setup_annotations(self, data):
+        annotations = self._model_opts.annotations
+        if annotations is None and self._model_opts.annotations_varm_key is not None:
             annotations = {}
-            for vn in annotations_varm_key.keys():
-                for gn in self.data.keys():
-                    if annotations_varm_key[vn] in self.data[gn][vn].varm:
-                        annotations[vn] = self.data[gn][vn].varm[annotations_varm_key[vn]].fillna(0).T
+            for vn in self._model_opts.annotations_varm_key.keys():
+                for gn in data.keys():
+                    if self._model_opts.annotations_varm_key[vn] in data[gn][vn].varm:
+                        annotations[vn] = data[gn][vn].varm[self._model_opts.annotations_varm_key[vn]].fillna(0).T
                         break
 
         informed = annotations is not None and len(annotations) > 0
-        valid_n_factors = n_factors is not None and n_factors > 0
+        valid_n_factors = self._model_opts.n_factors is not None and self._model_opts.n_factors > 0
 
         if not informed and not valid_n_factors:
             raise ValueError(
@@ -297,12 +323,11 @@ class PRISMO:
 
         factor_names = []
 
-        if n_factors is not None:
-            n_dense_factors = n_factors
+        if self._model_opts.n_factors is not None:
+            n_dense_factors = self._model_opts.n_factors
             factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
         prior_masks = None
-        prior_scales = None
 
         if annotations is not None:
             # TODO: annotations need to be processed if not aligned or full
@@ -332,203 +357,154 @@ class PRISMO:
                 if vn not in prior_masks:
                     prior_masks[vn] = np.zeros((n_dense_factors + n_informed_factors, self.n_features[vn]), dtype=bool)
 
-            prior_scales = {
-                vn: np.clip(vm.astype(np.float32) + prior_penalty, 1e-8, 1.0) for vn, vm in prior_masks.items()
-            }
-
-            if n_dense_factors > 0:
-                dense_scale = 1.0
-                for vn in prior_masks.keys():
-                    prior_scales[vn][:n_dense_factors, :] = dense_scale
-
-        self.n_dense_factors = n_dense_factors
-        self.n_informed_factors = n_informed_factors
-        self.model_opts.n_factors = n_dense_factors + n_informed_factors
+        self._n_dense_factors = n_dense_factors
+        self._n_informed_factors = n_informed_factors
+        self._model_opts.n_factors = n_dense_factors + n_informed_factors
 
         self._factor_names = pd.Index(factor_names)
-        self._factor_order = np.arange(self.model_opts.n_factors)
+        self._factor_order = np.arange(self._model_opts.n_factors)
 
         # storing prior_masks as full annotations instead of partial annotations
-        self.annotations = prior_masks
-        self.prior_penalty = prior_penalty
-        self.prior_masks = prior_masks
-        self.prior_scales = prior_scales
-        return self.annotations
+        self._annotations = prior_masks
 
-    def _setup_svi(
-        self,
-        weight_prior,
-        factor_prior,
-        gp_n_inducing,
-        likelihoods,
-        nonnegative_factors,
-        nonnegative_weights,
-        kernel,
-        batch_size,
-        max_epochs,
-        n_particles,
-        lr,
-    ):
-        self.gp_group_names = tuple(g for g in self.group_names if factor_prior[g] == "GP")
-        if len(self.gp_group_names):
-            if len(self.gp_opts.warp_groups) > 1:
-                if not set(self.gp_opts.warp_groups) <= set(self.gp_group_names):
+    def _setup_svi(self, prior_scales, init_tensor, feature_means, sample_means):
+        gp_group_names = tuple(g for g in self.group_names if self._model_opts.factor_prior[g] == "GP")
+
+        gp_aux = None
+        if len(gp_group_names):
+            if len(self._gp_opts.warp_groups) > 1:
+                if not set(self._gp_opts.warp_groups) <= set(gp_group_names):
                     raise ValueError(
                         "The set of groups with dynamic time warping must be a subset of groups with a GP factor prior."
                     )
-                self._gp_warp_groups_order = {}
-                for g in self.gp_opts.warp_groups:
-                    ccov = self.covariates[g].squeeze()
+                gp_warp_groups_order = {}
+                for g in self._gp_opts.warp_groups:
+                    ccov = self._covariates[g].squeeze()
                     if ccov.ndim > 1:
                         raise ValueError(
                             f"Warping can only be performed with 1D covariates, but the covariate for group {g} has {ccov.ndim} dimensions."
                         )
-                    self._gp_warp_groups_order[g] = ccov.argsort()
-                self._orig_covariates = {g: c.clone() for g, c in self.covariates.items()}
+                    gp_warp_groups_order[g] = ccov.argsort()
+                orig_covariates = {g: c.clone() for g, c in self._covariates.items()}
+                gp_aux = _GPTrainingAuxiliary(gp_warp_groups_order, orig_covariates)
 
-                if self.gp_opts.warp_reference_group is None:
-                    self.gp_opts.warp_reference_group = self.gp_opts.warp_groups[0]
-            elif len(self.gp_opts.warp_groups) == 1:
+                if self._gp_opts.warp_reference_group is None:
+                    self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
+            elif len(self._gp_opts.warp_groups) == 1:
                 logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
-                self.gp_opts.warp_groups = []
+                self._gp_opts.warp_groups = []
 
-            self.gp = gp.GP(
-                self.gp_opts.n_inducing,
-                (self.covariates[g] for g in self.gp_group_names),
-                self.model_opts.n_factors,
-                len(self.gp_group_names),
-                kernel,
-            ).to(self.train_opts.device)
+            self._gp = gp.GP(
+                self._gp_opts.n_inducing,
+                (self._covariates[g] for g in gp_group_names),
+                self._model_opts.n_factors,
+                len(gp_group_names),
+                self._gp_opts.kernel,
+            ).to(self._train_opts.device)
 
-        self.generative = Generative(
+        generative = Generative(
             n_samples=self.n_samples,
             n_features=self.n_features,
-            n_factors=self.model_opts.n_factors,
-            prior_scales=self.prior_scales,
-            factor_prior=factor_prior,
-            weight_prior=weight_prior,
-            likelihoods=likelihoods,
-            nonnegative_factors=nonnegative_factors,
-            nonnegative_weights=nonnegative_weights,
-            gp=self.gp,
-            gp_group_names=self.gp_group_names,
-            feature_means=self.feature_means,
-            sample_means=self.sample_means,
-        ).to(self.train_opts.device)
+            n_factors=self._model_opts.n_factors,
+            prior_scales=prior_scales,
+            factor_prior=self._model_opts.factor_prior,
+            weight_prior=self._model_opts.weight_prior,
+            likelihoods=self._model_opts.likelihoods,
+            nonnegative_factors=self._model_opts.nonnegative_factors,
+            nonnegative_weights=self._model_opts.nonnegative_weights,
+            gp=self._gp,
+            gp_group_names=gp_group_names,
+            feature_means=feature_means,
+            sample_means=sample_means,
+        ).to(self._train_opts.device)
 
-        self.variational = Variational(self.generative, self.init_tensor).to(self.train_opts.device)
+        variational = Variational(generative, init_tensor).to(self._train_opts.device)
 
-        total_n_samples = sum(self.n_samples.values())
-
-        n_iterations = int(max_epochs * (total_n_samples // batch_size))
+        n_iterations = int(self._train_opts.max_epochs * (self.n_samples_total // self._train_opts.batch_size))
         gamma = 0.1
         lrd = gamma ** (1 / n_iterations)
         logger.info(f"Decaying learning rate over {n_iterations} iterations.")
-        self._optimizer = ClippedAdam({"lr": lr, "lrd": lrd})
+        optimizer = ClippedAdam({"lr": self._train_opts.lr, "lrd": lrd})
 
-        self._svi = SVI(
-            model=pyro.poutine.scale(self.generative, scale=1.0 / total_n_samples),
-            guide=pyro.poutine.scale(self.variational, scale=1.0 / total_n_samples),
-            optim=self._optimizer,
-            loss=TraceMeanField_ELBO(retain_graph=True, num_particles=n_particles, vectorize_particles=True),
+        svi = SVI(
+            model=pyro.poutine.scale(generative, scale=1.0 / self.n_samples_total),
+            guide=pyro.poutine.scale(variational, scale=1.0 / self.n_samples_total),
+            optim=optimizer,
+            loss=TraceMeanField_ELBO(
+                retain_graph=True, num_particles=self._train_opts.n_particles, vectorize_particles=True
+            ),
         )
 
-        return self._svi
+        return svi, variational, gp_aux
 
-    def _post_fit(self, save, save_path, train_loss_elbo, covariates: dict[str, torch.Tensor] = None):
-        # Sort factors by explained variance
-        weights = self.variational.get_weights()
-        factors = self.variational.get_factors()
-        df_r2_full, df_r2_factors, self._factor_order = self._sort_factors(weights=weights.mean, factors=factors.mean)
+    def _post_fit(self, data, variational, train_loss_elbo, gp_aux):
+        self._weights = variational.get_weights()
+        self._factors = variational.get_factors()
+        self._df_r2_full, self._df_r2_factors, self._factor_order = self._sort_factors(
+            data, weights=self._weights.mean, factors=self._factors.mean
+        )
+        self._sparse_factor_probabilities = variational.get_sparse_factor_probabilities()
+        self._sparse_weights_probabilities = variational.get_sparse_weight_probabilities()
+        self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
+        self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
+        self._gps = variational.get_gps(self._covariates)
+        self._dispersions = variational.get_dispersion()
+        self._train_loss_elbo = train_loss_elbo
 
-        # Fill cache
-        self._cache = {
-            "weights": weights,
-            "factors": factors,
-            "sparse_factors_probabilities": self.variational.get_sparse_factor_probabilities(),
-            "sparse_weights_probabilities": self.variational.get_sparse_weight_probabilities(),
-            "sparse_factors_precisions": self.variational.get_sparse_factor_precisions(),
-            "sparse_weights_precisions": self.variational.get_sparse_weight_precisions(),
-            "gps": self.variational.get_gps(self.covariates, self.train_opts.batch_size),
-            "dispersions": self.variational.get_dispersion(),
-            "train_loss_elbo": train_loss_elbo,
-            "df_r2_full": df_r2_full,
-            "df_r2_factors": df_r2_factors,
-        }
-
-        orig_covars = self._orig_covariates
-        if orig_covars is not None:
-            self._cache["warped_covariates"] = {g: c.numpy() for g, c in self.covariates.items()}
-            self._covariates = orig_covars
-
-        if save:
-            save_path = save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+        if self._train_opts.save:
+            self._train_opts.save_path = self._trian_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
             logger.info("Saving results...")
-            save_model(self, save_path)
+            # save_model(self, save_path)
 
-    def _initialize_factors(self, init_factors="random", init_scale=1.0, impute_missings=True):
+    def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)
-        logger.info(f"Initializing factors using `{init_factors}` method...")
+        logger.info(f"Initializing factors using `{self._model_opts.init_factors}` method...")
 
-        # Initialize factors
-        with self.train_opts.device:
-            if init_factors == "random":
-                for group_name, n in self.n_samples.items():
-                    init_tensor[group_name]["loc"] = torch.rand(size=(n, self.model_opts.n_factors))
-            elif init_factors == "orthogonal":
-                for group_name, n in self.n_samples.items():
-                    # Compute PCA of random vectors
-                    pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
-                    pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self.model_opts.n_factors)).T)
-                    init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T)
-            elif init_factors in ["pca", "nmf"]:
-                for group_name in self.n_samples.keys():
-                    if init_factors == "pca":
-                        pca = PCA(n_components=self.model_opts.n_factors, whiten=True)
-                    elif init_factors == "nmf":
-                        nmf = NMF(n_components=self.model_opts.n_factors, max_iter=1000)
+        with self._train_opts.device:
+            match self._model_opts.init_factors:
+                case "random":
+                    for group_name, n in self.n_samples.items():
+                        init_tensor[group_name]["loc"] = torch.rand(size=(n, self._model_opts.n_factors))
+                case "orthogonal":
+                    for group_name, n in self.n_samples.items():
+                        # Compute PCA of random vectors
+                        pca = PCA(n_components=self._model_opts.n_factors, whiten=True)
+                        pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self._model_opts.n_factors)).T)
+                        init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T)
+                case "pca" | "nmf" as init:
+                    for group_name in self.n_samples.keys():
+                        if init == "pca":
+                            pca = PCA(n_components=self._model_opts.n_factors, whiten=True)
+                        elif init == "nmf":
+                            nmf = NMF(n_components=self._model_opts.n_factors, max_iter=1000)
 
-                    # Combine all views
-                    concat_data = torch.cat(
-                        [
-                            torch.tensor(self.data[group_name][view_name].X, dtype=torch.float)
-                            for view_name in self.view_names
-                        ],
-                        dim=-1,
+                        # Combine all views
+                        concat_data = np.concatenate(
+                            [data[group_name][view_name].X for view_name in self.view_names], axis=-1, dtype=np.float32
+                        )
+
+                        # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error
+                        if np.isnan(concat_data).any():
+                            if impute_missings:
+                                from sklearn.impute import SimpleImputer
+
+                                imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
+                                imp.fit(concat_data)
+                            else:
+                                raise ValueError(
+                                    "Data has missing values. Please impute missings or set `impute_missings=True`."
+                                )
+                        if init == "pca":
+                            pca.fit(concat_data)
+                            init_tensor[group_name]["loc"] = torch.as_tensor(pca.transform(concat_data))
+                        elif init == "nmf":
+                            nmf.fit(concat_data)
+                            init_tensor[group_name]["loc"] = torch.as_tensor(nmf.transform(concat_data))
+
+                case _:
+                    raise ValueError(
+                        f"Initialization method `{self._model_opts.init_factors}` not found. Please choose from `random`, `orthogonal`, `PCA`, or `NMF`."
                     )
-                    if str(self.train_opts.device) != "cpu":
-                        logger.debug("Converting to CPU")
-                        concat_data = concat_data.cpu()
-
-                    # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error
-                    if torch.isnan(concat_data).any():
-                        if impute_missings:
-                            from sklearn.impute import SimpleImputer
-
-                            imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
-                            imp.fit(concat_data)
-                            concat_data = torch.tensor(imp.transform(concat_data), dtype=torch.float).to(
-                                self.train_opts.device
-                            )
-                        else:
-                            raise ValueError(
-                                "Data has missing values. Please impute missings or set `impute_missings=True`."
-                            )
-                    if init_factors == "pca":
-                        pca.fit(concat_data)
-                        init_tensor[group_name]["loc"] = torch.tensor(pca.transform(concat_data)).to(
-                            self.train_opts.device
-                        )
-                    elif init_factors == "nmf":
-                        nmf.fit(concat_data)
-                        init_tensor[group_name]["loc"] = torch.tensor(nmf.transform(concat_data)).to(
-                            self.train_opts.device
-                        )
-
-            else:
-                raise ValueError(
-                    f"Initialization method `{init_factors}` not found. Please choose from `random`, `orthogonal`, `PCA`, or `NMF`."
-                )
 
             for group_name, n in self.n_samples.items():
                 # scale factor values from -1 to 1 (per factor)
@@ -538,12 +514,90 @@ class PRISMO:
                 # Add artifical dimension at dimension -2 for broadcasting
                 init_tensor[group_name]["loc"] = q.T.unsqueeze(-2).float()
                 init_tensor[group_name]["scale"] = (
-                    init_scale * torch.ones(size=(n, self.model_opts.n_factors)).T.unsqueeze(-2).float()
+                    self._model_opts.init_scale
+                    * torch.ones(size=(n, self._model_opts.n_factors)).T.unsqueeze(-2).float()
                 )
 
-        self.init_tensor = init_tensor
+        return init_tensor
 
-    def fit(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
+    def _process_options(self, data: dict[dict[ad.AnnData]], *args: _Options):
+        self._data_opts = DataOptions()
+        self._model_opts = ModelOptions()
+        self._train_opts = TrainingOptions()
+        self._gp_opts = SmoothOptions()
+
+        for arg in args:
+            match arg:
+                case DataOptions():
+                    self._data_opts |= arg
+                case ModelOptions():
+                    self._model_opts |= arg
+                case TrainingOptions():
+                    self._train_opts |= arg
+                case SmoothOptions():
+                    self._gp_opts |= arg
+
+        if self._train_opts.seed is not None:
+            try:
+                self._train_opts.seed = int(self._train_opts.seed)
+            except ValueError:
+                logger.warning(f"Could not convert `{self._train_opts.seed}` to integer.")
+                self._train_opts.seed = None
+
+        if self._train_opts.seed is None:
+            self._train_opts.seed = int(time.strftime("%y%m%d%H%M"))
+
+        # convert input arguments to dictionaries if necessary
+        for opt_name, keys in zip(
+            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
+            (self.view_names, self.group_names, self.view_names, self.group_names),
+            strict=False,
+        ):
+            val = getattr(self._model_opts, opt_name)
+            if not isinstance(val, dict):
+                setattr(self._model_opts, opt_name, {k: val for k in keys})
+
+        for opt_name in ("covariates_obs_key", "covariates_obsm_key"):
+            val = getattr(self._data_opts, opt_name)
+            if isinstance(val, str):
+                setattr(self._data_opts, opt_name, {k: val for k in self.group_names})
+
+        self._train_opts.device = self._setup_device(self._train_opts.device)
+
+        self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
+
+        if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= self.n_samples_total):
+            self._train_opts.batch_size = self.n_samples_total
+
+    def _preprocess_data(self, data):
+        data = preprocessing.anndata_to_dense(data)
+        data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
+        data = preprocessing.scale_data(data, self._model_opts.likelihoods, self._data_opts.scale_per_group)
+        data = preprocessing.center_data(
+            data,
+            self._model_opts.likelihoods,
+            self._model_opts.nonnegative_weights,
+            self._model_opts.nonnegative_factors,
+        )
+
+        # align observations across views and variables across groups
+        if self._data_opts.use_obs is not None:
+            data = preprocessing.align_obs(data, self._data_opts.use_obs)
+        if self._data_opts.use_var is not None:
+            data = preprocessing.align_var(data, self._model_opts.likelihoods, self._data_opts.use_var)
+
+        # obtain observations DataFrame and covariates
+        self._covariates, self._covariates_names = preprocessing.extract_covariate(
+            data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key
+        )
+
+        # compute feature means for intercept terms
+        feature_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="feature")
+        sample_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="sample")
+
+        return data, feature_means, sample_means
+
+    def _fit(self, data):
         """Fit the model using the provided data.
 
         Parameters
@@ -560,151 +614,53 @@ class PRISMO:
             Options for training.
         """
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
-        self.data = preprocessing.cast_data(data, group_by=None)
-        self.data = preprocessing.anndata_to_dense(self.data)
 
-        # extract group and view names / numbers from data
-        self.group_names = list(self.data.keys())
-        self.n_groups = len(self.group_names)
-        self.view_names = list(self.data[next(iter(self.data.keys()))].keys())
-        self.n_views = len(self.view_names)
+        data, feature_means, sample_means = self._preprocess_data(data)
+        init_tensor = self._initialize_factors(data)
 
-        # process parameters
-        self.data_opts = DataOptions()
-        self.model_opts = ModelOptions()
-        self.train_opts = TrainingOptions()
-        self.gp_opts = SmoothOptions()
+        prior_scales = {
+            vn: np.clip(vm.astype(np.float32) + self._model_opts.prior_penalty, 1e-8, 1.0)
+            for vn, vm in self._annotations.items()
+        }
+        if self._n_dense_factors > 0:
+            dense_scale = 1.0
+            for vn in self._annotations.keys():
+                prior_scales[vn][: self._n_dense_factors, :] = dense_scale
 
-        for arg in args:
-            match arg:
-                case DataOptions():
-                    self.data_opts |= arg
-                case ModelOptions():
-                    self.model_opts |= arg
-                case TrainingOptions():
-                    self.train_opts |= arg
-                case SmoothOptions():
-                    self.gp_opts |= arg
-
-        # convert input arguments to dictionaries if necessary
-        for opt_name, keys in zip(
-            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
-            (self.view_names, self.group_names, self.view_names, self.group_names),
-            strict=False,
-        ):
-            val = getattr(self.model_opts, opt_name)
-            if not isinstance(val, dict):
-                setattr(self.model_opts, opt_name, {k: val for k in keys})
-
-        for opt_name in ("covariates_obs_key", "covariates_obsm_key"):
-            val = getattr(self.data_opts, opt_name)
-            if isinstance(val, str):
-                setattr(self.data_opts, opt_name, {k: val for k in self.group_names})
-
-        self.train_opts.device = self._setup_device(self.train_opts.device)
-        # validate or infer likelihoods
-        self.model_opts.likelihoods = self._setup_likelihoods(self.data, self.model_opts.likelihoods)
-
-        # process data
-        self.intercepts = preprocessing.get_data_mean(self.data, self.model_opts.likelihoods)
-        self.data = preprocessing.remove_constant_features(self.data, self.model_opts.likelihoods)
-        self.data = preprocessing.scale_data(self.data, self.model_opts.likelihoods, self.data_opts.scale_per_group)
-        self.data = preprocessing.center_data(
-            self.data,
-            self.model_opts.likelihoods,
-            self.model_opts.nonnegative_weights,
-            self.model_opts.nonnegative_factors,
-        )
-
-        # align observations across views and variables across groups
-        if self.data_opts.use_obs is not None:
-            self.data = preprocessing.align_obs(self.data, self.data_opts.use_obs)
-        if self.data_opts.use_var is not None:
-            self.data = preprocessing.align_var(self.data, self.model_opts.likelihoods, self.data_opts.use_var)
-
-        # obtain observations DataFrame and covariates
-        self.metadata = preprocessing.extract_obs(self.data)
-        self.covariates, self.covariates_names = preprocessing.extract_covariate(
-            self.data, self.data_opts.covariates_obs_key, self.data_opts.covariates_obsm_key
-        )
-
-        # extract feature and samples names / numbers from data
-        self.feature_names = {k: self.data[list(self.data.keys())[0]][k].var_names.tolist() for k in self.view_names}
-        self.n_features = {k: len(v) for k, v in self.feature_names.items()}
-        self.sample_names = {k: self.data[k][list(self.data[k].keys())[0]].obs_names.tolist() for k in self.group_names}
-        self.n_samples = {k: len(v) for k, v in self.sample_names.items()}
-
-        for view_name in self.view_names:
-            if self.model_opts.likelihoods[view_name] == "BetaBinomial":
-                feature_names_base = pd.Series(self.feature_names[view_name]).str.rsplit("_", n=1, expand=True)[0]
-                if feature_names_base.nunique() == len(feature_names_base) // 2:
-                    self.n_features[view_name] = self.n_features[view_name] // 2
-                    self.feature_names[view_name] = feature_names_base.unique()
-
-        # compute feature means for intercept terms
-        self.feature_means = preprocessing.get_data_mean(self.data, self.model_opts.likelihoods, how="feature")
-        self.sample_means = preprocessing.get_data_mean(self.data, self.model_opts.likelihoods, how="sample")
-
-        if self.data_opts.plot_data_overview:
-            plot_overview(self.data)
-
-        self._setup_annotations(
-            self.model_opts.n_factors,
-            self.model_opts.annotations,
-            self.model_opts.annotations_varm_key,
-            self.model_opts.prior_penalty,
-        )
-        self._initialize_factors(self.model_opts.init_factors, self.model_opts.init_scale)
-        n_samples_total = sum(self.n_samples.values())
-        if self.train_opts.batch_size is None or not (0 < self.train_opts.batch_size <= n_samples_total):
-            self.train_opts.batch_size = n_samples_total
-
-        self._setup_svi(
-            self.model_opts.weight_prior,
-            self.model_opts.factor_prior,
-            self.gp_opts.n_inducing,
-            self.model_opts.likelihoods,
-            self.model_opts.nonnegative_factors,
-            self.model_opts.nonnegative_weights,
-            self.gp_opts.kernel,
-            self.train_opts.batch_size,
-            self.train_opts.max_epochs,
-            self.train_opts.n_particles,
-            self.train_opts.lr,
-        )
+        svi, variational, gp_aux = self._setup_svi(prior_scales, init_tensor, feature_means, sample_means)
 
         # convert AnnData to torch.Tensor objects
         tensor_dict = {}
-        for group_name, group_dict in self.data.items():
+        for group_name, group_dict in data.items():
             tensor_dict[group_name] = {}
-            if self.covariates is not None and group_name in self.covariates:
-                if self.covariates[group_name] is not None:
-                    tensor_dict[group_name]["covariates"] = torch.as_tensor(self.covariates[group_name])
+            if self._covariates is not None and group_name in self._covariates:
+                if self._covariates[group_name] is not None:
+                    tensor_dict[group_name]["covariates"] = torch.as_tensor(self._covariates[group_name])
 
             for view_name, view_adata in group_dict.items():
                 tensor_dict[group_name][view_name] = torch.from_numpy(view_adata.X)
 
-        if self.train_opts.batch_size < n_samples_total:
-            batch_fraction = self.train_opts.batch_size / n_samples_total
+        if self._train_opts.batch_size < self.n_samples_total:
+            batch_fraction = self.train_opts.batch_size / self.n_samples_total
 
             # has to be a list of data loaders to zip over
             data_loaders = []
 
-            for group_name in self.group_names:
+            for group_name in data.keys():
                 tensor_dict[group_name] = TensorDict(
                     {key: tensor_dict[group_name][key] for key in tensor_dict[group_name].keys()},
-                    batch_size=[self.n_samples[group_name]],
+                    batch_size=[self._n_samples[group_name]],
                 )
-                tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
+                tensor_dict[group_name]["sample_idx"] = torch.arange(self._n_samples[group_name])
 
                 data_loaders.append(
                     DataLoader(
                         tensor_dict[group_name],
-                        batch_size=max(1, int(batch_fraction * self.n_samples[group_name])),
+                        batch_size=max(1, int(batch_fraction * self._n_samples[group_name])),
                         shuffle=True,
                         num_workers=0,
                         collate_fn=lambda x: x,
-                        pin_memory=str(self.train_opts.device) != "cpu",
+                        pin_memory=str(self._train_opts.device) != "cpu",
                         drop_last=False,
                     )
                 )
@@ -713,11 +669,11 @@ class PRISMO:
                 epoch_loss = 0
 
                 for group_batch in zip(*data_loaders, strict=False):
-                    with self.train_opts.device:
-                        epoch_loss += self._svi.step(
+                    with self._train_opts.device:
+                        epoch_loss += svi.step(
                             dict(
                                 zip(
-                                    self.group_names,
+                                    data.keys(),
                                     (batch.to(self.train_opts.device) for batch in group_batch),
                                     strict=False,
                                 )
@@ -727,28 +683,18 @@ class PRISMO:
                 return epoch_loss
 
         else:
-            tensor_dict = self._to_device(tensor_dict, self.train_opts.device)
+            tensor_dict = _to_device(tensor_dict, self._train_opts.device)
 
             def step_fn():
-                with self.train_opts.device:
-                    return self._svi.step(tensor_dict)
+                with self._train_opts.device:
+                    return svi.step(tensor_dict)
 
-        if self.train_opts.seed is not None:
-            try:
-                self.train_opts.seed = int(self.train_opts.seed)
-            except ValueError:
-                logger.warning(f"Could not convert `{self.train_opts.seed}` to integer.")
-                self.train_opts.seed = None
-
-        if self.train_opts.seed is None:
-            self.train_opts.seed = int(time.strftime("%y%m%d%H%M"))
-
-        logger.info(f"Setting training seed to `{self.train_opts.seed}`.")
-        random.seed(self.train_opts.seed)
-        np.random.seed(self.train_opts.seed)
-        torch.manual_seed(self.train_opts.seed)
-        torch.cuda.manual_seed_all(self.train_opts.seed)
-        pyro.set_rng_seed(self.train_opts.seed)
+        logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
+        random.seed(self._train_opts.seed)
+        np.random.seed(self._train_opts.seed)
+        torch.manual_seed(self._train_opts.seed)
+        torch.cuda.manual_seed_all(self._train_opts.seed)
+        pyro.set_rng_seed(self._train_opts.seed)
 
         # clean start
         logger.info("Cleaning parameter store.")
@@ -758,48 +704,44 @@ class PRISMO:
         # Train
         train_loss_elbo = []
         earlystopper = EarlyStopper(
-            mode="min", min_delta=0.1, patience=self.train_opts.early_stopper_patience, percentage=True
+            mode="min", min_delta=0.1, patience=self._train_opts.early_stopper_patience, percentage=True
         )
         start_timer = time.time()
 
-        try:
-            for i in range(self.train_opts.max_epochs):
-                loss = step_fn()
-                if len(self.gp_opts.warp_groups) and not i % self.gp_opts.warp_interval:
-                    self._warp_covariates()
-                train_loss_elbo.append(loss)
+        for i in range(self._train_opts.max_epochs):
+            loss = step_fn()
+            if len(self._gp_opts.warp_groups) and not i % self._gp_opts.warp_interval:
+                self._warp_covariates(variational, gp_aux)
+            train_loss_elbo.append(loss)
 
-                if i % self.train_opts.print_every == 0:
-                    logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
+            if i % self._train_opts.print_every == 0:
+                logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
-                if earlystopper.step(loss):
-                    logger.info(f"Training finished after {i} steps.")
-                    break
+            if earlystopper.step(loss):
+                logger.info(f"Training finished after {i} steps.")
+                break
 
-        except KeyboardInterrupt:
-            logger.info("Keyboard interrupt, stopping training and saving progress...")
+        self._post_fit(data, variational, train_loss_elbo, gp_aux)
 
-        self._is_trained = True
-
-        return self._post_fit(self.train_opts.save, self.train_opts.save_path, train_loss_elbo, self.covariates)
-
-    def _warp_covariates(self):
-        factormeans = self.variational.get_factors().mean
-        refgroup = self.gp_opts.warp_reference_group
+    def _warp_covariates(self, variational, gp_aux):
+        factormeans = variational.get_factors().mean
+        refgroup = self._gp_opts.warp_reference_group
         reffactormeans = factormeans[refgroup].mean(axis=0)
-        refidx = self._gp_warp_groups_order[refgroup]
-        for g in self.gp_opts.warp_groups[1:]:
-            idx = self._gp_warp_groups_order[g]
+        refidx = gp_aux.warp_groups_order[refgroup]
+        for g in self._gp_opts.warp_groups[1:]:
+            idx = gp_aux.warp_groups_order[g]
             alignment = dtw(
                 reffactormeans[refidx],
                 factormeans[g][:, idx].mean(axis=0),
-                open_begin=self.gp_opts.warp_open_begin,
-                open_end=self.gp_opts.warp_open_end,
+                open_begin=self._gp_opts.warp_open_begin,
+                open_end=self._gp_opts.warp_open_end,
                 step_pattern="asymmetric",
             )
-            self.covariates[g] = self._orig_covariates[g].clone()
-            self.covariates[g][idx[alignment.index2], 0] = self._orig_covariates[refgroup][refidx[alignment.index1], 0]
-        self.gp.update_inducing_points(self.covariates.values())
+            self._covariates[g] = gp_aux.orig_covariates[g].clone()
+            self._covariates[g][idx[alignment.index2], 0] = gp_aux.orig_covariates[refgroup][
+                refidx[alignment.index1], 0
+            ]
+        self._gp.update_inducing_points(self._covariates.values())
 
     @staticmethod
     def _Vprime(mu, nu2, nu1):
@@ -816,14 +758,14 @@ class PRISMO:
     def _r2_impl(self, y_true, factor, weights, view_name):
         # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
         y_pred = factor.T @ weights
-        likelihood = self.model_opts.likelihoods[view_name]
+        likelihood = self._model_opts.likelihoods[view_name]
 
         if likelihood == "Normal":
             ss_res = np.nansum(np.square(y_true - y_pred))
             ss_tot = np.nansum(np.square(y_true))  # data is centered
         elif likelihood == "GammaPoisson":
             y_pred = np.logaddexp(0, y_pred)  # softplus
-            nu2 = self.variational.get_dispersion("mean")[view_name]
+            nu2 = self._dispersions.mean[view_name]
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, 1))
 
             truemean = np.nanmean(y_true)
@@ -837,7 +779,7 @@ class PRISMO:
             y_pred = expit(y_pred)
             obs_total = y_true[..., 1, :, :]
             y_true = y_true[..., 0, :, :]
-            dispersion = self.variational.get_dispersion("mean")[view_name]
+            dispersion = self._dispersions.mean[view_name]
             nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
             ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, nu1))
 
@@ -863,7 +805,7 @@ class PRISMO:
             return r2_full, [0.0] * factors.shape[0]
 
         r2s = []
-        if self.model_opts.likelihoods[view_name] == "Normal":
+        if self._model_opts.likelihoods[view_name] == "Normal":
             for k in range(factors.shape[0]):
                 r2s.append(self._r2_impl(y_true, factors[None, k, :], weights[None, k, :], view_name))
         else:
@@ -881,11 +823,11 @@ class PRISMO:
                 r2s.append(max(0.0, r2_full - cr2))
         return r2_full, r2s
 
-    def _sort_factors(self, weights, factors, subsample=1000):
+    def _sort_factors(self, data, weights, factors, subsample=1000):
         # Loop over all groups
         dfs_factors, dfs_full = {}, {}
 
-        for group_name, group_data in self.data.items():
+        for group_name, group_data in data.items():
             n_samples = self.n_samples[group_name]
 
             sample_idx = np.arange(n_samples)
@@ -982,7 +924,7 @@ class PRISMO:
 
         if return_type == "anndata":
             for group_name, group_adata in factors.items():
-                group_adata.obs = pd.concat(self.metadata[group_name].values(), axis=1)
+                group_adata.obs = pd.concat(self._metadata[group_name].values(), axis=1)
                 group_adata.obs = group_adata.obs.loc[:, ~group_adata.obs.columns.duplicated()]
 
         return factors

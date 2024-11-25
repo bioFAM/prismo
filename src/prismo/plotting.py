@@ -291,9 +291,7 @@ def plot_overview(
             + p9.coord_flip()
         )
 
-    # The figure is only plotted when training is called. Therefore, we directly show the plot here
-    # instead of returning it.
-    plot.show()
+    return plot
 
 
 def plot_variance_explained(model, group_by: str = "group", figsize: tuple[float, float] | None = None) -> p9.ggplot:

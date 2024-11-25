@@ -2,9 +2,10 @@ import copy
 import logging
 import random
 import time
-from collections import defaultdict, namedtuple
-from dataclasses import MISSING, dataclass, field, fields
+from collections import defaultdict
+from dataclasses import MISSING, asdict, dataclass, field, fields
 from functools import reduce
+from pathlib import Path
 from typing import Literal
 
 import anndata as ad
@@ -23,6 +24,7 @@ from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
 from . import gp, preprocessing
+from .io import save_model
 from .model import Generative, Variational
 from .plotting import plot_overview
 from .training import EarlyStopper
@@ -173,8 +175,8 @@ class SmoothOptions(_Options):
     warp_open_end: bool = True
     warp_reference_group: str | None = None
 
-
-_GPTrainingAuxiliary = namedtuple("GPTrainingAuxiliary", ["warp_groups_order", "orig_covariates"])
+    def __post_init__(self):
+        self.warp_groups = list(self.warp_groups)  # in case the user passed a tuple here, we need a list for saving
 
 
 def _to_device(data, device):
@@ -264,6 +266,26 @@ class PRISMO:
     @property
     def factor_names(self):
         return self._factor_names[np.array(self.factor_order)]
+
+    @property
+    def warped_covariates(self):
+        return self._covariates if hasattr(self, "_orig_covariates") else None
+
+    @property
+    def covariates(self):
+        return self._orig_covariates if hasattr(self, "_orig_covariates") else self._covariates
+
+    @property
+    def gp_lengthscale(self):
+        return self._gp.lengthscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
+
+    @property
+    def gp_scale(self):
+        return self._gp.outputscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
+
+    @property
+    def gp_group_correlation(self):
+        return self._gp.group_corr.cpu().numpy()[self.factor_order] if self._gp is not None else None
 
     def _setup_likelihoods(self, data, likelihoods):
         group_names = tuple(data.keys())
@@ -361,16 +383,16 @@ class PRISMO:
         self._n_informed_factors = n_informed_factors
         self._model_opts.n_factors = n_dense_factors + n_informed_factors
 
-        self._factor_names = pd.Index(factor_names)
+        self._factor_names = np.asarray(factor_names)
         self._factor_order = np.arange(self._model_opts.n_factors)
 
         # storing prior_masks as full annotations instead of partial annotations
         self._annotations = prior_masks
 
-    def _setup_svi(self, prior_scales, init_tensor, feature_means, sample_means):
+    def _setup_gp(self):
         gp_group_names = tuple(g for g in self.group_names if self._model_opts.factor_prior[g] == "GP")
 
-        gp_aux = None
+        gp_warp_groups_order = None
         if len(gp_group_names):
             if len(self._gp_opts.warp_groups) > 1:
                 if not set(self._gp_opts.warp_groups) <= set(gp_group_names):
@@ -385,8 +407,7 @@ class PRISMO:
                             f"Warping can only be performed with 1D covariates, but the covariate for group {g} has {ccov.ndim} dimensions."
                         )
                     gp_warp_groups_order[g] = ccov.argsort()
-                orig_covariates = {g: c.clone() for g, c in self._covariates.items()}
-                gp_aux = _GPTrainingAuxiliary(gp_warp_groups_order, orig_covariates)
+                self._orig_covariates = {g: c.clone() for g, c in self._covariates.items()}
 
                 if self._gp_opts.warp_reference_group is None:
                     self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
@@ -401,7 +422,12 @@ class PRISMO:
                 len(gp_group_names),
                 self._gp_opts.kernel,
             ).to(self._train_opts.device)
+        else:
+            self._gp = None
+        return gp_warp_groups_order, gp_group_names
 
+    def _setup_svi(self, prior_scales, init_tensor, feature_means, sample_means):
+        gp_warp_groups_order, gp_group_names = self._setup_gp()
         generative = Generative(
             n_samples=self.n_samples,
             n_features=self.n_features,
@@ -435,15 +461,15 @@ class PRISMO:
             ),
         )
 
-        return svi, variational, gp_aux
+        return svi, variational, gp_warp_groups_order
 
-    def _post_fit(self, data, variational, train_loss_elbo, gp_aux):
+    def _post_fit(self, data, feature_means, variational, train_loss_elbo):
         self._weights = variational.get_weights()
         self._factors = variational.get_factors()
         self._df_r2_full, self._df_r2_factors, self._factor_order = self._sort_factors(
             data, weights=self._weights.mean, factors=self._factors.mean
         )
-        self._sparse_factor_probabilities = variational.get_sparse_factor_probabilities()
+        self._sparse_factors_probabilities = variational.get_sparse_factor_probabilities()
         self._sparse_weights_probabilities = variational.get_sparse_weight_probabilities()
         self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
         self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
@@ -451,10 +477,15 @@ class PRISMO:
         self._dispersions = variational.get_dispersion()
         self._train_loss_elbo = train_loss_elbo
 
+        if self._covariates is not None:
+            self._covariates = {g: cov.numpy() for g, cov in self._covariates.items()}
+        if hasattr(self, "_orig_covariates"):
+            self._orig_covariates = {g: cov.numpy() for g, cov in self._orig_covariates.items()}
+
         if self._train_opts.save:
-            self._train_opts.save_path = self._trian_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+            self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
             logger.info("Saving results...")
-            # save_model(self, save_path)
+            self._save(self._train_opts.save_path, True, data, feature_means)
 
     def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)
@@ -589,7 +620,7 @@ class PRISMO:
         # obtain observations DataFrame and covariates
         self._covariates, self._covariates_names = preprocessing.extract_covariate(
             data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key
-        )
+        )  # names for MOFA output
 
         # compute feature means for intercept terms
         feature_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="feature")
@@ -627,7 +658,7 @@ class PRISMO:
             for vn in self._annotations.keys():
                 prior_scales[vn][: self._n_dense_factors, :] = dense_scale
 
-        svi, variational, gp_aux = self._setup_svi(prior_scales, init_tensor, feature_means, sample_means)
+        svi, variational, gp_warp_groups_order = self._setup_svi(prior_scales, init_tensor, feature_means, sample_means)
 
         # convert AnnData to torch.Tensor objects
         tensor_dict = {}
@@ -711,7 +742,7 @@ class PRISMO:
         for i in range(self._train_opts.max_epochs):
             loss = step_fn()
             if len(self._gp_opts.warp_groups) and not i % self._gp_opts.warp_interval:
-                self._warp_covariates(variational, gp_aux)
+                self._warp_covariates(variational, gp_warp_groups_order)
             train_loss_elbo.append(loss)
 
             if i % self._train_opts.print_every == 0:
@@ -721,15 +752,15 @@ class PRISMO:
                 logger.info(f"Training finished after {i} steps.")
                 break
 
-        self._post_fit(data, variational, train_loss_elbo, gp_aux)
+        self._post_fit(data, feature_means, variational, train_loss_elbo)
 
-    def _warp_covariates(self, variational, gp_aux):
+    def _warp_covariates(self, variational, warp_groups_order):
         factormeans = variational.get_factors().mean
         refgroup = self._gp_opts.warp_reference_group
         reffactormeans = factormeans[refgroup].mean(axis=0)
-        refidx = gp_aux.warp_groups_order[refgroup]
+        refidx = warp_groups_order[refgroup]
         for g in self._gp_opts.warp_groups[1:]:
-            idx = gp_aux.warp_groups_order[g]
+            idx = warp_groups_order[g]
             alignment = dtw(
                 reffactormeans[refidx],
                 factormeans[g][:, idx].mean(axis=0),
@@ -737,10 +768,8 @@ class PRISMO:
                 open_end=self._gp_opts.warp_open_end,
                 step_pattern="asymmetric",
             )
-            self._covariates[g] = gp_aux.orig_covariates[g].clone()
-            self._covariates[g][idx[alignment.index2], 0] = gp_aux.orig_covariates[refgroup][
-                refidx[alignment.index1], 0
-            ]
+            self._covariates[g] = self._orig_covariates[g].clone()
+            self._covariates[g][idx[alignment.index2], 0] = self._orig_covariates[refgroup][refidx[alignment.index1], 0]
         self._gp.update_inducing_points(self._covariates.values())
 
     @staticmethod
@@ -866,11 +895,6 @@ class PRISMO:
 
         return dfs_full, dfs_factors, factor_order
 
-    def _check_if_trained(self):
-        """Check if the model has been trained."""
-        if not self._is_trained:
-            raise ValueError("Model has not been trained yet. Please train first.")
-
     def _get_component(self, component, return_type="pandas"):
         match return_type:
             case "numpy":
@@ -884,8 +908,9 @@ class PRISMO:
 
     def _get_sparse(self, what, moment, sparse_type):
         ret = {}
-        probs = self._cache[f"sparse_{what}_probabilities"]
-        vals = self._cache[what]
+        probs = getattr(self, f"_sparse_{what}_probabilities")
+        vals = getattr(self, "_" + what)
+        precs = getattr(self, f"_sparse_{what}_precisions")
         for name, cvals in getattr(vals, moment).items():
             if name in probs:
                 if sparse_type == "mix":
@@ -893,13 +918,13 @@ class PRISMO:
                         cvals = cvals * probs[name]
                     else:
                         p = probs[name]
-                        a = self._cache[f"sparse_{what}_precisions"].mean[name]
+                        a = precs.mean[name]
                         cvals = np.sqrt(vals.mean[name] ** 2 * p * (1 - p) + p * cvals**2 + (1 - p) / a**2)
                 elif sparse_type == "thresh":
                     if moment == "mean":
                         cvals = cvals * (vals[name].mean >= 0.5)
                     else:
-                        cvals = 1 / self._cache[f"sparse_{what}_precisions"].mean[name]
+                        cvals = 1 / precs.mean[name]
             ret[name] = cvals
         return ret
 
@@ -911,7 +936,6 @@ class PRISMO:
         ordered=True,
     ):
         """Get all factor matrices, z_x."""
-        self._check_if_trained()
         factors = {
             group_name: pd.DataFrame(
                 group_factors[self.factor_order, :].T, index=self.sample_names[group_name], columns=self.factor_names
@@ -930,17 +954,14 @@ class PRISMO:
         return factors
 
     def get_r2(self, total=False, ordered=True):
-        self._check_if_trained()
         if total:
-            return self._cache["df_r2_full"]
+            return self._df_r2_full
         elif not ordered:
-            return {
-                group_name: df.set_index(self._factor_names) for group_name, df in self._cache["df_r2_factors"].items()
-            }
+            return {group_name: df.set_index(self._factor_names) for group_name, df in self._df_r2_factors.items()}
         else:
             return {
                 group_name: df.iloc[self.factor_order, :].set_index(self.factor_names)
-                for group_name, df in self._cache["df_r2_factors"].items()
+                for group_name, df in self._df_r2_factors.items()
             }
 
     def get_weights(
@@ -951,7 +972,6 @@ class PRISMO:
         ordered=True,
     ):
         """Get all weight matrices, w_x."""
-        self._check_if_trained()
         weights = {
             view_name: pd.DataFrame(
                 view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
@@ -964,18 +984,16 @@ class PRISMO:
         return self._get_component(weights, return_type)
 
     def get_sparse_factor_probabilities(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
-        self._check_if_trained()
         probs = {
             group_name: pd.Series(group_prob, index=self.sample_names[group_name])
-            for group_name, group_prob in self._cache["sparse_factors_probabilities"].items()
+            for group_name, group_prob in self._sparse_factors_probabilities
         }
         return self._get_component(probs, return_type)
 
     def get_sparse_weight_probabilities(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
-        self._check_if_trained()
         probs = {
             view_name: pd.Series(view_prob, index=self.feature_names[view_name])
-            for view_name, view_prob in self._cache["sparse_weights_probabilities"].items()
+            for view_name, view_prob in self._sparse_weights_probabilities.items()
         }
         return self._get_component(probs, return_type)
 
@@ -983,10 +1001,9 @@ class PRISMO:
         self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", moment: Literal["mean", "std"] = "mean"
     ):
         """Get all dispersion vectors, dispersion_x."""
-        self._check_if_trained()
         dispersion = {
             view_name: pd.Series(view_dispersion, index=self.feature_names[view_name])
-            for view_name, view_dispersion in getattr(self._cache["dispersions"], moment).items()
+            for view_name, view_dispersion in getattr(self._dispersions, moment).items()
         }
 
         return self._get_component(dispersion, return_type)
@@ -1000,22 +1017,14 @@ class PRISMO:
     ):
         """Get all latent functions."""
         if batch_size is None:
-            batch_size = self.train_opts.batch_size
-
-        self._check_if_trained()
-        gps = getattr(self._cache["gps"] if x is None else self.variational.get_gps(x, batch_size), moment)
+            batch_size = self._train_opts.batch_size
+        gps = getattr(self._gps if x is None else self.variational.get_gps(x, batch_size), moment)  # FIXME
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
             for group_name, group_f in gps.items()
         }
 
         return self._get_component(gps, return_type)
-
-    def get_warped_covariates(self):
-        self._check_if_trained()
-        if "warped_covariates" in self._cache:
-            return self._cache["warped_covariates"]
-        return None
 
     def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered=True):
         """Get all annotation matrices, a_x."""
@@ -1031,8 +1040,7 @@ class PRISMO:
         return self._get_component(annotations, return_type)
 
     def get_training_loss(self):
-        self._check_if_trained()
-        return self._cache["train_loss_elbo"]
+        return self._train_loss_elbo
 
     def _setup_device(self, device):
         logger.info("Setting up device...")
@@ -1048,7 +1056,7 @@ class PRISMO:
 
         return device
 
-    def impute_data(self, missing_only=False):
+    def _impute_data(self, data, missing_only=False):
         """Impute (missing) values in the training data using the trained factorization.
 
         By default, we use the factorization to impute all values in the data.
@@ -1058,9 +1066,7 @@ class PRISMO:
         missing_only: bool
             Only impute missing values in the data. Default is False.
         """
-        self._check_if_trained()
-
-        imputed_data = copy.deepcopy(self.data)
+        imputed_data = copy.deepcopy(data)
 
         factors = self.get_factors(return_type="numpy")
         weights = self.get_weights(return_type="numpy")
@@ -1088,3 +1094,54 @@ class PRISMO:
                     imputed_data[k_groups][k_views].X[mask] = imputation[mask]
 
         return imputed_data
+
+    def save(self, save_path: str | Path):
+        self._save(save_path, False)
+
+    def _save(
+        self,
+        save_path: str | Path,
+        mofa_compat: bool = False,
+        data: dict[str, dict[str, ad.AnnData]] | None = None,
+        intercepts: dict[str, dict[str, np.ndarray]] | None = None,
+    ):
+        state = {
+            "weights": self._weights._asdict(),
+            "factors": self._factors._asdict(),
+            "covariates": self._covariates,
+            "covariates_names": self._covariates_names,
+            "df_r2_full": pd.DataFrame(self._df_r2_full),  # can't save a Series to hdf5
+            "df_r2_factors": self._df_r2_factors,
+            "n_dense_factors": self._n_dense_factors,
+            "n_informed_factors": self._n_informed_factors,
+            "factor_names": self._factor_names,
+            "factor_order": self._factor_order,
+            "sparse_factors_probabilities": self._sparse_factors_probabilities,
+            "sparse_weights_probabilities": self._sparse_weights_probabilities,
+            "sparse_factors_precisions": self._sparse_factors_precisions._asdict(),
+            "gps": self._gps._asdict(),
+            "dispersions": self._dispersions._asdict(),
+            "train_loss_elbo": self._train_loss_elbo,
+            "group_names": self._group_names,
+            "view_names": self._view_names,
+            "feature_names": self._feature_names,
+            "sample_names": self._sample_names,
+            "annotations": self._annotations,
+            "data_opts": asdict(self._data_opts),
+            "model_opts": asdict(self._model_opts),
+            "train_opts": asdict(self._train_opts),
+            "gp_opts": asdict(self._gp_opts),
+            "metadata": self._metadata,
+        }
+        state["train_opts"]["device"] = str(state["train_opts"]["device"])
+        if hasattr(self, "_orig_covariates"):
+            state["orig_covariates"] = self._orig_covariates
+        save_model(
+            state,
+            self._gp.state_dict() if self._gp is not None else None,
+            save_path,
+            mofa_compat,
+            self,
+            data,
+            intercepts,
+        )

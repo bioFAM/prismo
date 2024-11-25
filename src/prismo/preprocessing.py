@@ -594,7 +594,9 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
     return data_aligned
 
 
-def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None) -> dict | None:
+def extract_covariate(
+    data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None
+) -> dict[str, torch.Tensor] | None:
     """Extract covariate data from AnnData objects.
 
     This function extracts covariate data from either the obs or obsm attributes
@@ -664,8 +666,6 @@ def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_ob
                     covariates_names[group_name] = view_adata.obsm[obsm_key].columns.to_numpy()
                 if isinstance(view_adata.obsm[obsm_key], pd.Series):
                     covariates_names[group_name] = np.asarray(view_adata.obsm[obsm_key].name, dtype=object)
-                if isinstance(view_adata.obsm[obsm_key], np.ndarray):
-                    covariates_names[group_name] = np.asarray([None] * view_adata.obsm[obsm_key].shape[1])
 
         covariates[group_name] = torch.stack(covariates_group, dim=0).nanmean(dim=0)
 

@@ -130,7 +130,7 @@ def save_model(
                     cgrp.create_dataset(group_name, data=view_data.X, **dset_kwargs)
 
             imp_grp = f.create_group("imputed_data")
-            imp_data = model._impute_data(data, missing_only=True)
+            imp_data = model.impute_data(data, missing_only=True)
             for group_name, gimp in imp_data.items():
                 for view_name, imp in gimp.items():
                     vgrp = imp_grp.require_group(view_name)

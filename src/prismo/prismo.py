@@ -213,7 +213,8 @@ class PRISMO:
                 - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
             *args: Options for training.
         """
-        data = preprocessing.cast_data(data, group_by=None)
+        self._process_options(*args)
+        data = preprocessing.cast_data(data, group_by=self._data_opts.group_by)
         self._metadata = preprocessing.extract_obs(data)
 
         # extract group and view names / numbers from data
@@ -224,7 +225,7 @@ class PRISMO:
         self._feature_names = {k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names}
         self._sample_names = {k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()}
 
-        self._process_options(data, *args)
+        self._adjust_options(data)
 
         for view_name in self.view_names:
             if self._model_opts.likelihoods[view_name] == "BetaBinomial":
@@ -275,6 +276,18 @@ class PRISMO:
     @property
     def n_samples_total(self) -> int:
         return sum(self.n_samples.values())
+
+    @property
+    def n_factors(self):
+        return self._model_opts.n_factors
+
+    @property
+    def n_dense_factors(self) -> int:
+        return self._n_dense_factors
+
+    @property
+    def n_informed_factors(self) -> int:
+        return self._n_informed_factors
 
     @property
     def factor_order(self):
@@ -575,7 +588,7 @@ class PRISMO:
 
         return init_tensor
 
-    def _process_options(self, data: dict[dict[ad.AnnData]], *args: _Options):
+    def _process_options(self, *args: _Options):
         self._data_opts = DataOptions()
         self._model_opts = ModelOptions()
         self._train_opts = TrainingOptions()
@@ -602,6 +615,7 @@ class PRISMO:
         if self._train_opts.seed is None:
             self._train_opts.seed = int(time.strftime("%y%m%d%H%M"))
 
+    def _adjust_options(self, data: dict[dict[ad.AnnData]]):
         # convert input arguments to dictionaries if necessary
         for opt_name, keys in zip(
             ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
@@ -658,14 +672,16 @@ class PRISMO:
         data, feature_means, sample_means = self._preprocess_data(data)
         init_tensor = self._initialize_factors(data)
 
-        prior_scales = {
-            vn: np.clip(vm.astype(np.float32) + self._model_opts.prior_penalty, 1e-8, 1.0)
-            for vn, vm in self._annotations.items()
-        }
-        if self._n_dense_factors > 0:
-            dense_scale = 1.0
-            for vn in self._annotations.keys():
-                prior_scales[vn][: self._n_dense_factors, :] = dense_scale
+        prior_scales = None
+        if self._annotations is not None:
+            prior_scales = {
+                vn: np.clip(vm.astype(np.float32) + self._model_opts.prior_penalty, 1e-8, 1.0)
+                for vn, vm in self._annotations.items()
+            }
+            if self._n_dense_factors > 0:
+                dense_scale = 1.0
+                for vn in self._annotations.keys():
+                    prior_scales[vn][: self._n_dense_factors, :] = dense_scale
 
         svi, variational, gp_warp_groups_order = self._setup_svi(prior_scales, init_tensor, feature_means, sample_means)
 
@@ -1106,7 +1122,7 @@ class PRISMO:
                 - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
             missing_only: Only impute missing values in the data. Default is False.
         """
-        imputed_data = preprocessing.cast_data(data, copy=True)
+        imputed_data = preprocessing.cast_data(data, group_by=self._data_opts.group_by, copy=True)
 
         factors = self.get_factors(return_type="numpy")
         weights = self.get_weights(return_type="numpy")
@@ -1135,12 +1151,12 @@ class PRISMO:
 
         return imputed_data
 
-    def save(self, save_path: str | Path):
-        self._save(save_path, False)
+    def save(self, path: str | Path):
+        self._save(path, False)
 
     def _save(
         self,
-        save_path: str | Path,
+        path: str | Path,
         mofa_compat: bool = False,
         data: dict[str, dict[str, ad.AnnData]] | None = None,
         intercepts: dict[str, dict[str, np.ndarray]] | None = None,
@@ -1181,19 +1197,19 @@ class PRISMO:
         if self._gp is not None and self._gp_group_names is not None:
             pickle = self._gp.state_dict()
             state["gp_group_names"] = self._gp_group_names
-        save_model(state, pickle, save_path, mofa_compat, self, data, intercepts)
+        save_model(state, pickle, path, mofa_compat, self, data, intercepts)
 
     @classmethod
-    def load(cls, save_path: str | Path, map_location=None) -> "PRISMO":
-        state, pickle = load_model(save_path)
+    def load(cls, path: str | Path, map_location=None) -> "PRISMO":
+        state, pickle = load_model(path)
 
         model = cls.__new__(cls)
         model._weights = MeanStd(**state["weights"])
         model._factors = MeanStd(**state["factors"])
-        model._covariates = state["covariates"]
+        model._covariates = state.get("covariates")
         if "orig_covariates" in state:
             model._orig_covariates = state["orig_covariates"]
-        model._covariates_names = state["covariates_names"]
+        model._covariates_names = state.get("covariates_names")
         model._df_r2_full = state["df_r2_full"].iloc[:, 0]
         model._df_r2_factors = state["df_r2_factors"]
         model._n_dense_factors = state["n_dense_factors"]
@@ -1210,9 +1226,9 @@ class PRISMO:
         if "gp_group_names" in state:
             model._gp_group_names = state["gp_group_names"]
         model._view_names = state["view_names"]
-        model._feature_names = state["feature_names"]
-        model._sample_names = state["sample_names"]
-        model._annotations = state["annotations"]
+        model._feature_names = {v: n.tolist() for v, n in state["feature_names"].items()}
+        model._sample_names = {v: n.tolist() for v, n in state["sample_names"].items()}
+        model._annotations = state.get("annotations")
         model._metadata = state["metadata"]
         model._data_opts = DataOptions(**state["data_opts"])
         model._model_opts = ModelOptions(**state["model_opts"])

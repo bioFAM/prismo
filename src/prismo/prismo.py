@@ -1,4 +1,3 @@
-import copy
 import logging
 import random
 import time
@@ -202,6 +201,18 @@ def _to_device(data, device):
 
 class PRISMO:
     def __init__(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
+        """Fit the model using the provided data.
+
+        Args:
+            data: can be any of:
+                - MuData object
+                - dict with view names as keys and AnnData objects as values
+                - dict with view names as keys and torch.Tensor objects as values (single group only)
+                - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+            *args: Options for training.
+        """
         data = preprocessing.cast_data(data, group_by=None)
         self._metadata = preprocessing.extract_obs(data)
 
@@ -642,21 +653,6 @@ class PRISMO:
         return data, feature_means, sample_means
 
     def _fit(self, data):
-        """Fit the model using the provided data.
-
-        Parameters
-        ----------
-        data
-            can be any of:
-            - MuData object
-            - dict with view names as keys and AnnData objects as values
-            - dict with view names as keys and torch.Tensor objects as values (single group only)
-            - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
-            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
-            - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
-        *args
-            Options for training.
-        """
         # convert input data to nested dictionary of AnnData objects (group level -> view level)
 
         data, feature_means, sample_means = self._preprocess_data(data)
@@ -1093,17 +1089,24 @@ class PRISMO:
 
         return device
 
-    def _impute_data(self, data, missing_only=False):
+    def impute_data(
+        self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], missing_only=False
+    ) -> dict[dict[str, ad.AnnData]]:
         """Impute (missing) values in the training data using the trained factorization.
 
         By default, we use the factorization to impute all values in the data.
 
-        Parameters
-        ----------
-        missing_only: bool
-            Only impute missing values in the data. Default is False.
+        Args:
+            data: can be any of:
+                - MuData object
+                - dict with view names as keys and AnnData objects as values
+                - dict with view names as keys and torch.Tensor objects as values (single group only)
+                - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+            missing_only: Only impute missing values in the data. Default is False.
         """
-        imputed_data = copy.deepcopy(data)
+        imputed_data = preprocessing.cast_data(data, copy=True)
 
         factors = self.get_factors(return_type="numpy")
         weights = self.get_weights(return_type="numpy")

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def cast_data(
-    data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None
+    data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None, copy: bool = False
 ) -> dict[dict[str, AnnData]]:
     """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
 
@@ -29,6 +29,7 @@ def cast_data(
             - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
             - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
         group_by: Key in obs to group the data by. If provided, the data will be split into groups based on this key.
+        copy: Always copy the data, even if it is already in the correct format
 
     Returns:
         dict: Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -81,6 +82,8 @@ def cast_data(
     ):
         if group_by is not None:
             raise ValueError("`data` is nested dict of AnnDatas but `group_by` is not `None`.")
+        if copy:
+            data = {gname: {vname: adata.copy() for vname, adata in g.items()} for gname, g in data.items()}
 
     elif (
         isinstance(data, dict)

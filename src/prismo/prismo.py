@@ -310,6 +310,10 @@ class PRISMO:
         return self._orig_covariates if hasattr(self, "_orig_covariates") else self._covariates
 
     @property
+    def covariates_names(self):
+        return self._covariates_names
+
+    @property
     def gp_lengthscale(self):
         return self._gp.lengthscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
 
@@ -1064,7 +1068,7 @@ class PRISMO:
 
                 for start_idx in range(0, gdata.shape[0], batch_size):
                     end_idx = min(start_idx + batch_size, gdata.shape[0])
-                    minibatch = group_data[start_idx:end_idx]
+                    minibatch = gdata[start_idx:end_idx]
 
                     gp_dist = self._gp(gidx.expand(minibatch.shape[0], 1), torch.as_tensor(minibatch), prior=False)
 

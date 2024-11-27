@@ -83,16 +83,16 @@ def save_model(
 
             if model.covariates is not None:
                 covar_names = None
-                if len(model._covariates_names) == 1:
-                    covar_names = next(model._covariates_names.values())
-                elif len(model._covariates_names) > 1:
-                    groups = list(model._covariates_names.keys())
-                    lengths = [len(g) for g in model._covariates_names.values()]
+                if len(model.covariates_names) == 1:
+                    covar_names = next(model.covariates_names.values())
+                elif len(model.covariates_names) > 1:
+                    groups = list(model.covariates_names.keys())
+                    lengths = [len(g) for g in model.covariates_names.values()]
                     refidx = np.argmax(lengths)
-                    if groups[refidx] in model._covariates_names:
-                        ref = set(model._covariates_names[groups[refidx]])
-                        if all(set(gc) <= ref for gc in model._covariates_names.values()):
-                            covar_names = model._covariates_names[groups[refidx]]
+                    if groups[refidx] in model.covariates_names:
+                        ref = set(model.covariates_names[groups[refidx]])
+                        if all(set(gc) <= ref for gc in model.covariates_names.values()):
+                            covar_names = model.covariates_names[groups[refidx]]
                 if covar_names is None:
                     maxlen = max(c.shape[1] for c in model._covariates.values())
                     covar_names = [f"covar_{i}" for i in range(maxlen)]
@@ -203,7 +203,7 @@ def save_model(
                 )
 
             train_stats_grp = f.create_group("training_stats")
-            train_stats_grp.create_dataset("elbo", data=model.get_training_loss(), **dset_kwargs)
+            train_stats_grp.create_dataset("elbo", data=model.training_loss, **dset_kwargs)
             if model._gp is not None:
                 train_stats_grp.create_dataset("length_scales", data=model.gp_lengthscale, **dset_kwargs)
                 train_stats_grp.create_dataset("scales", data=model.gp_scale, **dset_kwargs)

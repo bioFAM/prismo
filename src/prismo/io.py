@@ -1,31 +1,51 @@
+from __future__ import annotations
+
 import logging
 from io import BytesIO
 from pathlib import Path
 
-import dill
+import anndata as ad
 import h5py
 import numpy as np
 import pandas as pd
-import pyro
 import torch
 
 logger = logging.getLogger(__name__)
 
 
-def save_model(model, path: str | Path, mofa_compat: bool = False):
+def save_model(
+    model_state,
+    model_topickle,
+    path: str | Path,
+    mofa_compat: bool = False,
+    model: PRISMO | None = None,  # noqa F821
+    data: dict[str, dict[str, ad.AnnData]] | None = None,
+    intercepts: dict[str, dict[str, np.ndarray]] | None = None,
+):
     """Save a PRISMO model to an HDF5 file.
 
     Saves both the model state and parameters, with optional MOFA-compatible format.
 
     Args:
-        model: The PRISMO model to save.
+        model_state: The internal state of the model. Should be compatible with `anndata.io.write_elem`.
+        model_topickle: Parts of the model to save as pickle. Generally some. PyTorch state.
         path: File path where to save the model.
         mofa_compat: If True, saves additional data in MOFA-compatible format.
+        model: The PRISMO model to save. Only needed for `mofa_compat=True`.
+        data: The input data. Only needed for `mofa_compat=True`.
+        intercepts: The data intercepts. Only needed for `mofa_compat=True`.
 
     Raises:
         IOError: If there are issues writing to the file.
         ValueError: If the model contains invalid data structures.
     """
+    if mofa_compat and model is None:
+        raise ValueError("Need a PRISMO object if saving in MOFA compatibility mode.")
+    if mofa_compat and data is None:
+        raise ValueError("Need input data if saving in MOFA compatibility mode.")
+    if mofa_compat and intercepts is None:
+        raise ValueError("Need intercepts if saving in MOFA compatibility mode.")
+
     from . import __version__
 
     dset_kwargs = {"compression": "gzip", "compression_opts": 9}
@@ -35,20 +55,21 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
         logger.warning(f"{path} already exists, overwriting")
     with h5py.File(path, "w") as f:
         prismogrp = f.create_group("prismo")
+        ad.io.write_elem(
+            prismogrp, "state", model_state
+        )  # turn on compression when https://github.com/h5py/h5py/issues/2525 is fixed
 
-        paramspkl, modelpkl = BytesIO(), BytesIO()
-        torch.save(pyro.get_param_store().get_state(), paramspkl, pickle_module=dill)
-        torch.save(model, modelpkl, pickle_module=dill)
+        pkl = BytesIO()
+        torch.save(model_topickle, pkl)
 
-        # TODO: a lot of things are stored twice: In the pickle and in the MOFA compat layer. Figure out how to reduce this
-        prismogrp.create_dataset(
-            "param_store", data=np.frombuffer(paramspkl.getbuffer(), dtype=np.uint8), **dset_kwargs
-        )
-        prismogrp.create_dataset("model", data=np.frombuffer(modelpkl.getbuffer(), dtype=np.uint8), **dset_kwargs)
+        prismogrp.create_dataset("pickle", data=np.frombuffer(pkl.getbuffer(), dtype=np.uint8), **dset_kwargs)
         prismogrp.attrs["version"] = __version__
 
         if mofa_compat:
             # save MOFA-compatible output
+            # This currently uses some private model attributes that are not part of the public API.
+            # Not the cleanest design, but otoh I don't think these things should be part of our
+            # API at the moment.'
             f.create_dataset("groups/groups", data=model.group_names, **dset_kwargs)
             f.create_dataset("views/views", data=model.view_names, **dset_kwargs)
 
@@ -60,27 +81,29 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
             for view_name, view_features in model.feature_names.items():
                 features_grp.create_dataset(view_name, data=view_features, **dset_kwargs)
 
-            if model.covariates is not None:
+            if len(model.covariates):
+                covar_names = None
                 if len(model.covariates_names) == 1:
                     covar_names = next(model.covariates_names.values())
-                else:
+                elif len(model.covariates_names) > 1:
                     groups = list(model.covariates_names.keys())
                     lengths = [len(g) for g in model.covariates_names.values()]
                     refidx = np.argmax(lengths)
-                    ref = set(model.covariates_names[groups[refidx]])
-                    if all(set(gc) <= ref for gc in model.covariates_names.values()):
-                        covar_names = model.covariates_names[groups[refidx]]
-                    else:
-                        covar_names = [None] * lengths[refidx]
+                    if groups[refidx] in model.covariates_names:
+                        ref = set(model.covariates_names[groups[refidx]])
+                        if all(set(gc) <= ref for gc in model.covariates_names.values()):
+                            covar_names = model.covariates_names[groups[refidx]]
+                if covar_names is None:
+                    maxlen = max(c.shape[1] for c in model.covariates.values())
+                    covar_names = [f"covar_{i}" for i in range(maxlen)]
 
-                covar_names = [n if n is not None else f"covar_{i}" for i, n in enumerate(covar_names)]
                 f.create_dataset("covariates/covariates", data=covar_names, **dset_kwargs)
 
                 cov_grp = f.create_group("cov_samples")
                 for g_name, covars in model.covariates.items():
-                    cov_grp.create_dataset(g_name, data=covars.numpy(), **dset_kwargs)
+                    cov_grp.create_dataset(g_name, data=covars, **dset_kwargs)
 
-                warped_covs = model.get_warped_covariates()
+                warped_covs = model.warped_covariates
                 if warped_covs is not None:
                     cov_grp = f.create_group("cov_samples_transformed")
                     for g_name, covars in warped_covs.items():
@@ -89,25 +112,25 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
             samples_meta_grp = f.create_group("samples_metadata")
             for group_name in model.group_names:
                 cgrp = samples_meta_grp.create_group(group_name)
-                df = pd.concat((v.obs for v in model.data[group_name].values()), axis=1).reset_index()
+                df = pd.concat((v for v in model._metadata[group_name].values()), axis=1).reset_index()
                 for i in range(df.shape[1]):
                     col = df.iloc[:, i]
                     cgrp.create_dataset(col.name, data=col.to_numpy(), **dset_kwargs)
 
             intercept_grp = f.create_group("intercepts")
-            for group_name, gintercepts in model.intercepts.items():
+            for group_name, gintercepts in intercepts.items():
                 for view_name, intercept in gintercepts.items():
                     cgrp = intercept_grp.require_group(view_name)
                     cgrp.create_dataset(group_name, data=intercept, **dset_kwargs)
 
             data_grp = f.create_group("data")
-            for group_name, gdata in model.data.items():
-                for view_name, data in gdata.items():
+            for group_name, gdata in data.items():
+                for view_name, view_data in gdata.items():
                     cgrp = data_grp.require_group(view_name)
-                    cgrp.create_dataset(group_name, data=data.X, **dset_kwargs)
+                    cgrp.create_dataset(group_name, data=view_data.X, **dset_kwargs)
 
             imp_grp = f.create_group("imputed_data")
-            imp_data = model.impute_data(missing_only=True)
+            imp_data = model.impute_data(data, missing_only=True)
             for group_name, gimp in imp_data.items():
                 for view_name, imp in gimp.items():
                     vgrp = imp_grp.require_group(view_name)
@@ -128,42 +151,42 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
 
             model_opts_grp = f.create_group("model_options")
             model_opts_grp.create_dataset(
-                "likelihoods", data=[model.model_opts.likelihoods[v].lower() for v in model.view_names], **dset_kwargs
+                "likelihoods", data=[model._model_opts.likelihoods[v].lower() for v in model.view_names], **dset_kwargs
             )
             model_opts_grp.create_dataset(
-                "spikeslab_factors", data=any(p == "SnS" for p in model.model_opts.factor_prior.values())
+                "spikeslab_factors", data=any(p == "SnS" for p in model._model_opts.factor_prior.values())
             )
             model_opts_grp.create_dataset(
-                "spikeslab_weights", data=any(p == "SnS" for p in model.model_opts.weight_prior.values())
+                "spikeslab_weights", data=any(p == "SnS" for p in model._model_opts.weight_prior.values())
             )
             # ARD used unconditionally in SnS prior
             model_opts_grp.create_dataset(
-                "ard_factors", data=any(p == "SnS" for p in model.model_opts.factor_prior.values())
+                "ard_factors", data=any(p == "SnS" for p in model._model_opts.factor_prior.values())
             )
             model_opts_grp.create_dataset(
-                "ard_weights", data=any(p == "SnS" for p in model.model_opts.weight_prior.values())
+                "ard_weights", data=any(p == "SnS" for p in model._model_opts.weight_prior.values())
             )
 
             train_opts_grp = f.create_group("training_opts")
-            train_opts_grp.create_dataset("maxiter", data=model.train_opts.max_epochs)
+            train_opts_grp.create_dataset("maxiter", data=model._train_opts.max_epochs)
             train_opts_grp.create_dataset("freqELBO", data=1)
             train_opts_grp.create_dataset("start_elbo", data=0)
-            train_opts_grp.create_dataset("gpu_mode", data=model.train_opts.device.type != "cpu")
+            train_opts_grp.create_dataset("gpu_mode", data=model._train_opts.device.type != "cpu")
             train_opts_grp.create_dataset("stochastic", data=True)
 
-            if model.gp is not None:
+            if model._gp is not None:
                 smooth_opts_grp = f.create_group("smooth_opts")
                 smooth_opts_grp.create_dataset("scale_cov", data=b"False")
                 smooth_opts_grp.create_dataset("start_opt", data=0)
                 smooth_opts_grp.create_dataset("opt_freq", data=1)
                 smooth_opts_grp.create_dataset("sparseGP", data=b"True")
-                smooth_opts_grp.create_dataset("warping_freq", data=model.gp_opts.warp_interval)
-                smooth_opts_grp.create_dataset("warping_ref", data=model.gp_opts.warp_reference_group)
+                smooth_opts_grp.create_dataset("warping_freq", data=model._gp_opts.warp_interval)
+                smooth_opts_grp.create_dataset("warping_ref", data=model._gp_opts.warp_reference_group)
                 smooth_opts_grp.create_dataset(
-                    "warping_open_begin", data=np.asarray(model.gp_opts.warp_open_begin).astype("S")
+                    "warping_open_begin", data=np.asarray(model._gp_opts.warp_open_begin).astype("S")
                 )
                 smooth_opts_grp.create_dataset(
-                    "warping_open_end", data=np.asarray(model.gp_opts.warp_open_end).astype("S")
+                    "warping_open_end", data=np.asarray(model._gp_opts.warp_open_end).astype("S")
                 )
                 smooth_opts_grp.create_dataset("model_groups", data=b"True")
 
@@ -180,29 +203,18 @@ def save_model(model, path: str | Path, mofa_compat: bool = False):
                 )
 
             train_stats_grp = f.create_group("training_stats")
-            train_stats_grp.create_dataset("elbo", data=model.get_training_loss(), **dset_kwargs)
-            if model.gp is not None:
-                train_stats_grp.create_dataset(
-                    "length_scales",
-                    data=model.gp.lengthscale.cpu().numpy().squeeze()[model.factor_order],
-                    **dset_kwargs,
-                )
-                train_stats_grp.create_dataset(
-                    "scales", data=model.gp.outputscale.cpu().numpy().squeeze()[model.factor_order], **dset_kwargs
-                )
-                train_stats_grp.create_dataset(
-                    "Kg", data=model.gp.group_corr.cpu().numpy()[model.factor_order], **dset_kwargs
-                )
-
-    logger.info(f"Saved model to {path}")
+            train_stats_grp.create_dataset("elbo", data=model.training_loss, **dset_kwargs)
+            if model._gp is not None:
+                train_stats_grp.create_dataset("length_scales", data=model.gp_lengthscale, **dset_kwargs)
+                train_stats_grp.create_dataset("scales", data=model.gp_scale, **dset_kwargs)
+                train_stats_grp.create_dataset("Kg", data=model.gp_group_correlation, **dset_kwargs)
 
 
-def load_model(path: str | Path, with_params=True, map_location=None) -> torch.nn.Module:
+def load_model(path: str | Path, map_location=None):
     """Load a PRISMO model from an HDF5 file.
 
     Args:
         path: Path to the HDF5 file containing the saved model.
-        with_params: If True, loads and restores model parameters.
         map_location: Optional device specification for loading the model.
 
     Returns:
@@ -220,13 +232,9 @@ def load_model(path: str | Path, with_params=True, map_location=None) -> torch.n
         prismogrp = f["prismo"]
         if prismogrp.attrs["version"] != __version__:
             logger.warning("The stored model was created with a different version of PRISMO. Stuff may not work.")
-        paramspkl = BytesIO(prismogrp["param_store"][()].tobytes())
-        modelpkl = BytesIO(prismogrp["model"][()].tobytes())
+        state = ad.io.read_elem(prismogrp["state"])
+        pickle = BytesIO(prismogrp["pickle"][()].tobytes())
 
-        model = torch.load(modelpkl, map_location=map_location, pickle_module=dill)
-        if with_params:
-            pyro.get_param_store().set_state(torch.load(paramspkl, map_location=map_location, pickle_module=dill))
+        pickle = torch.load(pickle, map_location=map_location)
 
-    logger.info(f"Loaded model from {path}")
-
-    return model
+    return state, pickle

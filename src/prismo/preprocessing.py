@@ -14,7 +14,9 @@ from scipy.sparse._csr import csr_matrix
 logger = logging.getLogger(__name__)
 
 
-def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None) -> dict:
+def cast_data(
+    data: dict | MuData, group_by: str | list[str] | dict[str] | dict[list[str]] | None, copy: bool = False
+) -> dict[dict[str, AnnData]]:
     """Convert data to a nested dictionary of AnnData objects (first level: groups; second level: views).
 
     Args:
@@ -27,6 +29,7 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
             - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
             - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
         group_by: Key in obs to group the data by. If provided, the data will be split into groups based on this key.
+        copy: If `True`, the data will always be copied, even if it's in the correct format already
 
     Returns:
         dict: Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -70,7 +73,7 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
     elif isinstance(data, dict) and all(isinstance(v, MuData) for v in data.values()):
         if group_by is not None:
             raise ValueError("`data` is dict of MuDatas but `group_by` is not `None`.")
-        data = {k: {mod: v[mod] for mod in v.mod} for k, v in data.items()}
+        data = {k: {mod: v[mod].copy() if copy else v[mod] for mod in v.mod} for k, v in data.items()}
 
     elif (
         isinstance(data, dict)
@@ -79,6 +82,8 @@ def cast_data(data: dict | MuData, group_by: str | list[str] | dict[str] | dict[
     ):
         if group_by is not None:
             raise ValueError("`data` is nested dict of AnnDatas but `group_by` is not `None`.")
+        if copy:
+            data = {gname: {vname: adata.copy() for vname, adata in group.items()} for gname, group in data.items()}
 
     elif (
         isinstance(data, dict)
@@ -592,7 +597,9 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
     return data_aligned
 
 
-def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None) -> dict | None:
+def extract_covariate(
+    data: dict, covariates_obs_key: dict = None, covariates_obsm_key: dict = None
+) -> dict[str, torch.Tensor] | None:
     """Extract covariate data from AnnData objects.
 
     This function extracts covariate data from either the obs or obsm attributes
@@ -662,9 +669,7 @@ def extract_covariate(data: dict, covariates_obs_key: dict = None, covariates_ob
                     covariates_names[group_name] = view_adata.obsm[obsm_key].columns.to_numpy()
                 if isinstance(view_adata.obsm[obsm_key], pd.Series):
                     covariates_names[group_name] = np.asarray(view_adata.obsm[obsm_key].name, dtype=object)
-                if isinstance(view_adata.obsm[obsm_key], np.ndarray):
-                    covariates_names[group_name] = np.asarray([None] * view_adata.obsm[obsm_key].shape[1])
 
         covariates[group_name] = torch.stack(covariates_group, dim=0).nanmean(dim=0)
 
-        return covariates, covariates_names
+    return covariates, covariates_names

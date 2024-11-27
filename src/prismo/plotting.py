@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from functools import partial
 from typing import Literal
 
+import anndata as ad
 import numpy as np
 import pandas as pd
 import plotnine as p9
@@ -30,7 +31,7 @@ _scale_color_zerosymmetric_diverging = partial(
 
 
 def plot_factors_scatter(
-    model,
+    model: "PRISMO",  # noqa F821
     x: int,
     y: int,
     group: str | None = None,
@@ -54,7 +55,7 @@ def plot_factors_scatter(
 
     if x < 0 or y < 0:
         raise ValueError("Factors x and y must be non-negative.")
-    if x >= model.model_opts.n_factors or y >= model.model_opts.n_factors:
+    if x >= model.n_factors or y >= model.n_factors:
         raise ValueError("Factors x and y must be in range of the number of factors.")
 
     facs = model.get_factors(return_type="anndata")[group]
@@ -83,7 +84,7 @@ def plot_factors_scatter(
 
 
 def plot_covariates_factor_scatter(
-    model,
+    model: "PRISMO",  # noqa F821
     factor: int,
     group: str | None = None,
     covariate_dims: list[int] | None = None,
@@ -104,37 +105,36 @@ def plot_covariates_factor_scatter(
         shape: The covariate name to shape by. Defaults to None.
         figsize: Figure size in inches.
     """
+    if len(covariate_dims) == 2 and color is not None:
+        raise ValueError("Cannot specify a color variable when plotting two covariate dimensions.")
+    if factor not in range(1, model.n_factors + 1):
+        raise ValueError(f"Factors must be between 1 and {model.n_factors}.")
+    if len(covariate_dims) not in (1, 2):
+        raise ValueError("Covariate dimensions must be a list of length 1 or 2.")
+
     if group is None:
         for group_name in model.group_names:
             if group_name in model.covariates:
                 group = group_name
                 break
 
-    if factor not in range(1, model.generative.n_factors + 1):
-        raise ValueError(f"Factors must be between 1 and {model.generative.n_factors}.")
-
     # create factor DataFrame
     facs = model.get_factors(return_type="anndata")[group]
     df_factors = pd.concat([facs.to_df(), facs.obs], axis=1)
 
-    # create covariate DataFrame
-    df_covariates = pd.DataFrame(model.covariates[group], index=df_factors.index)
-
-    # add column names to covariate DataFrame
-    column_names = [col if col is not None else None for col in model.covariates_names[group]]
-    for i, col in enumerate(column_names):
-        if col is None:
-            column_names[i] = f"Unnamed_{i}"
-    df_covariates.columns = column_names
-
-    if len(covariate_dims) == 2 and color is not None:
-        raise ValueError("Cannot specify a color variable when plotting two covariate dimensions.")
     if color is not None and color not in df_factors.columns:
         raise ValueError(f"Color variable {color} not found in the data.")
     if shape is not None and shape not in df_factors.columns:
         raise ValueError(f"Shape variable {shape} not found in the data.")
-    if len(covariate_dims) not in (1, 2):
-        raise ValueError("Covariate dimensions must be a list of length 1 or 2.")
+
+    covnames = (
+        model.covariates_names[group]
+        if group in model.covariates_names
+        else [f"Covariate {i}" for i in range(model.covariates[group].shape[1])]
+    )
+
+    # create covariate DataFrame
+    df_covariates = pd.DataFrame(model.covariates[group], index=df_factors.index, columns=covnames)
 
     # combine factor and covariate DataFrames
     df = pd.concat([df_factors, df_covariates], axis=1)
@@ -160,7 +160,10 @@ def plot_covariates_factor_scatter(
 
 
 def plot_training_curve(
-    model, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
+    model: "PRISMO",  # noqa F821
+    linecolor: str = "#214D83",
+    linewidth: int = 1,
+    figsize: tuple[float, float] = (12, 4),
 ) -> p9.ggplot:
     """Plot the training curve: -ELBO vs epoch.
 
@@ -170,8 +173,7 @@ def plot_training_curve(
         linewidth: The width of the line.
         figsize: Figure size in inches.
     """
-    train_loss_elbo = model.get_training_loss()
-    df = pd.DataFrame({"Epoch": range(len(train_loss_elbo)), "-ELBO": train_loss_elbo})
+    df = pd.DataFrame({"Epoch": range(len(model.training_loss)), "-ELBO": model.training_loss})
 
     plot = (
         p9.ggplot(df, p9.aes(x="Epoch", y="-ELBO"))
@@ -183,7 +185,7 @@ def plot_training_curve(
     return plot
 
 
-def plot_factor_correlation(model, figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
+def plot_factor_correlation(model: "PRISMO", figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:  # noqa F821
     """Plot the correlation between factors.
 
     Args:
@@ -225,7 +227,7 @@ def plot_factor_correlation(model, figsize: tuple[float, float] = (8, 8)) -> p9.
 
 
 def plot_overview(
-    data,
+    data: dict[str, dict[str, ad.AnnData]],
     missingcolor: str = "#214D83",
     nonmissingcolor: str = "#8AB6D4",
     figsize: tuple[float, float] = (15, 5),
@@ -285,18 +287,20 @@ def plot_overview(
         plot = (
             p9.ggplot(obs_counts, p9.aes(x="view", y="count"))
             + p9.geom_bar(stat="identity", fill=missingcolor)
-            + p9.facet_wrap("group")
+            + p9.facet_wrap("group", scales="free_x")
             + p9.theme(axis_text_x=(p9.element_text(angle=90, ha="center", va="top")), figure_size=figsize)
             + p9.labs(title="Data Overview", y="Number of non-missing observations", x="View")
             + p9.coord_flip()
         )
 
-    # The figure is only plotted when training is called. Therefore, we directly show the plot here
-    # instead of returning it.
-    plot.show()
+    return plot
 
 
-def plot_variance_explained(model, group_by: str = "group", figsize: tuple[float, float] | None = None) -> p9.ggplot:
+def plot_variance_explained(
+    model: "PRISMO",  # noqa F821
+    group_by: Literal["group", "view"] = "group",
+    figsize: tuple[float, float] | None = None,
+) -> p9.ggplot:
     """Plot the variance explained per factor in each group and view.
 
     Args:
@@ -339,7 +343,7 @@ def plot_variance_explained(model, group_by: str = "group", figsize: tuple[float
 
 
 def plot_all_weights(
-    model,
+    model: "PRISMO",  # noqa F821
     clip: tuple[float, float] | None = (-1, 1),
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,
@@ -383,7 +387,10 @@ def plot_all_weights(
 
 
 def plot_factor(
-    model, factor: int = 1, show_featurenames: bool = False, figsize: tuple[float, float] | None = None
+    model: "PRISMO",  # noqa F821
+    factor: int = 1,
+    show_featurenames: bool = False,
+    figsize: tuple[float, float] | None = None,  # F821
 ) -> p9.ggplot:
     """Plot factor values (y-axis) for each sample (x-axis).
 
@@ -430,7 +437,7 @@ def _check_covariate(cov, cnames, group_name, covars):
 
 
 def _plot_factors_covariate(
-    model,
+    model: "PRISMO",  # noqa F821
     covariate1: str | int,
     covariate2: str | int | None = None,
     gp: bool = False,
@@ -449,7 +456,7 @@ def _plot_factors_covariate(
     factors = model.get_factors() if not gp else model.get_gps()
 
     if figsize is None:
-        figsize = (2 * model.model_opts.n_factors, 2 * len(factors))
+        figsize = (2 * model.n_factors, 2 * len(factors))
 
     covariates = model.covariates
     covariate_names = model.covariates_names
@@ -472,7 +479,7 @@ def _plot_factors_covariate(
         ylab = "Factor value"
 
     for group_name, covars in covariates.items():
-        cnames = covariate_names[group_name]
+        cnames = covariate_names.get(group_name, ())
         covidxs = tuple(_check_covariate(cov, cnames, group_name, covars) for cov in covcheck)
 
         cdf = factors[group_name].reset_index(names="sample").assign(cov1=covars[:, covidxs[0]], group=group_name)
@@ -500,7 +507,10 @@ def _plot_factors_covariate(
 
 
 def plot_factors_covariate(
-    model, covariate1: str | int, covariate2: str | int | None = None, figsize: tuple[float, float] | None = None
+    model: "PRISMO",  # noqa F821
+    covariate1: str | int,
+    covariate2: str | int | None = None,
+    figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
     """Plot every factor against one or two covariates.
 
@@ -515,7 +525,7 @@ def plot_factors_covariate(
 
 
 def plot_gp_covariate(
-    model,
+    model: "PRISMO",  # noqa F821
     ci_opacity: float = 0.3,
     group: Literal["facet", "color"] = "facet",
     color: str = "black",
@@ -542,12 +552,12 @@ def plot_gp_covariate(
 
     covnames = [np.asarray(tuple(n[i] for n in model.covariates_names.values())) for i in range(covdim[0])]
     for i in range(covdim[0]):
-        if np.any(covnames[i] == None):  # noqa E711 We want element-wise comparison
+        if covnames[i].size == 0:
             covnames[i] = f"Covariate {i}"
         else:
             covname = np.unique(covnames[i])
             if covname.size > 1:
-                covnames[i] = "Covariate 0"
+                covnames[i] = f"Covariate {i}"
             else:
                 covnames[i] = covname[0]
     if covdim[0] == 2:
@@ -557,7 +567,7 @@ def plot_gp_covariate(
     gp_stds = model.get_gps(moment="std")
 
     if figsize is None:
-        figsize = (2 * model.model_opts.n_factors, 2 * len(gp_means))
+        figsize = (2 * model.n_factors, 2 * len(gp_means))
 
     df = []
 
@@ -599,20 +609,18 @@ def plot_gp_covariate(
     return plt
 
 
-def plot_smoothness(model, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
+def plot_smoothness(model: "PRISMO", figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:  # noqa F821
     """Plot the smoothness of the GP for each factor.
 
     Args:
         model: The PRISMO model.
         figsize: Figure size in inches.
     """
-    if model.gp is None:
+    scale = model.gp_scale
+    if scale is None:
         raise ValueError("model does not have any groups with a GP prior.")
     df = pd.DataFrame(
-        {
-            "smoothness": model.gp.outputscale.cpu().numpy()[model.factor_order],
-            "factor": pd.Categorical(model.factor_names, categories=model.factor_names),
-        }
+        {"smoothness": scale, "factor": pd.Categorical(model.factor_names, categories=model.factor_names)}
     )
     plt = (
         p9.ggplot(df, p9.aes("factor", "smoothness"))
@@ -625,7 +633,10 @@ def plot_smoothness(model, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
 
 
 def _prepare_weights_df(
-    model, n_features: int = 10, views: str | Sequence[str] | None = None, factors: int | Sequence[int] | None = None
+    model: "PRISMO",  # noqa F821
+    n_features: int = 10,
+    views: str | Sequence[str] | None = None,
+    factors: int | Sequence[int] | None = None,
 ):
     weights = model.get_weights(ordered=False)
     annotations = model.get_annotations(ordered=False)
@@ -634,7 +645,7 @@ def _prepare_weights_df(
     elif isinstance(views, str):
         views = [views]
     if factors is None:
-        factors = np.arange(model.model_opts.n_factors)
+        factors = np.arange(model.n_factors)
     else:
         if not isinstance(factors, Sequence):
             factors = (factors,)
@@ -682,7 +693,7 @@ _weights_inferred_color_scale = p9.scale_color_manual(
 
 
 def plot_top_weights(
-    model,
+    model: "PRISMO",  # noqa F821
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
@@ -728,7 +739,7 @@ def plot_top_weights(
 
 
 def plot_weights(
-    model,
+    model: "PRISMO",  # noqa F821
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
@@ -749,10 +760,12 @@ def plot_weights(
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
         figsize = (3 * len(factors), 3 * len(views))
+        if p9.options.limitsize:
+            figsize = (min(figsize[0], 25), min(figsize[1], 25))
     grp = df.groupby(["factor", "view"])
     df["rank"] = grp["weight"].rank()
     df["absrank"] = grp["weightabs"].rank(ascending=False)
-    df["annotate"] = df.absrank < n_features
+    df["annotate"] = df.absrank <= n_features
 
     aes_kwargs = {}
     if have_annot:
@@ -766,6 +779,6 @@ def plot_weights(
         + p9.scale_x_continuous(breaks=False)
         + p9.labs(x="Rank", y="Weight", color="")
         + p9.facet_grid("view", "factor", scales="free_y")
-        + p9.theme(figure_size=(20, 10))
+        + p9.theme(figure_size=figsize)
     )
     return plt

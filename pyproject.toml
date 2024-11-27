@@ -26,7 +26,6 @@ dependencies = [
     "torch",
     "numpy",
     "pandas",
-    "dill",
     "tensordict",
     "gpytorch",
     "dtw-python",

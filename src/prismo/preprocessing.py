@@ -29,7 +29,7 @@ def cast_data(
             - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (multiple groups, multiple views)
             - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (multiple groups, multiple views)
         group_by: Key in obs to group the data by. If provided, the data will be split into groups based on this key.
-        copy: Always copy the data, even if it is already in the correct format
+        copy: If `True`, the data will always be copied, even if it's in the correct format already
 
     Returns:
         dict: Nested dictionary of AnnData objects with group names as keys and view names as subkeys.
@@ -73,7 +73,7 @@ def cast_data(
     elif isinstance(data, dict) and all(isinstance(v, MuData) for v in data.values()):
         if group_by is not None:
             raise ValueError("`data` is dict of MuDatas but `group_by` is not `None`.")
-        data = {k: {mod: v[mod] for mod in v.mod} for k, v in data.items()}
+        data = {k: {mod: v[mod].copy() if copy else v[mod] for mod in v.mod} for k, v in data.items()}
 
     elif (
         isinstance(data, dict)
@@ -83,7 +83,7 @@ def cast_data(
         if group_by is not None:
             raise ValueError("`data` is nested dict of AnnDatas but `group_by` is not `None`.")
         if copy:
-            data = {gname: {vname: adata.copy() for vname, adata in g.items()} for gname, g in data.items()}
+            data = {gname: {vname: adata.copy() for vname, adata in group.items()} for gname, group in data.items()}
 
     elif (
         isinstance(data, dict)
@@ -672,4 +672,4 @@ def extract_covariate(
 
         covariates[group_name] = torch.stack(covariates_group, dim=0).nanmean(dim=0)
 
-        return covariates, covariates_names
+    return covariates, covariates_names

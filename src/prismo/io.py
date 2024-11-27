@@ -81,7 +81,7 @@ def save_model(
             for view_name, view_features in model.feature_names.items():
                 features_grp.create_dataset(view_name, data=view_features, **dset_kwargs)
 
-            if model.covariates is not None:
+            if len(model.covariates):
                 covar_names = None
                 if len(model.covariates_names) == 1:
                     covar_names = next(model.covariates_names.values())
@@ -94,7 +94,7 @@ def save_model(
                         if all(set(gc) <= ref for gc in model.covariates_names.values()):
                             covar_names = model.covariates_names[groups[refidx]]
                 if covar_names is None:
-                    maxlen = max(c.shape[1] for c in model._covariates.values())
+                    maxlen = max(c.shape[1] for c in model.covariates.values())
                     covar_names = [f"covar_{i}" for i in range(maxlen)]
 
                 f.create_dataset("covariates/covariates", data=covar_names, **dset_kwargs)

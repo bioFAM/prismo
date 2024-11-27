@@ -325,6 +325,10 @@ class PRISMO:
     def gp_group_correlation(self):
         return self._gp.group_corr.cpu().numpy()[self.factor_order] if self._gp is not None else None
 
+    @property
+    def training_loss(self):
+        return self._train_loss_elbo
+
     def _setup_likelihoods(self, data, likelihoods):
         group_names = tuple(data.keys())
         view_names = tuple(reduce(np.union1d, [list(v.keys()) for v in data.values()]))
@@ -1045,8 +1049,6 @@ class PRISMO:
         batch_size: int | None = None,
     ):
         """Get all latent functions."""
-        if batch_size is None:
-            batch_size = self._train_opts.batch_size
         gps = getattr(self._gps if x is None else self._get_gps(x, batch_size), moment)
         gps = {
             group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
@@ -1055,28 +1057,31 @@ class PRISMO:
 
         return self._get_component(gps, return_type)
 
-    def _get_gps(self, x: dict[str, np.ndarray | torch.Tensor], batch_size: int):
+    def _get_gps(self, x: dict[str, np.ndarray | torch.Tensor], batch_size: int | None = None):
+        if batch_size is None:
+            batch_size = self._train_opts.batch_size
         gps = MeanStd({}, {})
-        with (
-            torch.inference_mode(),
-            self._train_opts.device,
-        ):  # FIXME: allow user to run this in a `with device` context?
-            for group_idx, group_name in enumerate(self._gp_group_names):
-                gidx = torch.as_tensor(group_idx)
-                gdata = x[group_name]
-                mean, std = [], []
+        if self._gp is not None:
+            with (
+                torch.inference_mode(),
+                self._train_opts.device,
+            ):  # FIXME: allow user to run this in a `with device` context?
+                for group_idx, group_name in enumerate(self._gp_group_names):
+                    gidx = torch.as_tensor(group_idx)
+                    gdata = x[group_name]
+                    mean, std = [], []
 
-                for start_idx in range(0, gdata.shape[0], batch_size):
-                    end_idx = min(start_idx + batch_size, gdata.shape[0])
-                    minibatch = gdata[start_idx:end_idx]
+                    for start_idx in range(0, gdata.shape[0], batch_size):
+                        end_idx = min(start_idx + batch_size, gdata.shape[0])
+                        minibatch = gdata[start_idx:end_idx]
 
-                    gp_dist = self._gp(gidx.expand(minibatch.shape[0], 1), torch.as_tensor(minibatch), prior=False)
+                        gp_dist = self._gp(gidx.expand(minibatch.shape[0], 1), torch.as_tensor(minibatch), prior=False)
 
-                    mean.append(gp_dist.mean.cpu().numpy().squeeze())
-                    std.append(gp_dist.stddev.cpu().numpy().squeeze())
+                        mean.append(gp_dist.mean.cpu().numpy().squeeze())
+                        std.append(gp_dist.stddev.cpu().numpy().squeeze())
 
-                gps.mean[group_name] = np.concatenate(mean, axis=1)
-                gps.std[group_name] = np.concatenate(std, axis=1)
+                    gps.mean[group_name] = np.concatenate(mean, axis=1)
+                    gps.std[group_name] = np.concatenate(std, axis=1)
         return gps
 
     def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered=True):
@@ -1087,13 +1092,10 @@ class PRISMO:
                 if ordered
                 else pd.DataFrame(v, index=self._factor_names, columns=self.feature_names[k])
             ).astype(bool)
-            for k, v in self.annotations.items()
+            for k, v in self._annotations.items()
         }
 
         return self._get_component(annotations, return_type)
-
-    def get_training_loss(self):
-        return self._train_loss_elbo
 
     def _setup_device(self, device):
         logger.info("Setting up device...")
@@ -1179,6 +1181,7 @@ class PRISMO:
             "sparse_factors_probabilities": self._sparse_factors_probabilities,
             "sparse_weights_probabilities": self._sparse_weights_probabilities,
             "sparse_factors_precisions": self._sparse_factors_precisions._asdict(),
+            "sparse_weights_precisions": self._sparse_weights_precisions._asdict(),
             "gps": self._gps._asdict(),
             "dispersions": self._dispersions._asdict(),
             "train_loss_elbo": self._train_loss_elbo,
@@ -1223,6 +1226,7 @@ class PRISMO:
         model._sparse_factors_probabilities = state["sparse_factors_probabilities"]
         model._sparse_weights_probabilities = state["sparse_weights_probabilities"]
         model._sparse_factors_precisions = MeanStd(**state["sparse_factors_precisions"])
+        model._sparse_weights_precisions = MeanStd(**state["sparse_weights_precisions"])
         model._gps = MeanStd(**state["gps"])
         model._dispersions = MeanStd(**state["dispersions"])
         model._train_loss_elbo = state["train_loss_elbo"]

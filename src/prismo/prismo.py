@@ -215,17 +215,18 @@ class PRISMO:
         """
         self._process_options(*args)
         data = preprocessing.cast_data(data, group_by=self._data_opts.group_by)
-        self._metadata = preprocessing.extract_obs(data)
 
-        # extract group and view names / numbers from data
-        self._group_names = list(data.keys())
         self._view_names = list(data[next(iter(data.keys()))].keys())
-
-        # extract feature and samples names / numbers from data
-        self._feature_names = {k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names}
+        self._group_names = list(data.keys())
         self._sample_names = {k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()}
 
         self._adjust_options(data)
+        data, feature_means, sample_means = self._preprocess_data(data)
+
+        self._metadata = preprocessing.extract_obs(data)
+        self._feature_names = {
+            k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names
+        }  # this must be after _preprocess_data
 
         for view_name in self.view_names:
             if self._model_opts.likelihoods[view_name] == "BetaBinomial":
@@ -239,7 +240,7 @@ class PRISMO:
         if self._data_opts.plot_data_overview:
             plot_overview(data).show()
 
-        self._fit(data)
+        self._fit(data, feature_means, sample_means)
 
     @property
     def group_names(self) -> list[str]:
@@ -641,13 +642,12 @@ class PRISMO:
 
         self._train_opts.device = self._setup_device(self._train_opts.device)
 
-        self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
-
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= self.n_samples_total):
             self._train_opts.batch_size = self.n_samples_total
 
     def _preprocess_data(self, data):
         data = preprocessing.anndata_to_dense(data)
+        self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
         data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
         data = preprocessing.scale_data(data, self._model_opts.likelihoods, self._data_opts.scale_per_group)
         data = preprocessing.center_data(
@@ -674,10 +674,7 @@ class PRISMO:
 
         return data, feature_means, sample_means
 
-    def _fit(self, data):
-        # convert input data to nested dictionary of AnnData objects (group level -> view level)
-
-        data, feature_means, sample_means = self._preprocess_data(data)
+    def _fit(self, data, feature_means, sample_means):
         init_tensor = self._initialize_factors(data)
 
         prior_scales = None
@@ -705,7 +702,7 @@ class PRISMO:
                 tensor_dict[group_name][view_name] = torch.from_numpy(view_adata.X)
 
         if self._train_opts.batch_size < self.n_samples_total:
-            batch_fraction = self.train_opts.batch_size / self.n_samples_total
+            batch_fraction = self._train_opts.batch_size / self.n_samples_total
 
             # has to be a list of data loaders to zip over
             data_loaders = []
@@ -713,14 +710,14 @@ class PRISMO:
             for group_name in data.keys():
                 tensor_dict[group_name] = TensorDict(
                     {key: tensor_dict[group_name][key] for key in tensor_dict[group_name].keys()},
-                    batch_size=[self._n_samples[group_name]],
+                    batch_size=[self.n_samples[group_name]],
                 )
-                tensor_dict[group_name]["sample_idx"] = torch.arange(self._n_samples[group_name])
+                tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
 
                 data_loaders.append(
                     DataLoader(
                         tensor_dict[group_name],
-                        batch_size=max(1, int(batch_fraction * self._n_samples[group_name])),
+                        batch_size=max(1, int(batch_fraction * self.n_samples[group_name])),
                         shuffle=True,
                         num_workers=0,
                         collate_fn=lambda x: x,
@@ -738,7 +735,7 @@ class PRISMO:
                             dict(
                                 zip(
                                     data.keys(),
-                                    (batch.to(self.train_opts.device) for batch in group_batch),
+                                    (batch.to(self._train_opts.device) for batch in group_batch),
                                     strict=False,
                                 )
                             )

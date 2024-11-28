@@ -21,7 +21,6 @@ urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
     "anndata",
     "mudata",
-    "scanpy",
     "h5py",
     "pyro-ppl",
     "torch",

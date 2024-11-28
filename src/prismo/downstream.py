@@ -260,16 +260,13 @@ def match(
             correlation[i, j] = pearsonr(reference[..., i].flatten(), permutable[..., j].flatten())[0]
     correlation = np.nan_to_num(correlation, 0)
 
-    if nonnegative:
-        correlation = np.clip(correlation, a_min=0.0, a_max=None)
-
     # find the permutation that maximizes the correlation
-    row_ind, permutation = linear_sum_assignment(-1 * np.abs(correlation))
-    signs = np.ones_like(permutation)
+    reference_ind, permutable_ind = linear_sum_assignment(-1 * np.abs(correlation))
+    signs = np.ones_like(permutable_ind)
 
     # if correlation is negative, flip the sign of the corresponding column
     for k in range(signs.shape[0]):
-        if correlation[row_ind, permutation][k] < 0:
+        if correlation[reference_ind, permutable_ind][k] < 0 and not nonnegative:
             signs[k] *= -1
 
-    return permutation, signs
+    return reference_ind, permutable_ind, signs

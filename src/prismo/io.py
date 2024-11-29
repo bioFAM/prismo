@@ -115,7 +115,10 @@ def save_model(
                 df = pd.concat((v for v in model._metadata[group_name].values()), axis=1).reset_index()
                 for i in range(df.shape[1]):
                     col = df.iloc[:, i]
-                    cgrp.create_dataset(col.name, data=col.to_numpy(), **dset_kwargs)
+                    cvals = col.to_numpy()
+                    if cvals.dtype == "O":
+                        cvals[col.isna()] = ""  # np.isnan doesn't work on object arrays
+                    cgrp.create_dataset(col.name, data=cvals, **dset_kwargs)
 
             intercept_grp = f.create_group("intercepts")
             for group_name, gintercepts in intercepts.items():

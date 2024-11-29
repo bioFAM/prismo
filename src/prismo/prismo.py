@@ -1137,12 +1137,12 @@ class PRISMO:
 
                 imputation = factors[k_groups] @ weights[k_views]
 
-                if self.model_opts.likelihoods[k_views] != "Normal":
-                    if self.model_opts.likelihoods[k_views] == "Bernoulli":
+                if self._model_opts.likelihoods[k_views] != "Normal":
+                    if self._model_opts.likelihoods[k_views] == "Bernoulli":
                         imputation = expit(imputation)
                     else:
                         raise NotImplementedError(
-                            f"Imputation for {self.model_opts.likelihoods[k_views]} not implemented."
+                            f"Imputation for {self._model_opts.likelihoods[k_views]} not implemented."
                         )
 
                 if not missing_only:

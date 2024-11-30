@@ -742,11 +742,21 @@ def plot_weights(
     model: "PRISMO",  # noqa F821
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
-    factors: int | Sequence[int] | None = None,
+    factors: int | str | Sequence[int] | Sequence[str] | None = None,
     pointsize: float = 2,
     figsize: tuple[int, int] | None = None,
 ) -> p9.ggplot:
-    """Plot the weights for a given factor and view."""
+    """Plot the weights for a given factor and view.
+
+    Args:
+        model: The PRISMO model.
+        n_features: Number of top features to annotate.
+        views: The views to consider in the ranking. Defaults to all views.
+        factors: The factors to plot. Defaults to all factors.
+        pointsize: Point size for the annotated features. Points for unannotated features will be
+            of size `0.25 * pointsize`.
+        figsize: Figure size in inches.
+    """
     if isinstance(factors, list) and all(isinstance(factor, str) for factor in factors):
         factors = [list(model.factor_names).index(factor) + 1 for factor in factors]
     elif isinstance(factors, str):

@@ -647,8 +647,10 @@ def _prepare_weights_df(
     if factors is None:
         factors = np.arange(model.n_factors)
     else:
-        if not isinstance(factors, Sequence):
-            factors = (factors,)
+        if not isinstance(factors, list):
+            factors = [factors]
+        if all(isinstance(factor, str) for factor in factors):
+            factors = [list(model.factor_names).index(factor) + 1 for factor in factors]
         factors = np.asarray(factors) - 1
 
     df = []
@@ -757,11 +759,6 @@ def plot_weights(
             of size `0.25 * pointsize`.
         figsize: Figure size in inches.
     """
-    if isinstance(factors, list) and all(isinstance(factor, str) for factor in factors):
-        factors = [list(model.factor_names).index(factor) + 1 for factor in factors]
-    elif isinstance(factors, str):
-        factors = list(model.factor_names).index(factors) + 1
-            
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
         figsize = (3 * len(factors), 3 * len(views))
@@ -779,8 +776,7 @@ def plot_weights(
         
     # Add labels for top features
     labeled_data = df[df.annotate].copy()
-    labeled_data["is_positive"] = labeled_data["weight"] > 0
-    n_positive = labeled_data["is_positive"].sum()
+    n_positive = (labeled_data["weight"] > 0).sum()
     n_negative = n_features - n_positive
     num = max(n_positive, n_negative)
 
@@ -793,8 +789,8 @@ def plot_weights(
     # Distribute labels vertically with some spacing
     labeled_data = labeled_data.sort_values("rank")
     labeled_data["y_text_pos"] = (
-        np.linspace(y_max, 0.1 * y_max, num=num)[:n_positive].tolist()
-        + np.linspace(y_min, -0.1 * y_min, num=num)[:n_negative][::-1].tolist()
+        np.linspace(y_max, 0.1 * y_max, num=n_positive).tolist()
+        + np.linspace(y_min, -0.1 * y_min, num=n_negative)[::-1].tolist()
     )
     
     return (
@@ -811,11 +807,12 @@ def plot_weights(
             size=10,
             ha="left",
             va="center",
+            show_legend=False,
         )
         + p9.geom_segment(
             data=labeled_data,
             mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"),
-            arrow=p9.arrow(angle=20, length=0.1, ends="first", type="closed"),
+            arrow=p9.arrow(angle=0, length=0.1, ends="first", type="closed"),
             color="black"
         )
     )

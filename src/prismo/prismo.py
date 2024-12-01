@@ -144,6 +144,7 @@ class TrainingOptions(_Options):
         print_every: Print loss every n steps.
         save: Save model.
         save_path: Path to save model.
+        mofa_compat: Save model in MOFA2 compatible format.
         seed : Random seed.
     """
 
@@ -156,6 +157,7 @@ class TrainingOptions(_Options):
     print_every: int = 100
     save: bool = True
     save_path: str | None = None
+    mofa_compat: bool = False
     seed: int | None = None
 
     def __post_init__(self):
@@ -531,7 +533,7 @@ class PRISMO:
         if self._train_opts.save:
             self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
             logger.info("Saving results...")
-            self._save(self._train_opts.save_path, True, data, feature_means)
+            self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
     def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)

@@ -650,7 +650,7 @@ def _prepare_weights_df(
         if not isinstance(factors, list):
             factors = [factors]
         if all(isinstance(factor, str) for factor in factors):
-            factors = [list(model.factor_names).index(factor) + 1 for factor in factors]
+            factors = np.where(np.isin(model.factor_names, factors))[0] + 1
         factors = np.asarray(factors) - 1
 
     df = []
@@ -788,9 +788,11 @@ def plot_weights(
 
     # Distribute labels vertically with some spacing
     labeled_data = labeled_data.sort_values("rank")
-    labeled_data["y_text_pos"] = (
-        np.linspace(y_max, 0.1 * y_max, num=n_positive).tolist()
-        + np.linspace(y_min, -0.1 * y_min, num=n_negative)[::-1].tolist()
+    labeled_data["y_text_pos"] = np.concatenate(
+        [
+            np.linspace(y_max, 0.1 * y_max, num=n_positive),
+            np.linspace(-0.1 * y_min, y_min, num=n_negative),
+        ]
     )
     
     return (

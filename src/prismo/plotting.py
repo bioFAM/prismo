@@ -647,8 +647,10 @@ def _prepare_weights_df(
     if factors is None:
         factors = np.arange(model.n_factors)
     else:
-        if not isinstance(factors, Sequence):
-            factors = (factors,)
+        if not isinstance(factors, list):
+            factors = [factors]
+        if all(isinstance(factor, str) for factor in factors):
+            factors = np.where(np.isin(model.factor_names, factors))[0] + 1
         factors = np.asarray(factors) - 1
 
     df = []
@@ -742,7 +744,7 @@ def plot_weights(
     model: "PRISMO",  # noqa F821
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
-    factors: int | Sequence[int] | None = None,
+    factors: int | str | Sequence[int] | Sequence[str] | None = None,
     pointsize: float = 2,
     figsize: tuple[int, int] | None = None,
 ) -> p9.ggplot:
@@ -762,23 +764,56 @@ def plot_weights(
         figsize = (3 * len(factors), 3 * len(views))
         if p9.options.limitsize:
             figsize = (min(figsize[0], 25), min(figsize[1], 25))
+
     grp = df.groupby(["factor", "view"])
-    df["rank"] = grp["weight"].rank()
-    df["absrank"] = grp["weightabs"].rank(ascending=False)
-    df["annotate"] = df.absrank <= n_features
+    df["rank"] = grp["weight"].rank(ascending=False, method="min")
+    df["absrank"] = grp["weightabs"].rank(ascending=False, method="min")
+    df["annotate"] = df["absrank"] <= n_features
 
     aes_kwargs = {}
     if have_annot:
         aes_kwargs["color"] = "inferred"
-    plt = (
+        
+    # Add labels for top features
+    labeled_data = df[df.annotate].copy()
+    n_positive = (labeled_data["weight"] > 0).sum()
+    n_negative = n_features - n_positive
+    num = max(n_positive, n_negative)
+
+    y_max = labeled_data["weight"].max()
+    y_min = labeled_data["weight"].min()
+
+    # Set fixed x position in middle of figure
+    labeled_data["x_text_pos"] = df["rank"].max() / 2
+
+    # Distribute labels vertically with some spacing
+    labeled_data = labeled_data.sort_values("rank")
+    labeled_data["y_text_pos"] = np.concatenate(
+        [
+            np.linspace(y_max, 0.1 * y_max, num=n_positive),
+            np.linspace(-0.1 * y_min, y_min, num=n_negative),
+        ]
+    )
+    
+    return (
         p9.ggplot(df, p9.aes("rank", "weight", label="feature", **aes_kwargs))
         + p9.geom_point(p9.aes(size="annotate"), stroke=0)
-        + p9.geom_text(data=df[df.annotate], adjust_text={"min_arrow_len": 1, "arrowstyle": "-"}, show_legend=False)
         + p9.scale_size_manual(breaks=(True, False), values=(pointsize, 0.25 * pointsize), guide=None)
         + _weights_inferred_color_scale
-        + p9.scale_x_continuous(breaks=False)
         + p9.labs(x="Rank", y="Weight", color="")
         + p9.facet_grid("view", "factor", scales="free_y")
         + p9.theme(figure_size=figsize)
+        + p9.geom_text(
+            data=labeled_data,
+            mapping=p9.aes(x="x_text_pos", y="y_text_pos", label="feature", color="inferred"),
+            size=10,
+            ha="left",
+            va="center",
+            show_legend=False,
+        )
+        + p9.geom_segment(
+            data=labeled_data,
+            mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"),
+            color="black"
+        )
     )
-    return plt

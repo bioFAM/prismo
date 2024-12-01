@@ -814,7 +814,6 @@ def plot_weights(
         + p9.geom_segment(
             data=labeled_data,
             mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"),
-            arrow=p9.arrow(angle=0, length=0.1, ends="first", type="closed"),
             color="black"
         )
     )

@@ -397,9 +397,9 @@ class PRISMO:
             # TODO: annotations need to be processed if not aligned or full
             n_informed_factors = annotations[self.view_names[0]].shape[0]
             if isinstance(annotations[self.view_names[0]], pd.DataFrame):
+                factor_names += annotations[self.view_names[0]].index.tolist()
                 for k, vm in annotations.items():
                     annotations[k] = vm.loc[:, self.feature_names[k]].to_numpy()
-                factor_names += annotations[self.view_names[0]].index.tolist()
             else:
                 factor_names += [
                     f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)

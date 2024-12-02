@@ -7,7 +7,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import pairwise_distances
+from scipy.spatial.distance import cdist
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class FeatureSet:
         features : Iterable[str]
             Features to subset.
 
-        Returns
+        Returns:
         -------
         FeatureSet
             A new feature set with the subset of features.
@@ -154,7 +154,7 @@ class FeatureSets:
         partial_name : str
             Feature set (partial) name to search for.
 
-        Returns
+        Returns:
         -------
         FeatureSets
             Search results.
@@ -250,7 +250,7 @@ class FeatureSets:
             Whether to subset the resulting feature sets based on `features`,
             by default True
 
-        Returns
+        Returns:
         -------
         FeatureSets
             Filtered feature sets.
@@ -287,7 +287,7 @@ class FeatureSets:
         sort : bool, optional
             Sort feature sets alphabetically, by default True.
 
-        Returns
+        Returns:
         -------
         pd.DataFrame
             Mask of features.
@@ -303,7 +303,9 @@ class FeatureSets:
             columns=features_list,
         )
 
-    def similarity_to_feature_sets(self, other: "FeatureSets" = None, metric: str = "jaccard") -> pd.DataFrame:
+    def similarity_to_feature_sets(
+        self, other: "FeatureSets" = None, metric: str = "jaccard", metric_kwargs: dict | None = None
+    ) -> pd.DataFrame:
         """Compute similarity matrix between feature sets.
 
         Parameters
@@ -313,7 +315,7 @@ class FeatureSets:
         metric : str, optional
             Similarity metric, by default "jaccard".
 
-        Returns
+        Returns:
         -------
         pd.DataFrame
             Similarity matrix as 1 minus distance matrix,
@@ -326,8 +328,11 @@ class FeatureSets:
 
         self_mask = self.to_mask()
         other_mask = other.to_mask() if other else self_mask
+
+        if metric_kwargs is None:
+            metric_kwargs = {}
         return 1 - pd.DataFrame(
-            pairwise_distances(self_mask.to_numpy(), other_mask.to_numpy(), metric=metric),
+            cdist(self_mask.to_numpy(), other_mask.to_numpy(), metric=metric, **metric_kwargs),
             index=self_mask.index,
             columns=other_mask.index,
         )
@@ -340,7 +345,7 @@ class FeatureSets:
         observations : pd.DataFrame
             Dataframe of observations.
 
-        Returns
+        Returns:
         -------
         pd.DataFrame
             Similarity matrix as correlation matrix.
@@ -367,7 +372,7 @@ class FeatureSets:
         similarity_threshold : float
             Similarity threshold to consider similar pairs.
 
-        Returns
+        Returns:
         -------
         set[tuple[str, str]]
             Similar pairs of feature sets.
@@ -408,7 +413,7 @@ class FeatureSets:
             Similarity threshold to consider similar pairs,
             by default 0.8.
 
-        Returns
+        Returns:
         -------
         set[tuple[str, str]]
             Similar pairs of feature sets.
@@ -439,7 +444,7 @@ class FeatureSets:
         pairs : Iterable[tuple[str, str]]
             Pairs of feature sets.
 
-        Returns
+        Returns:
         -------
         FeatureSets
             Merged feature sets.
@@ -481,7 +486,7 @@ class FeatureSets:
         iteratively : bool, optional
             Whether to merge iteratively, by default True
 
-        Returns
+        Returns:
         -------
         FeatureSets
             Merged feature sets.
@@ -520,86 +525,87 @@ class FeatureSets:
     def to_dict(self) -> dict[str, Iterable[str]]:
         """Convert this feature set collection to a dictionary.
 
-        Returns
+        Returns:
         -------
         dict[str, Iterable[str]]
             Dictionary of feature sets.
         """
         return {fs.name: fs.features for fs in self.feature_sets}
 
+    @classmethod
+    def from_gmt(cls, path: Path, name: Optional[str] = None, **kwargs) -> "FeatureSets":
+        """Create a FeatureSets object from a GMT file.
 
-def from_gmt(path: Path, name: Optional[str] = None, **kwargs) -> FeatureSets:
-    """Create a FeatureSets object from a GMT file.
+        Parameters
+        ----------
+        path : Path
+            Path to the GMT file.
+        name : str, optional
+            Name of the collection, by default None.
 
-    Parameters
-    ----------
-    path : Path
-        Path to the GMT file.
-    name : str, optional
-        Name of the collection, by default None.
+        Returns:
+        -------
+        FeatureSets
+        """
+        feature_sets = set()
+        with open(path) as f:
+            for line in f:
+                fs_name, description, *features = line.strip().split("\t")
+                feature_sets.add(FeatureSet(features, name=fs_name, description=description))
+        return cls(feature_sets, name=name or Path(path).name, **kwargs)
 
-    Returns
-    -------
-    FeatureSets
-    """
-    feature_sets = set()
-    with open(path) as f:
-        for line in f:
-            fs_name, description, *features = line.strip().split("\t")
-            feature_sets.add(FeatureSet(features, name=fs_name, description=description))
-    return FeatureSets(feature_sets, name=name or Path(path).name, **kwargs)
+    @classmethod
+    def from_dict(cls, d: dict[str, Iterable[str]], name: Optional[str] = None, **kwargs) -> "FeatureSets":
+        """Create a FeatureSets object from a dictionary.
 
+        Parameters
+        ----------
+        d : dict[str, Iterable[str]]
+            Dictionary of feature sets.
+        name : str, optional
+            Name of the collection, by default None.
 
-def from_dict(d: dict[str, Iterable[str]], name: Optional[str] = None, **kwargs) -> FeatureSets:
-    """Create a FeatureSets object from a dictionary.
+        Returns:
+        -------
+        FeatureSets
+        """
+        feature_sets = set()
+        for fs_name, features in d.items():
+            feature_sets.add(FeatureSet(features, name=fs_name))
+        return cls(feature_sets, name=name, **kwargs)
 
-    Parameters
-    ----------
-    d : dict[str, Iterable[str]]
-        Dictionary of feature sets.
-    name : str, optional
-        Name of the collection, by default None.
+    @classmethod
+    def from_dataframe(
+        cls,
+        df: pd.DataFrame,
+        name: Optional[str] = None,
+        name_col: str = "name",
+        features_col: str = "features",
+        desc_col: Optional[str] = None,
+        **kwargs,
+    ) -> "FeatureSets":
+        """Create a FeatureSets object from a DataFrame.
 
-    Returns
-    -------
-    FeatureSets
-    """
-    feature_sets = set()
-    for fs_name, features in d.items():
-        feature_sets.add(FeatureSet(features, name=fs_name))
-    return FeatureSets(feature_sets, name=name, **kwargs)
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame of feature sets.
+        name : str, optional
+            Name of the collection, by default None.
+        name_col : str, optional
+            Name of the column containing feature set names, by default "name".
+        features_col : str, optional
+            Name of the column containing feature set features, by default "features".
+        desc_col : str, optional
+            Name of the column containing feature set descriptions, by default None.
 
-
-def from_dataframe(
-    df: pd.DataFrame,
-    name: Optional[str] = None,
-    name_col: str = "name",
-    features_col: str = "features",
-    desc_col: Optional[str] = None,
-    **kwargs,
-) -> FeatureSets:
-    """Create a FeatureSets object from a DataFrame.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame of feature sets.
-    name : str, optional
-        Name of the collection, by default None.
-    name_col : str, optional
-        Name of the column containing feature set names, by default "name".
-    features_col : str, optional
-        Name of the column containing feature set features, by default "features".
-    desc_col : str, optional
-        Name of the column containing feature set descriptions, by default None.
-
-    Returns
-    -------
-    FeatureSets
-    """
-    feature_sets = set()
-    for _, row in df.iterrows():
-        feature_sets.add(
-            FeatureSet(row[features_col], name=row[name_col], description=desc_col is not None and row[desc_col])
-        )
-    return FeatureSets(feature_sets, name=name, **kwargs)
+        Returns:
+        -------
+        FeatureSets
+        """
+        feature_sets = set()
+        for _, row in df.iterrows():
+            feature_sets.add(
+                FeatureSet(row[features_col], name=row[name_col], description=desc_col is not None and row[desc_col])
+            )
+        return cls(feature_sets, name=name, **kwargs)

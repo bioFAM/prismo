@@ -22,10 +22,10 @@ from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
+from .._pl import plot_overview
 from . import gp, preprocessing
 from .io import load_model, save_model
 from .model import Generative, Variational
-from .plotting import plot_overview
 from .training import EarlyStopper
 from .utils import MeanStd
 
@@ -155,7 +155,6 @@ class TrainingOptions(_Options):
     lr: float = 0.001
     early_stopper_patience: int = 100
     print_every: int = 100
-    save: bool = True
     save_path: str | None = None
     mofa_compat: bool = False
     seed: int | None = None
@@ -204,17 +203,13 @@ def _to_device(data, device):
 
 
 class PRISMO:
-    def __init__(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
+    def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
         """Fit the model using the provided data.
 
         Args:
             data: can be any of:
                 - MuData object
-                - dict with view names as keys and AnnData objects as values
-                - dict with view names as keys and torch.Tensor objects as values (single group only)
-                - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `TrainingOptions.group_by`)
             *args: Options for training.
         """
         self._process_options(*args)
@@ -304,7 +299,7 @@ class PRISMO:
 
     @property
     def factor_names(self):
-        return self._factor_names[np.array(self.factor_order)]
+        return self._factor_names
 
     @property
     def warped_covariates(self):
@@ -320,15 +315,15 @@ class PRISMO:
 
     @property
     def gp_lengthscale(self):
-        return self._gp.lengthscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
+        return self._gp.lengthscale.cpu().numpy().squeeze() if self._gp is not None else None
 
     @property
     def gp_scale(self):
-        return self._gp.outputscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
+        return self._gp.outputscale.cpu().numpy().squeeze() if self._gp is not None else None
 
     @property
     def gp_group_correlation(self):
-        return self._gp.group_corr.cpu().numpy()[self.factor_order] if self._gp is not None else None
+        return self._gp.group_corr.cpu().numpy() if self._gp is not None else None
 
     @property
     def training_loss(self):
@@ -532,10 +527,9 @@ class PRISMO:
         if hasattr(self, "_orig_covariates"):
             self._orig_covariates = {g: cov.numpy() for g, cov in self._orig_covariates.items()}
 
-        if self._train_opts.save:
-            self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
-            logger.info("Saving results...")
-            self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
+        self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+        logger.info("Saving results...")
+        self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
     def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)
@@ -967,7 +961,7 @@ class PRISMO:
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
-        ordered=True,
+        ordered: bool = False,
     ):
         """Get all factor matrices, z_x."""
         factors = {
@@ -987,14 +981,12 @@ class PRISMO:
 
         return factors
 
-    def get_r2(self, total=False, ordered=True):
+    def get_r2(self, total: bool = False, ordered: bool = False):
         if total:
             return self._df_r2_full
-        elif not ordered:
-            return {group_name: df.set_index(self._factor_names) for group_name, df in self._df_r2_factors.items()}
         else:
             return {
-                group_name: df.iloc[self.factor_order, :].set_index(self.factor_names)
+                group_name: df.set_index(self.factor_names).iloc[self.factor_order if ordered else slice(None), :]
                 for group_name, df in self._df_r2_factors.items()
             }
 
@@ -1003,15 +995,15 @@ class PRISMO:
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
-        ordered=True,
+        ordered: bool = False,
     ):
         """Get all weight matrices, w_x."""
         weights = {
             view_name: pd.DataFrame(
-                view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
+                view_weights[self.factor_order if ordered else slice(None), :],
+                index=self.factor_names,
+                columns=self.feature_names[view_name],
             )
-            if ordered
-            else pd.DataFrame(view_weights, index=self._factor_names, columns=self.feature_names[view_name])
             for view_name, view_weights in self._get_sparse("weights", moment, sparse_type).items()
         }
 
@@ -1048,13 +1040,20 @@ class PRISMO:
         moment: Literal["mean", "std"] = "mean",
         x: dict[str, torch.Tensor] | None = None,
         batch_size: int | None = None,
+        ordered: bool = False,
     ):
         """Get all latent functions."""
         gps = getattr(self._gps if x is None else self._get_gps(x, batch_size), moment)
         gps = {
-            group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
+            group_name: pd.DataFrame(
+                group_f[self.factor_order if ordered else slice(None), :].T, columns=self.factor_names
+            )
             for group_name, group_f in gps.items()
         }
+
+        if x is None:
+            for gname, df in gps.items():
+                df.set_index(np.asarray(self.sample_names[gname]), inplace=True)
 
         return self._get_component(gps, return_type)
 
@@ -1113,7 +1112,7 @@ class PRISMO:
         return device
 
     def impute_data(
-        self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], missing_only=False
+        self, data: MuData | dict[str, dict[str, ad.AnnData]], missing_only=False
     ) -> dict[dict[str, ad.AnnData]]:
         """Impute (missing) values in the training data using the trained factorization.
 
@@ -1122,11 +1121,7 @@ class PRISMO:
         Args:
             data: can be any of:
                 - MuData object
-                - dict with view names as keys and AnnData objects as values
-                - dict with view names as keys and torch.Tensor objects as values (single group only)
-                - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `TrainingOptions.group_by`)
             missing_only: Only impute missing values in the data. Default is False.
         """
         imputed_data = preprocessing.cast_data(data, group_by=self._data_opts.group_by, copy=True)
@@ -1157,9 +1152,6 @@ class PRISMO:
                     imputed_data[k_groups][k_views].X[mask] = imputation[mask]
 
         return imputed_data
-
-    def save(self, path: str | Path):
-        self._save(path, False)
 
     def _save(
         self,

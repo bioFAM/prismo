@@ -46,7 +46,7 @@ def save_model(
     if mofa_compat and intercepts is None:
         raise ValueError("Need intercepts if saving in MOFA compatibility mode.")
 
-    from . import __version__
+    from .. import __version__
 
     dset_kwargs = {"compression": "gzip", "compression_opts": 9}
 
@@ -229,7 +229,7 @@ def load_model(path: str | Path, map_location=None):
         ValueError: If the file format is invalid.
         ImportError: If version compatibility issues are detected.
     """
-    from . import __version__
+    from .. import __version__
 
     path = Path(path)
     with h5py.File(path, "r") as f:

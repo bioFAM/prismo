@@ -40,7 +40,6 @@ def test_save_load_model(setup_teardown):
             device="cpu",
             lr=0.001,
             max_epochs=1,  # Train for a single epoch
-            save=True,
             save_path=temp_file,
         ),
     )

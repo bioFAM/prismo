@@ -773,12 +773,11 @@ def plot_weights(
     aes_kwargs = {}
     if have_annot:
         aes_kwargs["color"] = "inferred"
-        
+
     # Add labels for top features
     labeled_data = df[df.annotate].copy()
     n_positive = (labeled_data["weight"] > 0).sum()
     n_negative = n_features - n_positive
-    num = max(n_positive, n_negative)
 
     y_max = labeled_data["weight"].max()
     y_min = labeled_data["weight"].min()
@@ -789,12 +788,9 @@ def plot_weights(
     # Distribute labels vertically with some spacing
     labeled_data = labeled_data.sort_values("rank")
     labeled_data["y_text_pos"] = np.concatenate(
-        [
-            np.linspace(y_max, 0.1 * y_max, num=n_positive),
-            np.linspace(-0.1 * y_min, y_min, num=n_negative),
-        ]
+        [np.linspace(y_max, 0.1 * y_max, num=n_positive), np.linspace(-0.1 * y_min, y_min, num=n_negative)]
     )
-    
+
     return (
         p9.ggplot(df, p9.aes("rank", "weight", label="feature", **aes_kwargs))
         + p9.geom_point(p9.aes(size="annotate"), stroke=0)
@@ -812,8 +808,6 @@ def plot_weights(
             show_legend=False,
         )
         + p9.geom_segment(
-            data=labeled_data,
-            mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"),
-            color="black"
+            data=labeled_data, mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"), color="black"
         )
     )

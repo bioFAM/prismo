@@ -303,7 +303,7 @@ class PRISMO:
 
     @property
     def factor_names(self):
-        return self._factor_names[np.array(self.factor_order)]
+        return self._factor_names
 
     @property
     def warped_covariates(self):
@@ -319,15 +319,15 @@ class PRISMO:
 
     @property
     def gp_lengthscale(self):
-        return self._gp.lengthscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
+        return self._gp.lengthscale.cpu().numpy().squeeze() if self._gp is not None else None
 
     @property
     def gp_scale(self):
-        return self._gp.outputscale.cpu().numpy().squeeze()[self.factor_order] if self._gp is not None else None
+        return self._gp.outputscale.cpu().numpy().squeeze() if self._gp is not None else None
 
     @property
     def gp_group_correlation(self):
-        return self._gp.group_corr.cpu().numpy()[self.factor_order] if self._gp is not None else None
+        return self._gp.group_corr.cpu().numpy() if self._gp is not None else None
 
     @property
     def training_loss(self):
@@ -965,7 +965,7 @@ class PRISMO:
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
-        ordered=True,
+        ordered: bool = False,
     ):
         """Get all factor matrices, z_x."""
         factors = {
@@ -985,14 +985,12 @@ class PRISMO:
 
         return factors
 
-    def get_r2(self, total=False, ordered=True):
+    def get_r2(self, total: bool = False, ordered: bool = False):
         if total:
             return self._df_r2_full
-        elif not ordered:
-            return {group_name: df.set_index(self._factor_names) for group_name, df in self._df_r2_factors.items()}
         else:
             return {
-                group_name: df.iloc[self.factor_order, :].set_index(self.factor_names)
+                group_name: df.set_index(self.factor_names).iloc[self.factor_order if ordered else slice(None), :]
                 for group_name, df in self._df_r2_factors.items()
             }
 
@@ -1001,15 +999,15 @@ class PRISMO:
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
-        ordered=True,
+        ordered: bool = False,
     ):
         """Get all weight matrices, w_x."""
         weights = {
             view_name: pd.DataFrame(
-                view_weights[self.factor_order, :], index=self.factor_names, columns=self.feature_names[view_name]
+                view_weights[self.factor_order if ordered else slice(None), :],
+                index=self.factor_names,
+                columns=self.feature_names[view_name],
             )
-            if ordered
-            else pd.DataFrame(view_weights, index=self._factor_names, columns=self.feature_names[view_name])
             for view_name, view_weights in self._get_sparse("weights", moment, sparse_type).items()
         }
 
@@ -1046,13 +1044,20 @@ class PRISMO:
         moment: Literal["mean", "std"] = "mean",
         x: dict[str, torch.Tensor] | None = None,
         batch_size: int | None = None,
+        ordered: bool = False,
     ):
         """Get all latent functions."""
         gps = getattr(self._gps if x is None else self._get_gps(x, batch_size), moment)
         gps = {
-            group_name: pd.DataFrame(group_f[self.factor_order, :].T, columns=self.factor_names)
+            group_name: pd.DataFrame(
+                group_f[self.factor_order if ordered else slice(None), :].T, columns=self.factor_names
+            )
             for group_name, group_f in gps.items()
         }
+
+        if x is None:
+            for gname, df in gps.items():
+                df.set_index(np.asarray(self.sample_names[gname]), inplace=True)
 
         return self._get_component(gps, return_type)
 

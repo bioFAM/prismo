@@ -184,7 +184,8 @@ def save_model(
                 smooth_opts_grp.create_dataset("opt_freq", data=1)
                 smooth_opts_grp.create_dataset("sparseGP", data=b"True")
                 smooth_opts_grp.create_dataset("warping_freq", data=model._gp_opts.warp_interval)
-                smooth_opts_grp.create_dataset("warping_ref", data=model._gp_opts.warp_reference_group)
+                if model._gp_opts.warp_reference_group is not None:
+                    smooth_opts_grp.create_dataset("warping_ref", data=model._gp_opts.warp_reference_group)
                 smooth_opts_grp.create_dataset(
                     "warping_open_begin", data=np.asarray(model._gp_opts.warp_open_begin).astype("S")
                 )

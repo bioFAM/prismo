@@ -161,6 +161,7 @@ class TrainingOptions(_Options):
     seed: int | None = None
 
     def __post_init__(self):
+        super().__post_init__()
         self.device = torch.device(self.device)
 
 
@@ -187,6 +188,7 @@ class SmoothOptions(_Options):
     warp_reference_group: str | None = None
 
     def __post_init__(self):
+        super().__post_init__()
         self.warp_groups = list(self.warp_groups)  # in case the user passed a tuple here, we need a list for saving
 
 

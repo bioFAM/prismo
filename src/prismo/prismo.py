@@ -203,17 +203,13 @@ def _to_device(data, device):
 
 
 class PRISMO:
-    def __init__(self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], *args: _Options):
+    def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
         """Fit the model using the provided data.
 
         Args:
             data: can be any of:
                 - MuData object
-                - dict with view names as keys and AnnData objects as values
-                - dict with view names as keys and torch.Tensor objects as values (single group only)
-                - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `TrainingOptions.group_by`)
             *args: Options for training.
         """
         self._process_options(*args)
@@ -1116,7 +1112,7 @@ class PRISMO:
         return device
 
     def impute_data(
-        self, data: MuData | dict[str, ad.AnnData] | dict[str, dict[str, ad.AnnData]], missing_only=False
+        self, data: MuData | dict[str, dict[str, ad.AnnData]], missing_only=False
     ) -> dict[dict[str, ad.AnnData]]:
         """Impute (missing) values in the training data using the trained factorization.
 
@@ -1125,11 +1121,7 @@ class PRISMO:
         Args:
             data: can be any of:
                 - MuData object
-                - dict with view names as keys and AnnData objects as values
-                - dict with view names as keys and torch.Tensor objects as values (single group only)
-                - dict with group names as keys and MuData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `group_by`)
-                - Nested dict with group names as keys, view names as subkeys and torch.Tensor objects as values (incompatible with `group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `TrainingOptions.group_by`)
             missing_only: Only impute missing values in the data. Default is False.
         """
         imputed_data = preprocessing.cast_data(data, group_by=self._data_opts.group_by, copy=True)

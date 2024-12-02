@@ -110,7 +110,7 @@ class ModelOptions(_Options):
         likelihoods: Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None.
         nonnegative_weights: Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
         nonnegative_factors: Non-negativity constraints for factors for each group (if dict) or for all groups (if bool).
-        annotations: Dictionary with weight annotations for informed views.
+        annotations: Dictionary with weight annotations for informed views. Must have shape (n_factors, n_features).
         annotations_varm_key: Key of .varm attribute of each AnnData object that contains annotation values.
         prior_penalty: Prior penalty for annotations. #TODO: add more detail
         init_factors: Initialization method for factors.
@@ -398,7 +398,7 @@ class PRISMO:
             n_informed_factors = annotations[self.view_names[0]].shape[0]
             if isinstance(annotations[self.view_names[0]], pd.DataFrame):
                 for k, vm in annotations.items():
-                    annotations[k] = vm.loc[:, self.feature_names[k]].copy()
+                    annotations[k] = vm.loc[:, self.feature_names[k]].to_numpy()
                 factor_names += annotations[self.view_names[0]].index.tolist()
             else:
                 factor_names += [

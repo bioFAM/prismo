@@ -774,22 +774,26 @@ def plot_weights(
     if have_annot:
         aes_kwargs["color"] = "inferred"
 
-    # Add labels for top features
-    labeled_data = df[df.annotate].copy()
-    n_positive = (labeled_data["weight"] > 0).sum()
-    n_negative = n_features - n_positive
+    labeled_data = df[df.annotate].assign(ha=lambda x: np.where(x["weight"] > 0, "left", "right"))
+    y_max = labeled_data.groupby("view", observed=True)["weight"].max()
+    y_min = labeled_data.groupby("view", observed=True)["weight"].min()
 
-    y_max = labeled_data["weight"].max()
-    y_min = labeled_data["weight"].min()
+    labeled_groups = []
+    for (view, _), cdf in labeled_data.groupby(["view", "factor"], observed=True):
+        n_positive = (cdf["weight"] > 0).sum()
+        n_negative = n_features - n_positive
 
-    # Set fixed x position in middle of figure
+        cdf.sort_values("rank", inplace=True)
+        cdf["y_text_pos"] = np.concatenate(
+            [
+                np.linspace(y_max[view], 0.1 * y_max[view], num=n_positive),
+                np.linspace(0.1 * y_min[view], y_min[view], num=n_negative),
+            ]
+        )
+        labeled_groups.append(cdf)
+    labeled_data = pd.concat(labeled_groups, axis=0, ignore_index=True)
+
     labeled_data["x_text_pos"] = df["rank"].max() / 2
-
-    # Distribute labels vertically with some spacing
-    labeled_data = labeled_data.sort_values("rank")
-    labeled_data["y_text_pos"] = np.concatenate(
-        [np.linspace(y_max, 0.1 * y_max, num=n_positive), np.linspace(-0.1 * y_min, y_min, num=n_negative)]
-    )
 
     return (
         p9.ggplot(df, p9.aes("rank", "weight", label="feature", **aes_kwargs))
@@ -801,13 +805,12 @@ def plot_weights(
         + p9.theme(figure_size=figsize)
         + p9.geom_text(
             data=labeled_data,
-            mapping=p9.aes(x="x_text_pos", y="y_text_pos", label="feature", color="inferred"),
+            mapping=p9.aes(x="x_text_pos", y="y_text_pos", label="feature", color="inferred", ha="ha"),
             size=10,
-            ha="left",
             va="center",
             show_legend=False,
         )
         + p9.geom_segment(
-            data=labeled_data, mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"), color="black"
+            data=labeled_data, mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"), color="gray"
         )
     )

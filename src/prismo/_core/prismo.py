@@ -22,10 +22,10 @@ from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
+from .._pl import plot_overview
 from . import gp, preprocessing
 from .io import load_model, save_model
 from .model import Generative, Variational
-from .plotting import plot_overview
 from .training import EarlyStopper
 from .utils import MeanStd
 

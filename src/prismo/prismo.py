@@ -155,7 +155,6 @@ class TrainingOptions(_Options):
     lr: float = 0.001
     early_stopper_patience: int = 100
     print_every: int = 100
-    save: bool = True
     save_path: str | None = None
     mofa_compat: bool = False
     seed: int | None = None
@@ -532,10 +531,9 @@ class PRISMO:
         if hasattr(self, "_orig_covariates"):
             self._orig_covariates = {g: cov.numpy() for g, cov in self._orig_covariates.items()}
 
-        if self._train_opts.save:
-            self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
-            logger.info("Saving results...")
-            self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
+        self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+        logger.info("Saving results...")
+        self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
     def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)
@@ -1157,9 +1155,6 @@ class PRISMO:
                     imputed_data[k_groups][k_views].X[mask] = imputation[mask]
 
         return imputed_data
-
-    def save(self, path: str | Path):
-        self._save(path, False)
 
     def _save(
         self,

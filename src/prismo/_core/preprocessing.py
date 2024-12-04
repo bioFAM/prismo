@@ -148,7 +148,7 @@ def infer_likelihoods(data: dict) -> dict:
     likelihoods = {}
 
     for k, v in data.items():
-        v_X = torch.tensor(v.X, dtype=torch.float).clone().detach()
+        v_X = torch.tensor(v.X, dtype=torch.float32).clone().detach()
         v_X = torch.nan_to_num(v_X, nan=0.0, posinf=0.0, neginf=0.0)
 
         try:
@@ -192,7 +192,7 @@ def validate_likelihoods(data: dict, likelihoods: dict) -> dict:
 
     """
     for k, v in data.items():
-        v_X = torch.tensor(v.X, dtype=torch.float).clone().detach()
+        v_X = torch.tensor(v.X, dtype=torch.float32).clone().detach()
         v_X = torch.nan_to_num(v_X, nan=0.0, posinf=0.0, neginf=0.0)
 
         if likelihoods[k] == "Bernoulli":
@@ -646,7 +646,7 @@ def extract_covariate(
         if obs_key is not None:
             for view_adata in group_dict.values():
                 if obs_key in view_adata.obs.columns:
-                    covariates_group.append(torch.tensor(view_adata.obs[obs_key], dtype=torch.float).unsqueeze(-1))
+                    covariates_group.append(torch.tensor(view_adata.obs[obs_key], dtype=torch.float32).unsqueeze(-1))
             if len(covariates_group) > 0:
                 covariates_names[group_name] = obs_key
             else:
@@ -659,7 +659,7 @@ def extract_covariate(
             for view_adata in group_dict.values():
                 if obsm_key in view_adata.obsm.keys():
                     covar_dim.append(view_adata.obsm[obsm_key].shape[1])
-                    covariates_group.append(torch.tensor(view_adata.obsm[obsm_key], dtype=torch.float))
+                    covariates_group.append(torch.tensor(view_adata.obsm[obsm_key], dtype=torch.float32))
 
             if len(set(covar_dim)) > 1:
                 raise ValueError(f"Number of covariate dimensions in group {group_name} must be the same across views.")

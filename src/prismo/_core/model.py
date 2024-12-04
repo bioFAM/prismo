@@ -1036,8 +1036,8 @@ class Variational(PyroModule):
         for group_name in self.generative.group_names:
             if self.generative.factor_prior[group_name] == "SnS":
                 d = dist.Gamma(*self._get_shape_and_rate(f"alpha_z_{group_name}"))
-                alphas.mean[group_name] = d.mean
-                alphas.std[group_name] = d.stddev
+                alphas.mean[group_name] = d.mean.cpu().numpy().squeeze()
+                alphas.std[group_name] = d.stddev.cpu().numpy().squeeze()
         return alphas
 
     @torch.inference_mode()
@@ -1069,8 +1069,8 @@ class Variational(PyroModule):
         for view_name in self.generative.view_names:
             if self.generative.weight_prior[view_name] == "SnS":
                 d = dist.Gamma(*self._get_shape_and_rate(f"alpha_w_{view_name}"))
-                alphas.mean[view_name] = d.mean
-                alphas.std[view_name] = d.stddev
+                alphas.mean[view_name] = d.mean.cpu().numpy().squeeze()
+                alphas.std[view_name] = d.stddev.cpu().numpy().squeeze()
         return alphas
 
     @torch.inference_mode()

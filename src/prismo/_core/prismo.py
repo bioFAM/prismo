@@ -9,6 +9,7 @@ from typing import Literal
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import pyro
 import scipy.stats as stats
@@ -29,7 +30,10 @@ from .model import Generative, Variational
 from .training import EarlyStopper
 from .utils import MeanStd
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
+
+_ResultsTypeDF = dict[str, pd.DataFrame | ad.AnnData | npt.NDArray[np.float32]]
+_ResultsTypeSeries = dict[str, pd.Series | ad.AnnData | npt.NDArray[np.float32]]
 
 
 @dataclass(kw_only=True)
@@ -209,7 +213,8 @@ class PRISMO:
         Args:
             data: can be any of:
                 - MuData object
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `TrainingOptions.group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
+                    (incompatible with `TrainingOptions.group_by`)
             *args: Options for training.
         """
         self._process_options(*args)
@@ -243,90 +248,123 @@ class PRISMO:
 
     @property
     def group_names(self) -> list[str]:
+        """Group names."""
         return self._group_names
 
     @property
     def n_groups(self) -> int:
+        """Number of groups."""
         return len(self.group_names)
 
     @property
     def view_names(self) -> list[str]:
+        """View names."""
         return self._view_names
 
     @property
     def n_views(self) -> int:
+        """Number of views."""
         return len(self.view_names)
 
     @property
     def feature_names(self) -> dict[str, list[str]]:
+        """Feature names for each view."""
         return self._feature_names
 
     @property
     def n_features(self) -> dict[str, int]:
+        """Number of features in each view."""
         return {k: len(v) for k, v in self.feature_names.items()}
 
     @property
+    def n_features_total(self) -> int:
+        """Total number of features."""
+        return sum(self.n_features.values())
+
+    @property
     def sample_names(self) -> dict[str, list[str]]:
+        """Sample names for each group."""
         return self._sample_names
 
     @property
     def n_samples(self) -> dict[str, int]:
+        """Number of samples in each group."""
         return {k: len(v) for k, v in self.sample_names.items()}
 
     @property
     def n_samples_total(self) -> int:
+        """Total number of samples."""
         return sum(self.n_samples.values())
 
     @property
     def n_factors(self):
+        """Total number of factors."""
         return self._model_opts.n_factors
 
     @property
     def n_dense_factors(self) -> int:
+        """Number of dense (uninformed) factors."""
         return self._n_dense_factors
 
     @property
     def n_informed_factors(self) -> int:
+        """Number of informed factors."""
         return self._n_informed_factors
 
     @property
-    def factor_order(self):
+    def factor_order(self) -> npt.NDArray[int]:
+        """Ordering of factors by explained variance (highest to lowest)."""
         return self._factor_order
 
     @factor_order.setter
-    def factor_order(self, value):
-        self._factor_order = self._factor_order[np.array(value)]
+    def factor_order(self, value: npt.ArrayLike):
+        order = np.asarray(value, dtype=int)
+        if order.ndim != 1:
+            raise ValueError(f"The ordering must have 1 dimension, but got {order.ndim}.")
+        if order.size != self.n_factors:
+            raise ValueError(f"The ordering must have {self.n_factors} items, but got {order.size}.")
+        if order.min() != 0 or order.max() != self.n_factors - 1 or np.unique(order).size != order.size:
+            raise ValueError(f"The ordering must contain all integers in [0, {self.n_factors}].")
+        self._factor_order = order
 
     @property
-    def factor_names(self):
+    def factor_names(self) -> npt.NDArray[str | np.str_]:
+        """Factor names."""
         return self._factor_names
 
     @property
-    def warped_covariates(self):
+    def warped_covariates(self) -> dict[str, npt.NDArray[np.float32]] | None:
+        """Time-warped covariates for each group, if using a GP prior and dynamic time warping was enabled."""
         return self._covariates if hasattr(self, "_orig_covariates") else None
 
     @property
-    def covariates(self):
+    def covariates(self) -> dict[str, npt.NDArray[np.float32]]:
+        """Covariates for each group, if using a GP prior."""
         return self._orig_covariates if hasattr(self, "_orig_covariates") else self._covariates
 
     @property
-    def covariates_names(self):
+    def covariates_names(self) -> dict[str, str | npt.NDArray[str | np.str_]]:
+        """Covariate names for each group where they could be inferred from the input."""
         return self._covariates_names
 
     @property
-    def gp_lengthscale(self):
+    def gp_lengthscale(self) -> npt.NDArray[np.float32] | None:
+        """Inferred lengthscales for each factor, if using a GP prior."""
         return self._gp.lengthscale.cpu().numpy().squeeze() if self._gp is not None else None
 
     @property
-    def gp_scale(self):
+    def gp_scale(self) -> npt.NDArray[np.float32] | None:
+        """Inferred variance scales (smoothness) for each factor, if using a GP prior."""
         return self._gp.outputscale.cpu().numpy().squeeze() if self._gp is not None else None
 
     @property
-    def gp_group_correlation(self):
+    def gp_group_correlation(self) -> npt.NDArray[np.float32]:
+        """Between-group correlation for each factor, if using a GP prior."""
         return self._gp.group_corr.cpu().numpy() if self._gp is not None else None
 
     @property
-    def training_loss(self):
+    def training_loss(self) -> npt.NDArray[np.float32]:
+        """Total loss (negative ELBO) for each training epoch."""
         return self._train_loss_elbo
 
     def _setup_likelihoods(self, data, likelihoods):
@@ -341,15 +379,15 @@ class PRISMO:
             data_concatenated[k_views] = ad.concat(data_concatenated[k_views], axis=0)
 
         if likelihoods is None:
-            logger.info("- No likelihoods provided. Inferring likelihoods from data.")
+            _logger.info("- No likelihoods provided. Inferring likelihoods from data.")
             likelihoods = preprocessing.infer_likelihoods(data_concatenated)
 
         elif isinstance(likelihoods, dict):
-            logger.info("- Checking compatibility of provided likelihoods with data.")
+            _logger.info("- Checking compatibility of provided likelihoods with data.")
             preprocessing.validate_likelihoods(data_concatenated, likelihoods)
 
         elif isinstance(likelihoods, str):
-            logger.info("- Using provided likelihood for all views.")
+            _logger.info("- Using provided likelihood for all views.")
             likelihoods = {k: likelihoods for k in view_names}
             # Still validate likelihoods
             preprocessing.validate_likelihoods(data_concatenated, likelihoods)
@@ -358,7 +396,7 @@ class PRISMO:
             raise ValueError("likelihoods must be a dictionary or string.")
 
         for k, v in likelihoods.items():
-            logger.info(f"  - {k}: {v}")
+            _logger.info(f"  - {k}: {v}")
 
         return likelihoods
 
@@ -455,7 +493,7 @@ class PRISMO:
                     if self._gp_opts.warp_reference_group is None:
                         self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
                 elif len(self._gp_opts.warp_groups) == 1:
-                    logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
+                    _logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
                     self._gp_opts.warp_groups = []
 
             self._gp = gp.GP(
@@ -494,7 +532,7 @@ class PRISMO:
         n_iterations = int(self._train_opts.max_epochs * (self.n_samples_total // self._train_opts.batch_size))
         gamma = 0.1
         lrd = gamma ** (1 / n_iterations)
-        logger.info(f"Decaying learning rate over {n_iterations} iterations.")
+        _logger.info(f"Decaying learning rate over {n_iterations} iterations.")
         optimizer = ClippedAdam({"lr": self._train_opts.lr, "lrd": lrd})
 
         svi = SVI(
@@ -520,7 +558,7 @@ class PRISMO:
         self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
         self._gps = self._get_gps(self._covariates)
         self._dispersions = variational.get_dispersion()
-        self._train_loss_elbo = train_loss_elbo
+        self._train_loss_elbo = np.asarray(train_loss_elbo)
 
         if self._covariates is not None:
             self._covariates = {g: cov.numpy() for g, cov in self._covariates.items()}
@@ -528,12 +566,12 @@ class PRISMO:
             self._orig_covariates = {g: cov.numpy() for g, cov in self._orig_covariates.items()}
 
         self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
-        logger.info("Saving results...")
+        _logger.info("Saving results...")
         self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
     def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)
-        logger.info(f"Initializing factors using `{self._model_opts.init_factors}` method...")
+        _logger.info(f"Initializing factors using `{self._model_opts.init_factors}` method...")
 
         with self._train_opts.device:
             match self._model_opts.init_factors:
@@ -616,7 +654,7 @@ class PRISMO:
             try:
                 self._train_opts.seed = int(self._train_opts.seed)
             except ValueError:
-                logger.warning(f"Could not convert `{self._train_opts.seed}` to integer.")
+                _logger.warning(f"Could not convert `{self._train_opts.seed}` to integer.")
                 self._train_opts.seed = None
 
         if self._train_opts.seed is None:
@@ -748,7 +786,7 @@ class PRISMO:
                 with self._train_opts.device:
                     return svi.step(tensor_dict)
 
-        logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
+        _logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
         random.seed(self._train_opts.seed)
         np.random.seed(self._train_opts.seed)
         torch.manual_seed(self._train_opts.seed)
@@ -756,7 +794,7 @@ class PRISMO:
         pyro.set_rng_seed(self._train_opts.seed)
 
         # clean start
-        logger.info("Cleaning parameter store.")
+        _logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)
         pyro.clear_param_store()
 
@@ -769,15 +807,15 @@ class PRISMO:
 
         for i in range(self._train_opts.max_epochs):
             loss = step_fn()
-            if len(self._gp_opts.warp_groups) and not i % self._gp_opts.warp_interval:
+            if self._gp is not None and len(self._gp_opts.warp_groups) and not i % self._gp_opts.warp_interval:
                 self._warp_covariates(variational, gp_warp_groups_order)
             train_loss_elbo.append(loss)
 
             if i % self._train_opts.print_every == 0:
-                logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
+                _logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {loss:>10.2f}")
 
             if earlystopper.step(loss):
-                logger.info(f"Training finished after {i} steps.")
+                _logger.info(f"Training finished after {i} steps.")
                 break
 
         self._post_fit(data, feature_means, variational, train_loss_elbo)
@@ -856,7 +894,7 @@ class PRISMO:
     def _r2(self, y_true, factors, weights, view_name):
         r2_full = self._r2_impl(y_true, factors, weights, view_name)
         if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
-            logger.info(
+            _logger.info(
                 f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
             )
             return r2_full, [0.0] * factors.shape[0]
@@ -899,7 +937,7 @@ class PRISMO:
                         view_data.X[sample_idx, :], factors[group_name][:, sample_idx], weights[view_name], view_name
                     )
                 except NotImplementedError:
-                    logger.warning(
+                    _logger.warning(
                         f"R2 calculation for {self.model_opts.likelihoods[view_name]} likelihood has not yet been implemented. Skipping view {view_name} for group {group_name}."
                     )
             if len(group_r2_factors) == 0:
@@ -912,13 +950,14 @@ class PRISMO:
         # sum the R2 values across all groups
         df_concat = pd.concat(dfs_factors.values())
         df_sum = df_concat.groupby(df_concat.index).sum()
+        dfs_full = pd.DataFrame(dfs_full)
 
         try:
             # sort factors according to mean R2 across all views
             sorted_r2_means = df_sum.mean(axis=1).sort_values(ascending=False)
             factor_order = sorted_r2_means.index.to_numpy()
         except NameError:
-            logger.info("Sorting factors failed. Using default order.")
+            _logger.info("Sorting factors failed. Using default order.")
             factor_order = np.array(list(range(self.model_opts.n_factors)))
 
         return dfs_full, dfs_factors, factor_order
@@ -946,7 +985,7 @@ class PRISMO:
                         cvals = cvals * probs[name]
                     else:
                         p = probs[name]
-                        a = precs.mean[name]
+                        a = precs.mean[name][:, None]
                         cvals = np.sqrt(vals.mean[name] ** 2 * p * (1 - p) + p * cvals**2 + (1 - p) / a**2)
                 elif sparse_type == "thresh":
                     if moment == "mean":
@@ -962,14 +1001,25 @@ class PRISMO:
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
         ordered: bool = False,
-    ):
-        """Get all factor matrices, z_x."""
+    ) -> _ResultsTypeDF:
+        """Get the factor matrices Z for each group.
+
+        Args:
+             return_type: Format of the returned object.
+             moment: Which moment of the posterior distribution to return.
+             sparse_type: How to handle sparsity when using the spike and slab prior.
+                 - raw: Do nothing, return inferred values for all entries.
+                 - mix: Return the corresponding moment of a mixture distribution of two
+                     Normal distributions: One centered at 0 and the other centered at the
+                     inferred non-sparse value. The mixture is weighted by the inferred
+                     sparsity probability. This is what MOFA does.
+                 - thresh: Set all values with a sparsity probablity > 0.5 to 0.
+             ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+        """
         factors = {
             group_name: pd.DataFrame(
-                group_factors[self.factor_order, :].T, index=self.sample_names[group_name], columns=self.factor_names
-            )
-            if ordered
-            else pd.DataFrame(group_factors.T, index=self.sample_names[group_name], columns=self._factor_names)
+                group_factors.T, index=self.sample_names[group_name], columns=self.factor_names
+            ).iloc[:, self.factor_order if ordered else slice(None)]
             for group_name, group_factors in self._get_sparse("factors", moment, sparse_type).items()
         }
         factors = self._get_component(factors, return_type)
@@ -981,7 +1031,17 @@ class PRISMO:
 
         return factors
 
-    def get_r2(self, total: bool = False, ordered: bool = False):
+    def get_r2(self, total: bool = False, ordered: bool = False) -> pd.DataFrame | dict[str, pd.DataFrame]:
+        """Get the fraction of explained variance for each view and group.
+
+        Args:
+             total: If `True`, returns a DataFrame with fraction of explained variance for the full
+                 model for each group (columns) and view (rows). Otherwise returns a dict with group
+                 names as keys containing DataFrames with the fraction of explained variance for each
+                 view (columns) and factor(rows).
+             ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+                 Has no effect if `total == True`.
+        """
         if total:
             return self._df_r2_full
         else:
@@ -996,37 +1056,73 @@ class PRISMO:
         moment: Literal["mean", "std"] = "mean",
         sparse_type: Literal["raw", "mix", "thresh"] = "mix",
         ordered: bool = False,
-    ):
-        """Get all weight matrices, w_x."""
+    ) -> _ResultsTypeDF:
+        """Get the weight matrices W for each view.
+
+        Args:
+             return_type: Format of the returned object.
+             moment: Which moment of the posterior distribution to return.
+             sparse_type: How to handle sparsity when using the spike and slab prior.
+                 - raw: Do nothing, return inferred values for all entries.
+                 - mix: Return the corresponding moment of a mixture distribution of two
+                     Normal distributions: One centered at 0 and the other centered at the
+                     inferred non-sparse value. The mixture is weighted by the inferred
+                     sparsity probability. This is what MOFA does.
+                 - thresh: Set all values with a sparsity probablity > 0.5 to 0.
+             ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+        """
         weights = {
-            view_name: pd.DataFrame(
-                view_weights[self.factor_order if ordered else slice(None), :],
-                index=self.factor_names,
-                columns=self.feature_names[view_name],
-            )
+            view_name: pd.DataFrame(view_weights, index=self.factor_names, columns=self.feature_names[view_name]).iloc[
+                self.factor_order if ordered else slice(None), :
+            ]
             for view_name, view_weights in self._get_sparse("weights", moment, sparse_type).items()
         }
 
         return self._get_component(weights, return_type)
 
-    def get_sparse_factor_probabilities(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
+    def get_sparse_factor_probabilities(
+        self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered: bool = False
+    ) -> _ResultsTypeDF:
+        """Get the probabilties that a factor value is non-sparse for each group with a spike and slab factor prior.
+
+        Args:
+             return_type: Format of the returned object.
+             ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+        """
         probs = {
-            group_name: pd.Series(group_prob, index=self.sample_names[group_name])
-            for group_name, group_prob in self._sparse_factors_probabilities
+            group_name: pd.DataFrame(group_prob.T, index=self.sample_names[group_name], columns=self.factor_names).iloc[
+                :, self.factor_order if ordered else slice(None)
+            ]
+            for group_name, group_prob in self._sparse_factors_probabilities.items()
         }
         return self._get_component(probs, return_type)
 
-    def get_sparse_weight_probabilities(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas"):
+    def get_sparse_weight_probabilities(
+        self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered: bool = False
+    ) -> _ResultsTypeDF:
+        """Get the probabilties that a weight value is non-sparse for each view with a spike and slab view prior.
+
+        Args:
+             return_type: Format of the returned object.
+             ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+        """
         probs = {
-            view_name: pd.Series(view_prob, index=self.feature_names[view_name])
+            view_name: pd.DataFrame(view_prob, index=self.factor_names, columns=self.feature_names[view_name]).iloc[
+                self.factor_order if ordered else slice(None), :
+            ]
             for view_name, view_prob in self._sparse_weights_probabilities.items()
         }
         return self._get_component(probs, return_type)
 
     def get_dispersion(
         self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", moment: Literal["mean", "std"] = "mean"
-    ):
-        """Get all dispersion vectors, dispersion_x."""
+    ) -> _ResultsTypeSeries:
+        """Get the dispersion vectors for each view.
+
+        Args:
+             return_type: Format of the returned object.
+             moment: Which moment of the posterior distribution to return.
+        """
         dispersion = {
             view_name: pd.Series(view_dispersion, index=self.feature_names[view_name])
             for view_name, view_dispersion in getattr(self._dispersions, moment).items()
@@ -1038,11 +1134,21 @@ class PRISMO:
         self,
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
         moment: Literal["mean", "std"] = "mean",
-        x: dict[str, torch.Tensor] | None = None,
+        x: dict[str, np.ndarray | torch.Tensor] | None = None,
         batch_size: int | None = None,
         ordered: bool = False,
-    ):
-        """Get all latent functions."""
+    ) -> _ResultsTypeDF:
+        """Get all latent functions.
+
+        Args:
+             return_type: Format of the returned object.
+             moment: Which moment of the posterior distribution to return.
+             x: Covariate values for each group. If `None`, will return latent function values at
+                 covariate coordinates used for training.
+             batch_size: Minibatch size. Only has an effect if `x` is not `None`. Defaults to the
+                 minibatch size used for training.
+             ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+        """
         gps = getattr(self._gps if x is None else self._get_gps(x, batch_size), moment)
         gps = {
             group_name: pd.DataFrame(
@@ -1075,7 +1181,11 @@ class PRISMO:
                         end_idx = min(start_idx + batch_size, gdata.shape[0])
                         minibatch = gdata[start_idx:end_idx]
 
-                        gp_dist = self._gp(gidx.expand(minibatch.shape[0], 1), torch.as_tensor(minibatch), prior=False)
+                        gp_dist = self._gp(
+                            gidx.expand(minibatch.shape[0], 1),
+                            torch.as_tensor(minibatch, dtype=torch.float32),
+                            prior=False,
+                        )
 
                         mean.append(gp_dist.mean.cpu().numpy().squeeze())
                         std.append(gp_dist.stddev.cpu().numpy().squeeze())
@@ -1084,21 +1194,26 @@ class PRISMO:
                     gps.std[group_name] = np.concatenate(std, axis=1)
         return gps
 
-    def get_annotations(self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered=True):
-        """Get all annotation matrices, a_x."""
+    def get_annotations(
+        self, return_type: Literal["pandas", "anndata", "numpy"] = "pandas", ordered=False
+    ) -> _ResultsTypeDF:
+        """Get the annotation matrices for each view.
+
+        Args:
+            return_type: Format of the returned object.
+            ordered: Whether to return the factors ordered by explained variance (highest to lowest).
+        """
         annotations = {
-            k: (
-                pd.DataFrame(v[self.factor_order, :], index=self.factor_names, columns=self.feature_names[k])
-                if ordered
-                else pd.DataFrame(v, index=self._factor_names, columns=self.feature_names[k])
-            ).astype(bool)
+            k: pd.DataFrame(v, index=self.factor_names, columns=self.feature_names[k])
+            .astype(bool)
+            .iloc[self.factor_order if ordered else slice(None), :]
             for k, v in self._annotations.items()
         }
 
         return self._get_component(annotations, return_type)
 
     def _setup_device(self, device):
-        logger.info("Setting up device...")
+        _logger.info("Setting up device...")
 
         device = torch.device(device)
         tens = torch.tensor(())
@@ -1106,7 +1221,7 @@ class PRISMO:
             tens.to(device)
         except (RuntimeError, AssertionError):
             default_device = tens.device
-            logger.warning(f"Device {str(device)} is not available. Using default device: {default_device}")
+            _logger.warning(f"Device {str(device)} is not available. Using default device: {default_device}")
             device = default_device
 
         return device
@@ -1121,7 +1236,8 @@ class PRISMO:
         Args:
             data: can be any of:
                 - MuData object
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values (incompatible with `TrainingOptions.group_by`)
+                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
+                    (incompatible with `TrainingOptions.group_by`)
             missing_only: Only impute missing values in the data. Default is False.
         """
         imputed_data = preprocessing.cast_data(data, group_by=self._data_opts.group_by, copy=True)
@@ -1147,7 +1263,7 @@ class PRISMO:
                 if not missing_only:
                     imputed_data[k_groups][k_views].X = imputation
                 else:
-                    logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
+                    _logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
                     mask = np.isnan(imputed_data[k_groups][k_views].X)
                     imputed_data[k_groups][k_views].X[mask] = imputation[mask]
 
@@ -1165,7 +1281,7 @@ class PRISMO:
             "factors": self._factors._asdict(),
             "covariates": self._covariates,
             "covariates_names": self._covariates_names,
-            "df_r2_full": pd.DataFrame(self._df_r2_full),  # can't save a Series to hdf5
+            "df_r2_full": self._df_r2_full,
             "df_r2_factors": self._df_r2_factors,
             "n_dense_factors": self._n_dense_factors,
             "n_informed_factors": self._n_informed_factors,
@@ -1201,6 +1317,13 @@ class PRISMO:
 
     @classmethod
     def load(cls, path: str | Path, map_location=None) -> "PRISMO":
+        """Load a saved PRISMO model.
+
+        Args:
+            path: Path to the saved model file.
+            map_location: Specify how to remap storage locations for PyTorch tensors. See the `torch.load`
+                documentation for details.
+        """
         state, pickle = load_model(path)
 
         model = cls.__new__(cls)
@@ -1210,7 +1333,7 @@ class PRISMO:
         if "orig_covariates" in state:
             model._orig_covariates = state["orig_covariates"]
         model._covariates_names = state.get("covariates_names")
-        model._df_r2_full = state["df_r2_full"].iloc[:, 0]
+        model._df_r2_full = state["df_r2_full"]
         model._df_r2_factors = state["df_r2_factors"]
         model._n_dense_factors = state["n_dense_factors"]
         model._n_informed_factors = state["n_informed_factors"]

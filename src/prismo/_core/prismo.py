@@ -324,7 +324,7 @@ class PRISMO:
         if order.size != self.n_factors:
             raise ValueError(f"The ordering must have {self.n_factors} items, but got {order.size}.")
         if order.min() != 0 or order.max() != self.n_factors - 1 or np.unique(order).size != order.size:
-            raise ValueError(f"The ordering must contain all integers in [0, {self.n_factors}].")
+            raise ValueError(f"The ordering must contain all integers in [0, {self.n_factors}).")
         self._factor_order = order
 
     @property

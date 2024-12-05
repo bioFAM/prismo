@@ -3,11 +3,12 @@
 import itertools
 import logging
 import math
-from typing import Optional
+from collections.abc import Iterable
 
 import anndata as ad
 import mudata as mu
 import numpy as np
+import numpy.typing as npt
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class DataGenerator:
     latent factors, different likelihoods, and optional covariates and response variables.
 
     Attributes:
-        n_samples: Number of samples to generate.
         n_features: List of feature counts for each view.
+        n_samples: Number of samples to generate.
         n_views: Number of views in the dataset.
         n_fully_shared_factors: Number of factors shared across all views.
         n_partially_shared_factors: Number of factors shared between some views.
@@ -36,19 +37,18 @@ class DataGenerator:
 
     def __init__(
         self,
+        n_features: list[int],
         n_samples: int = 1000,
-        n_features: Optional[list[int]] = None,
-        likelihoods: Optional[list[str]] = None,
+        likelihoods: list[str] | None = None,
         n_fully_shared_factors: int = 2,
         n_partially_shared_factors: int = 15,
         n_private_factors: int = 3,
-        factor_size_params: Optional[tuple[float]] = None,
+        factor_size_params: tuple[float] | None = None,
         factor_size_dist: str = "uniform",
         n_active_factors: float = 1.0,
         n_covariates: int = 0,
         n_response: int = 0,
-        nmf: Optional[list[bool]] = None,
-        **kwargs,
+        nmf: list[bool] | None = None,
     ) -> None:
         self.n_samples = n_samples
         self.n_features = n_features
@@ -92,28 +92,30 @@ class DataGenerator:
 
         # set upon data generation
         # covariates
-        self.x = None
+        self._x = None
         # covariate coefficients
-        self.betas = None
+        self._betas = None
         # latent factors
-        self.z = None
+        self._z = None
         # factor loadings
-        self.ws = None
-        self.sigmas = None
-        self.ys = None
-        self.w_masks = None
-        self.noisy_w_masks = None
-        self.active_factor_indices = None
-        self.view_factor_mask = None
+        self._ws = None
+        self._sigmas = None
+        self._ys = None
+        self._w_masks = None
+        self._noisy_w_masks = None
+        self._active_factor_indices = None
+        self._view_factor_mask = None
         # set when introducing missingness
-        self.presence_masks = None
+        self._presence_masks = None
+        self._missing_ys = None
 
-        self.response_w = None
-        self.response_sigma = None
-        self.response = None
+        self._response_w = None
+        self._response_sigma = None
+        self._response = None
 
     @property
-    def n_factors(self):
+    def n_factors(self) -> int:
+        """Total number of factors."""
         return self.n_fully_shared_factors + self.n_partially_shared_factors + self.n_private_factors
 
     def _to_matrix(self, matrix_list):
@@ -127,7 +129,7 @@ class DataGenerator:
 
     def _mask_to_nan(self):
         nan_masks = []
-        for mask in self.presence_masks:
+        for mask in self._presence_masks:
             nan_mask = np.array(mask, dtype=np.float32, copy=True)
             nan_mask[nan_mask == 0] = np.nan
             nan_masks.append(nan_mask)
@@ -135,43 +137,54 @@ class DataGenerator:
 
     def _mask_to_bool(self):
         bool_masks = []
-        for mask in self.presence_masks:
+        for mask in self._presence_masks:
             bool_mask = mask == 1.0
             bool_masks.append(bool_mask)
         return bool_masks
 
     @property
-    def missing_ys(self):
-        if self.ys is None:
+    def missing_ys(self) -> list[npt.NDArray[np.float32]]:
+        """Generated data with non-missing values replaced with `np.nan`."""
+        if self._ys is None:
             logger.warning("Generate data first by calling `generate`.")
             return []
-        if self.presence_masks is None:
+        if self._presence_masks is None:
             logger.warning("Introduce missing data first by calling `generate_missingness`.")
-            return self.ys
+            return self._ys
 
         nan_masks = self._mask_to_nan()
 
-        return [self.ys[m] * nan_masks[m] for m in range(self.n_views)]
+        return [self._ys[m] * nan_masks[m] for m in range(self.n_views)]
 
     @property
-    def y(self):
-        return self._attr_to_matrix("ys")
+    def y(self) -> npt.NDArray[np.float32]:
+        """Generated data."""
+        return self._attr_to_matrix("_ys")
 
     @property
-    def missing_y(self):
-        return self._attr_to_matrix("missing_ys")
+    def missing_y(self) -> npt.NDArray[np.float32]:
+        """Generated data with non-missing values replaced with `np.nan`."""
+        return self._attr_to_matrix("_missing_ys")
 
     @property
-    def w(self):
-        return self._attr_to_matrix("ws")
+    def w(self) -> npt.NDArray[np.float32]:
+        """Generated weights."""
+        return self._attr_to_matrix("_ws")
 
     @property
-    def w_mask(self):
-        return self._attr_to_matrix("w_masks")
+    def z(self) -> npt.NDArray[np.float32]:
+        """Generated latent factors."""
+        return self._z
 
     @property
-    def noisy_w_mask(self):
-        return self._attr_to_matrix("noisy_w_masks")
+    def w_mask(self) -> npt.NDArray[np.bool]:
+        """Gene set mask describing co-expressed genes."""
+        return self._attr_to_matrix("_w_masks")
+
+    @property
+    def noisy_w_mask(self) -> npt.NDArray[np.bool]:
+        """Gene set mask describing co-expressed genes, with added noise."""
+        return self._attr_to_matrix("_noisy_w_masks")
 
     def _generate_view_factor_mask(self, rng=None, all_combs=False):
         if all_combs and self.n_views == 1:
@@ -189,11 +202,11 @@ class DataGenerator:
                 f"{self.n_private_factors} private factors."
             )
 
-            return np.array([list(i) for i in itertools.product([1, 0], repeat=self.n_views)])[:-1, :].T
+            return np.array([list(i) for i in itertools.product([1, 0], repeat=self.n_views)], dtype=bool)[:-1, :].T
         if rng is None:
             rng = np.random.default_rng()
 
-        view_factor_mask = np.ones([self.n_views, self.n_factors])
+        view_factor_mask = np.ones([self.n_views, self.n_factors], dtype=bool)
 
         for factor_idx in range(self.n_fully_shared_factors, self.n_factors):
             # exclude view subsets for partially shared factors
@@ -217,28 +230,38 @@ class DataGenerator:
 
         return view_factor_mask
 
-    def normalise(self, with_std=False):
+    def normalise(self, with_std: bool = False):
+        """Normalize data with a Gaussian likelihood to zero mean and optionally unit variance.
+
+        Args:
+            with_std: If `True`, also normalize to unit variance. Otherwise, only shift to zero mean.
+        """
         for m in range(self.n_views):
             if self.likelihoods[m] == "normal":
-                y = np.array(self.ys[m], dtype=np.float32, copy=True)
+                y = np.array(self._ys[m], dtype=np.float32, copy=True)
                 y -= y.mean(axis=0)
                 if with_std:
                     y_std = y.std(axis=0)
                     y = np.divide(y, y_std, out=np.zeros_like(y), where=y_std != 0)
-                self.ys[m] = y
+                self._ys[m] = y
 
-    def sigmoid(self, x):
+    def _sigmoid(self, x: float):
         return 1.0 / (1 + np.exp(-x))
 
-    def generate(self, seed: Optional[int] = None, all_combs: bool = False, overwrite: bool = False) -> None:
-        rng = np.random.default_rng()
+    def generate(self, seed: int | None = None, all_combs: bool = False, overwrite: bool = False):
+        """Generate synthetic data.
 
-        if seed is not None:
-            rng = np.random.default_rng(seed)
+        Args:
+            seed: Seed for the pseudorandom number generator.
+            all_combs: Wether to generate all combinations of active factors and views. If `True`, the model
+                will have 1 shared factor, `n_views` private factors, and `2**n_views - n_views -2` partially
+                shared factors.
+            overwrite: Whether to overwrite already generated data
+        """
+        rng = np.random.default_rng(seed)
 
-        if self.ys is not None and not overwrite:
-            logger.warning("Data has already been generated, " "to generate new data please set `overwrite` to True.")
-            return rng
+        if self._ys is not None and not overwrite:
+            raise ValueError("Data has already been generated, " "to generate new data please set `overwrite` to True.")
 
         view_factor_mask = self._generate_view_factor_mask(rng, all_combs)
 
@@ -268,13 +291,13 @@ class DataGenerator:
 
         for factor_idx in range(self.n_factors):
             if factor_idx not in active_factor_indices:
-                view_factor_mask[:, factor_idx] = 0.0
+                view_factor_mask[:, factor_idx] = 0
 
         for m in range(self.n_views):
             n_features = self.n_features[m]
             w_shape = (self.n_factors, n_features)
             w = rng.standard_normal(w_shape)
-            w_mask = np.zeros(w_shape)
+            w_mask = np.zeros(w_shape, dtype=np.bool)
 
             fraction_active_features = {
                 "gamma": (
@@ -285,13 +308,12 @@ class DataGenerator:
             }[self.factor_size_dist](self.factor_size_params[m][0], self.factor_size_params[m][1])
 
             for factor_idx, faft in enumerate(fraction_active_features):
-                if view_factor_mask[m, factor_idx] > 0:
+                if view_factor_mask[m, factor_idx]:
                     w_mask[factor_idx] = rng.choice(2, n_features, p=[1 - faft, faft])
 
             # set small values to zero
             tiny_w_threshold = 0.1
-            w_mask[np.abs(w) < tiny_w_threshold] = 0.0
-            w_mask = w_mask.astype(bool)
+            w_mask[np.abs(w) < tiny_w_threshold] = False
             # add some noise to avoid exactly zero values
             w = np.where(w_mask, w, rng.standard_normal(w_shape) / 100)
             assert ((np.abs(w) > tiny_w_threshold) == w_mask).all()
@@ -313,15 +335,16 @@ class DataGenerator:
             # generate feature sigmas
             sigma = 1.0 / np.sqrt(rng.gamma(10.0, 1.0, n_features))
 
-            if self.likelihoods[m] == "normal":
-                y = rng.normal(loc=y_loc, scale=sigma)
-                if self.nmf[m]:
-                    y = np.abs(y)
-            elif self.likelihoods[m] == "bernoulli":
-                y = rng.binomial(1, self.sigmoid(y_loc))
-            elif self.likelihoods[m] == "poisson":
-                rate = np.exp(y_loc)
-                y = rng.poisson(rate)
+            match self.likelihoods[m]:
+                case "normal":
+                    y = rng.normal(loc=y_loc, scale=sigma)
+                    if self.nmf[m]:
+                        y = np.abs(y)
+                case "bernoulli":
+                    y = rng.binomial(1, self._sigmoid(y_loc))
+                case "poisson":
+                    rate = np.exp(y_loc)
+                    y = rng.poisson(rate)
 
             ws.append(w)
             sigmas.append(sigma)
@@ -329,46 +352,60 @@ class DataGenerator:
             w_masks.append(w_mask)
 
         if self.n_covariates > 0:
-            self.x = x
-            self.betas = betas
+            self._x = x
+            self._betas = betas
 
-        self.z = z
-        self.ws = ws
-        self.w_masks = w_masks
-        self.sigmas = sigmas
-        self.ys = ys
-        self.active_factor_indices = active_factor_indices
-        self.view_factor_mask = view_factor_mask
+        self._z = z
+        self._ws = ws
+        self._w_masks = w_masks
+        self._sigmas = sigmas
+        self._ys = ys
+        self._active_factor_indices = active_factor_indices
+        self._view_factor_mask = view_factor_mask
 
         if self.n_response > 0:
-            self.response_w = rng.standard_normal((self.n_factors, self.n_response))
-            self.response_sigma = 1.0 / np.sqrt(rng.gamma(10.0, 1.0, self.n_response))
-            self.response = rng.normal(loc=np.matmul(z, self.response_w), scale=self.response_sigma)
+            self._response_w = rng.standard_normal((self.n_factors, self.n_response))
+            self._response_sigma = 1.0 / np.sqrt(rng.gamma(10.0, 1.0, self.n_response))
+            self._response = rng.normal(loc=np.matmul(z, self._response_w), scale=self._response_sigma)
 
-        return rng
+    def get_noisy_mask(
+        self, seed: int | None = None, noise_fraction: float = 0.1, informed_view_indices: Iterable[int] | None = None
+    ) -> list[npt.NDArray[bool]]:
+        """Generate a noisy version of `w_mask`, the mask describing co-expressed genes.
 
-    def get_noisy_mask(self, rng=None, noise_fraction=0.1, informed_view_indices=None):
-        if rng is None:
-            rng = np.random.default_rng()
+        Noisy in this context means that some annotations are wrong, i.e. some genes active in a particular factor
+        are marked as inactive, and some genes inactive in a factor are marked as active.
+
+        Args:
+            seed: Seed for the pseudorandom number generator.
+            noise_fraction: Fraction of active genes per factor that will be marked as inactive. The same number of
+                inactive genes will be marked as active.
+            informed_view_indices: Indices of views that will be used to benchmark informed models. Noisy masks will
+                be generated only for those views. For uninformed views, th enoisy masks will be filled with `False`.
+
+        Returns:
+            A list with a noisy mask for each view.
+        """
+        rng = np.random.default_rng(seed)
 
         if informed_view_indices is None:
             logger.warning("Parameter `informed_view_indices` set to None, " "adding noise to all views.")
             informed_view_indices = list(range(self.n_views))
 
-        noisy_w_masks = [np.array(mask, copy=True) for mask in self.w_masks]
+        noisy_w_masks = [mask.copy() for mask in self._w_masks]
 
         if len(informed_view_indices) == 0:
             logger.warning(
                 "Parameter `informed_view_indices` " "set to an empty list, removing information from all views."
             )
-            self.noisy_w_masks = [np.ones_like(mask) for mask in noisy_w_masks]
-            return self.noisy_w_masks
+            self._noisy_w_masks = [np.ones_like(mask) for mask in noisy_w_masks]
+            return self._noisy_w_masks
 
         for m in range(self.n_views):
             noisy_w_mask = noisy_w_masks[m]
 
             if m in informed_view_indices:
-                fraction_active_cells = noisy_w_mask.mean(axis=1).sum() / self.view_factor_mask[0].sum()
+                fraction_active_cells = noisy_w_mask.mean(axis=1).sum() / self._view_factor_mask[0].sum()
                 for factor_idx in range(self.n_factors):
                     active_cell_indices = noisy_w_mask[factor_idx, :].nonzero()[0]
                     # if all features turned off
@@ -391,32 +428,36 @@ class DataGenerator:
                     )
 
                     for on_idx, off_idx in swapped_indices:
-                        noisy_w_mask[factor_idx, active_cell_indices[on_idx]] = 0.0
-                        noisy_w_mask[factor_idx, inactive_cell_indices[off_idx]] = 1.0
+                        noisy_w_mask[factor_idx, active_cell_indices[on_idx]] = False
+                        noisy_w_mask[factor_idx, inactive_cell_indices[off_idx]] = True
 
             else:
-                noisy_w_mask.fill(0.0)
+                noisy_w_mask.fill(False)
 
-        self.noisy_w_masks = noisy_w_masks
-        return self.noisy_w_masks
+        self._noisy_w_masks = noisy_w_masks
+        return self._noisy_w_masks
 
     def generate_missingness(
         self,
-        random_fraction: float = 0.0,
+        seed: int | None = None,
         n_partial_samples: int = 0,
         n_partial_features: int = 0,
         missing_fraction_partial_features: float = 0.0,
-        seed=None,
+        random_fraction: float = 0.0,
     ):
-        rng = np.random.default_rng()
+        """Mark observations as missing.
 
-        if seed is not None:
-            rng = np.random.default_rng(seed)
+        Args:
+            seed: Seed for the pseudorandom number generator.
+            n_partial_samples: Number of samples marked as missing in one random view. If the model has only
+                one view, this has no effect.
+            n_partial_features: Number of features marked as missing in some samples.
+            missing_fraction_partial_features: Fraction of samples marked as missing due to `n_partial_features`.
+            random_fraction: Fraction of all observations marked as missing at random.
+        """
+        rng = np.random.default_rng(seed)
 
-        n_partial_samples = int(n_partial_samples)
-        n_partial_features = int(n_partial_features)
-
-        sample_view_mask = np.ones((self.n_samples, self.n_views))
+        sample_view_mask = np.ones((self.n_samples, self.n_views), dtype=np.bool)
         missing_sample_indices = rng.choice(self.n_samples, n_partial_samples, replace=False)
 
         # partially missing samples
@@ -449,9 +490,7 @@ class DataGenerator:
             end_offset = view_feature_offsets[offset_idx + 1]
             masks.append(mask[:, start_offset:end_offset])
 
-        self.presence_masks = masks
-
-        return rng
+        self._presence_masks = masks
 
     def _permute_features(self, lst, new_order):
         return [np.array(lst[m][:, o], copy=True) for m, o in enumerate(new_order)]
@@ -459,44 +498,79 @@ class DataGenerator:
     def _permute_factors(self, lst, new_order):
         return [np.array(lst[m][o, :], copy=True) for m, o in enumerate(new_order)]
 
-    def permute_features(self, new_feature_order):
-        if len(new_feature_order) != self.n_features:
+    def permute_features(self, new_feature_order: Iterable[int]):
+        """Permute features.
+
+        Args:
+            new_feature_order: New ordering of features.
+        """
+        n_features = sum(self.n_features)
+        if len(new_feature_order) != n_features:
             raise ValueError("Length of new order list must equal the number of features.")
+        new_feature_order = np.asarray(new_feature_order, dtype=np.int)
+        if (
+            new_feature_order.min() != 0
+            or new_feature_order.max() != n_features - 1
+            or np.unique(new_feature_order).size != new_feature_order.size
+        ):
+            raise ValueError(f"New order must contain all integers in [0, {n_features}).")
 
-        if self.betas is not None:
-            self.betas = self._permute_features(self.betas, new_feature_order)
-        self.ws = self._permute_features(self.ws, new_feature_order)
-        self.w_masks = self._permute_features(self.w_masks, new_feature_order)
-        if self.noisy_w_masks is not None:
-            self.noisy_w_masks = self._permute_features(self.noisy_w_masks, new_feature_order)
-        self.sigmas = self._permute_features(self.sigmas, new_feature_order)
-        self.ys = self._permute_features(self.ys, new_feature_order)
-        if self.presence_masks is not None:
-            self.missing_ys = self._permute_features(self.missing_ys, new_feature_order)
-            self.presence_masks = self._permute_features(self.presence_masks, new_feature_order)
+        if self._betas is not None:
+            self._betas = self._permute_features(self._betas, new_feature_order)
+        self._ws = self._permute_features(self._ws, new_feature_order)
+        self._w_masks = self._permute_features(self._w_masks, new_feature_order)
+        if self._noisy_w_masks is not None:
+            self._noisy_w_masks = self._permute_features(self._noisy_w_masks, new_feature_order)
+        self._sigmas = self._permute_features(self._sigmas, new_feature_order)
+        self._ys = self._permute_features(self._ys, new_feature_order)
+        if self._presence_masks is not None:
+            self._missing_ys = self._permute_features(self._missing_ys, new_feature_order)
+            self._presence_masks = self._permute_features(self._presence_masks, new_feature_order)
 
-    def permute_factors(self, new_factor_order):
+    def permute_factors(self, new_factor_order: Iterable[int]):
+        """Permute factors.
+
+        Args:
+            new_factor_order: New ordering of factors.
+        """
         if len(new_factor_order) != self.n_factors:
             raise ValueError("Length of new order list must equal the number of factors.")
+        new_factor_order = np.asarray(new_factor_order)
+        if (
+            new_factor_order.min() != 0
+            or new_factor_order.max() != self.n_factors - 1
+            or np.unique(new_factor_order).size != new_factor_order.size
+        ):
+            raise ValueError(f"New order must contain all integers in [0, {self.n_factors}).")
 
-        self.z = np.array(self.z[:, np.array(new_factor_order)], copy=True)
-        self.ws = self._permute_factors(self.ws, new_factor_order)
-        self.w_masks = self._permute_factors(self.w_masks, new_factor_order)
-        if self.noisy_w_masks is not None:
-            self.noisy_w_masks = self._permute_factors(self.noisy_w_masks, new_factor_order)
-        self.view_factor_mask = [self.view_factor_mask[m, np.array(new_factor_order)] for m in range(self.n_views)]
-        self.active_factor_indices = np.array(self.active_factor_indices[np.array(new_factor_order)], copy=True)
+        self._z = np.array(self._z[:, np.array(new_factor_order)], copy=True)
+        self._ws = self._permute_factors(self._ws, new_factor_order)
+        self._w_masks = self._permute_factors(self._w_masks, new_factor_order)
+        if self._noisy_w_masks is not None:
+            self._noisy_w_masks = self._permute_factors(self._noisy_w_masks, new_factor_order)
+        self._view_factor_mask = [self._view_factor_mask[m, np.array(new_factor_order)] for m in range(self.n_views)]
+        self._active_factor_indices = np.array(self._active_factor_indices[np.array(new_factor_order)], copy=True)
 
     def to_mdata(self, noisy=False) -> mu.MuData:
+        """Export the generated data as a `MuData` object.
+
+        The `AnnData` objects generated for each view will have their weights in `.varm["w"]` and the gene set mask
+        in `.varm["w_mask"]. The latent factors will be in `.obsm["z"]` of the `MuData` object, the likelihoods in
+        `.uns["likelihoods"]` and the number of active factors in `.uns["n_active_factors"]`. If covariates
+        were simulated, they will be in `.obsm["x"]`.
+
+        Args:
+            noisy: Whether to export the noisy or noise-free gene set mask.
+        """
         view_names = []
         ad_dict = {}
         for m in range(self.n_views):
-            adata = ad.AnnData(self.ys[m], dtype=np.float32)
+            adata = ad.AnnData(self._ys[m], dtype=np.float32)
             adata.var_names = f"feature_group_{m}:" + adata.var_names
-            adata.varm["w"] = self.ws[m].T
-            w_mask = self.w_masks[m].T
+            adata.varm["w"] = self._ws[m].T
+            w_mask = self._w_masks[m].T
             if noisy:
-                w_mask = self.noisy_w_masks[m].T
+                w_mask = self._noisy_w_masks[m].T
             adata.varm["w_mask"] = w_mask
             view_name = f"feature_group_{m}"
             ad_dict[view_name] = adata
@@ -505,9 +579,8 @@ class DataGenerator:
         mdata = mu.MuData(ad_dict)
         mdata.uns["likelihoods"] = dict(zip(view_names, self.likelihoods, strict=False))
         mdata.uns["n_active_factors"] = self.n_active_factors
-        if self.x is not None:
-            mdata.obsm["x"] = self.x
-        if self.z is not None:
-            mdata.obsm["z"] = self.z
+        mdata.obsm["z"] = self._z
+        if self._x is not None:
+            mdata.obsm["x"] = self._x
 
         return mdata

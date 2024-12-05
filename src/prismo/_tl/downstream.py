@@ -1,5 +1,4 @@
 import logging
-from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -12,7 +11,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-Index = Union[int, str, list[int], list[str], np.ndarray, pd.Index]
+Index = int | str | list[int] | list[str] | np.ndarray | pd.Index
 
 
 def _test_single_view(
@@ -40,10 +39,6 @@ def _test_single_view(
             - "t": DataFrame of t-statistics
             - "p": DataFrame of p-values
             - "p_adj": DataFrame of adjusted p-values (if p_adj_method is not None)
-
-    Raises:
-        IndexError: If view_name is invalid or not found in model.
-        ValueError: If feature_sets is invalid or empty after filtering.
     """
     use_prior_mask = feature_sets is None
     adjust_p = p_adj_method is not None
@@ -172,9 +167,6 @@ def test(
         dict: Nested dictionary with structure:
             {sign: {view_name: test_results}}
             where test_results contains t-statistics, p-values, and adjusted p-values.
-
-    Raises:
-        ValueError: If no valid views are found or feature sets are invalid.
     """
     use_prior_mask = feature_sets is None
     if use_prior_mask:

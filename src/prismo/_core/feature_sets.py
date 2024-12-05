@@ -1,9 +1,10 @@
 # Highly inspired by https://github.com/krassowski/gsea-api
+from __future__ import annotations
+
 import logging
 from collections import Counter
 from collections.abc import Collection, Iterable
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -47,32 +48,28 @@ class FeatureSet:
     def __iter__(self) -> Iterable[str]:
         return iter(self.features)
 
-    def __eq__(self, other: "FeatureSet") -> bool:
+    def __eq__(self, other: FeatureSet) -> bool:
         return self.features == other.features
 
     def __hash__(self) -> int:
         return hash(self.features)
 
-    def __and__(self, other: "FeatureSet") -> "FeatureSet":
+    def __and__(self, other: FeatureSet) -> FeatureSet:
         return FeatureSet(self.features & other.features, name=f"{self.name}&{other.name}")
 
-    def __or__(self, other: "FeatureSet") -> "FeatureSet":
+    def __or__(self, other: FeatureSet) -> FeatureSet:
         return FeatureSet(self.features | other.features, name=f"{self.name}|{other.name}")
 
-    def __add__(self, other: "FeatureSet") -> "FeatureSet":
+    def __add__(self, other: FeatureSet) -> FeatureSet:
         return self.__or__(other)
 
-    def subset(self, features: Iterable[str]) -> "FeatureSet":
+    def subset(self, features: Iterable[str]) -> FeatureSet:
         """Subset features from a feature set.
 
-        Parameters
-        ----------
-        features : Iterable[str]
-            Features to subset.
+        Args:
+            features: Features to subset.
 
         Returns:
-        -------
-        FeatureSet
             A new feature set with the subset of features.
         """
         return FeatureSet(self.features & features, name=self.name)
@@ -131,32 +128,28 @@ class FeatureSets:
         )
         return f"<FeatureSets {self.name!r} with {len(self)} " + f"feature sets{feature_sets}>"
 
-    def __eq__(self, other: "FeatureSets") -> bool:
+    def __eq__(self, other: FeatureSets) -> bool:
         return self.feature_sets == other.feature_sets
 
     def __hash__(self) -> int:
         return hash(self.feature_sets)
 
-    def __and__(self, other: "FeatureSets") -> "FeatureSets":
+    def __and__(self, other: FeatureSets) -> FeatureSets:
         return FeatureSets(name=f"{self.name}&{other.name}", feature_sets=self.feature_sets & other.feature_sets)
 
-    def __or__(self, other: "FeatureSets") -> "FeatureSets":
+    def __or__(self, other: FeatureSets) -> FeatureSets:
         return FeatureSets(name=f"{self.name}|{other.name}", feature_sets=self.feature_sets | other.feature_sets)
 
-    def __add__(self, other: "FeatureSets") -> "FeatureSets":
+    def __add__(self, other: FeatureSets) -> FeatureSets:
         return self.__or__(other)
 
-    def find(self, partial_name: str):
+    def find(self, partial_name: str) -> FeatureSets:
         """Perform a simple search given a (partial) feature set name.
 
-        Parameters
-        ----------
-        partial_name : str
-            Feature set (partial) name to search for.
+        Args:
+            partial_name: Feature set (partial) name to search for.
 
         Returns:
-        -------
-        FeatureSets
             Search results.
         """
         return FeatureSets(
@@ -167,10 +160,8 @@ class FeatureSets:
     def remove(self, names: Iterable[str]):
         """Remove feature sets by name.
 
-        Parameters
-        ----------
-        names : Iterable[str]
-            Collection of feature set names.
+        Args:
+            names: Collection of feature set names.
         """
         return FeatureSets(
             {feature_set for feature_set in self.feature_sets if feature_set.name not in names}, name=self.name
@@ -179,24 +170,19 @@ class FeatureSets:
     def keep(self, names: Iterable[str]):
         """Keep feature sets by name.
 
-        Parameters
-        ----------
-        names : Iterable[str]
-            Collection of feature set names.
+        Args:
+            names: Collection of feature set names.
         """
         return FeatureSets(
             {feature_set for feature_set in self.feature_sets if feature_set.name in names}, name=self.name
         )
 
-    def trim(self, min_count: int = 1, max_count: Optional[int] = None):
+    def trim(self, min_count: int = 1, max_count: int | None = None):
         """Trim feature sets by min/max size.
 
-        Parameters
-        ----------
-        min_count : int, optional
-            Minimum number of features, by default 1.
-        max_count : int, optional
-            Maximum number of features, by default None.
+        Args:
+            min_count: Minimum number of features, by default 1.
+            max_count: Maximum number of features, by default None.
         """
         return FeatureSets(
             {
@@ -210,10 +196,8 @@ class FeatureSets:
     def subset(self, features: Iterable[str]):
         """Subset feature sets by features.
 
-        Parameters
-        ----------
-        features : Iterable[str]
-            Collection of features.
+        Args:
+            features: Collection of features.
         """
         return FeatureSets({feature_set.subset(set(features)) for feature_set in self.feature_sets}, name=self.name)
 
@@ -222,37 +206,21 @@ class FeatureSets:
         features: Iterable[str],
         min_fraction: float = 0.5,
         min_count: int = 5,
-        max_count: Optional[int] = None,
-        keep: Optional[Iterable[str]] = None,
+        max_count: int | None = None,
+        keep: Iterable[str] | None = None,
         subset: bool = True,
-    ):
+    ) -> FeatureSets:
         """Filter feature sets.
 
-        Parameters
-        ----------
-        features : Iterable[str]
-            Features to filter.
-        min_fraction : float, optional
-            Mininimum portion of the feature set to be present in `features`,
-            by default 0.5
-        min_count : int, optional
-            Minimum size of the intersection set
-            between a feature set and the set of `features`,
-            by default 5
-        max_count : int, optional
-            Maximum size of the intersection set
-            between a feature set and the set of `features`,
-            by default None
-        keep : Iterable[str], optional
-            Feature sets to keep regardless of the filter conditions,
-            by default None
-        subset : bool, optional
-            Whether to subset the resulting feature sets based on `features`,
-            by default True
+        Args:
+            features: Features to filter.
+            min_fraction: Mininimum portion of the feature set to be present in `features`.
+            min_count: Minimum size of the intersection set between a feature set and the set of `features`.
+            max_count: Maximum size of the intersection set between a feature set and the set of `features`.
+            keep: Feature sets to keep regardless of the filter conditions.
+            subset: Whether to subset the resulting feature sets based on `features`.
 
         Returns:
-        -------
-        FeatureSets
             Filtered feature sets.
         """
         features = set(features)
@@ -277,19 +245,14 @@ class FeatureSets:
             filtered_feature_sets = filtered_feature_sets.subset(features)
         return filtered_feature_sets
 
-    def to_mask(self, features: Optional[Iterable[str]] = None, sort: bool = True) -> pd.DataFrame:
+    def to_mask(self, features: Iterable[str] | None = None, sort: bool = True) -> pd.DataFrame:
         """Convert feature sets to a mask.
 
-        Parameters
-        ----------
-        features : Iterable[str], optional
-            Collection of features, by default None.
-        sort : bool, optional
-            Sort feature sets alphabetically, by default True.
+        Args:
+            features: Collection of features.
+            sort: Sort feature sets alphabetically.
 
         Returns:
-        -------
-        pd.DataFrame
             Mask of features.
         """
         features = features or self.features
@@ -304,22 +267,17 @@ class FeatureSets:
         )
 
     def similarity_to_feature_sets(
-        self, other: "FeatureSets" = None, metric: str = "jaccard", metric_kwargs: dict | None = None
+        self, other: FeatureSets = None, metric: str = "jaccard", metric_kwargs: dict | None = None
     ) -> pd.DataFrame:
         """Compute similarity matrix between feature sets.
 
-        Parameters
-        ----------
-        other : FeatureSets, optional
-            Other feature set collection, by default None.
-        metric : str, optional
-            Similarity metric, by default "jaccard".
+        Args:
+            other: Other feature set collection, by default None.
+            metric: Similarity metric, by default "jaccard".
+            metric_kwargs: further arguments to `scipy.spatial.distance.cdist`
 
         Returns:
-        -------
-        pd.DataFrame
-            Similarity matrix as 1 minus distance matrix,
-            may lead to negative values for some distance metrics.
+            Similarity matrix as 1 minus distance matrix, may lead to negative values for some distance metrics.
         """
         if metric not in ["jaccard", "cosine"]:
             logger.warning(
@@ -340,14 +298,10 @@ class FeatureSets:
     def similarity_to_observations(self, observations: pd.DataFrame) -> pd.DataFrame:
         """Compute similarity matrix between feature sets.
 
-        Parameters
-        ----------
-        observations : pd.DataFrame
-            Dataframe of observations.
+        Args:
+            observations: Dataframe of observations.
 
         Returns:
-        -------
-        pd.DataFrame
             Similarity matrix as correlation matrix.
         """
         obs_mean = observations.mean(axis=1)
@@ -365,16 +319,11 @@ class FeatureSets:
     def _find_similar_pairs(self, sim_matrix: pd.DataFrame, similarity_threshold: float) -> set[tuple[str, str]]:
         """Find similar pairs of feature sets.
 
-        Parameters
-        ----------
-        sim_matrix : pd.DataFrame
-            Similarity matrix.
-        similarity_threshold : float
-            Similarity threshold to consider similar pairs.
+        Args:
+            sim_matrix: Similarity matrix.
+            similarity_threshold: Similarity threshold to consider similar pairs.
 
         Returns:
-        -------
-        set[tuple[str, str]]
             Similar pairs of feature sets.
         """
         pairs = set()
@@ -397,25 +346,17 @@ class FeatureSets:
         return pairs
 
     def find_similar_pairs(
-        self, observations: pd.DataFrame = None, metric: Optional[str] = None, similarity_threshold: float = 0.8
+        self, observations: pd.DataFrame = None, metric: str | None = None, similarity_threshold: float = 0.8
     ) -> set[tuple[str, str]]:
         """Find similar pairs of feature sets.
 
-        Parameters
-        ----------
-        observations : pd.DataFrame, optional
-            Dataframe of observations, if provided, the similarity between feature sets
-            is computed based on the correlation of the similarity from the mean
-            of the observations in the feature set, by default None.
-        metric : str, optional
-            Similarity metric, by default "jaccard" if observations not provided.
-        similarity_threshold : float, optional
-            Similarity threshold to consider similar pairs,
-            by default 0.8.
+        Args:
+            observations: Dataframe of observations, if provided, the similarity between feature sets is computed
+                based on the correlation of the similarity from the mean of the observations in the feature set.
+            metric: Similarity metric, by default "jaccard" if observations not provided.
+            similarity_threshold: Similarity threshold to consider similar pairs.
 
         Returns:
-        -------
-        set[tuple[str, str]]
             Similar pairs of feature sets.
         """
         if observations is None and metric is None:
@@ -436,17 +377,13 @@ class FeatureSets:
             sim_matrix = sim_matrix[0]
         return self._find_similar_pairs(sim_matrix.fillna(0.0), similarity_threshold)
 
-    def merge_pairs(self, pairs: Iterable[tuple[str, str]]):
+    def merge_pairs(self, pairs: Iterable[tuple[str, str]]) -> FeatureSets:
         """Merge pairs of feature sets.
 
-        Parameters
-        ----------
-        pairs : Iterable[tuple[str, str]]
-            Pairs of feature sets.
+        Args:
+            pairs: Pairs of feature sets.
 
         Returns:
-        -------
-        FeatureSets
             Merged feature sets.
         """
         names_to_remove = set()
@@ -465,30 +402,21 @@ class FeatureSets:
     def merge_similar(
         self,
         observations: pd.DataFrame = None,
-        metric: Optional[str] = None,
+        metric: str | None = None,
         similarity_threshold: float = 0.8,
         iteratively: bool = True,
-    ):
+    ) -> FeatureSets:
         """Merge similar feature sets.
 
-
-        Parameters
-        ----------
-        observations : pd.DataFrame, optional
-            Dataframe of observations, if provided, the similarity between feature sets
-            is computed based on the correlation of the similarity from the mean
-            of the observations in the feature set, by default None.
-        metric : str, optional
-            Similarity metric, by default "jaccard" if observations not provided.
-        similarity_threshold : float, optional
-            Similarity threshold to consider similar pairs,
-            by default 0.8.
-        iteratively : bool, optional
-            Whether to merge iteratively, by default True
+        Args:
+            observations: Dataframe of observations, if provided, the similarity between feature sets
+                is computed based on the correlation of the similarity from the mean of the observations
+                in the feature set.
+            metric: Similarity metric, by default "jaccard" if observations not provided.
+            similarity_threshold: Similarity threshold to consider similar pairs.
+            iteratively: Whether to merge iteratively.
 
         Returns:
-        -------
-        FeatureSets
             Merged feature sets.
         """
         feature_sets = self
@@ -508,13 +436,11 @@ class FeatureSets:
                 break
         return feature_sets
 
-    def to_gmt(self, path: Path):
+    def to_gmt(self, path: str | Path):
         """Write this feature set collection to a GMT file.
 
-        Parameters
-        ----------
-        path : Path
-            Path to the output file.
+        Args:
+            path: Path to the output file.
         """
         with open(path, "w") as f:
             for feature_set in self.feature_sets:
@@ -526,86 +452,64 @@ class FeatureSets:
         """Convert this feature set collection to a dictionary.
 
         Returns:
-        -------
-        dict[str, Iterable[str]]
             Dictionary of feature sets.
         """
         return {fs.name: fs.features for fs in self.feature_sets}
 
     @classmethod
-    def from_gmt(cls, path: Path, name: Optional[str] = None, **kwargs) -> "FeatureSets":
+    def from_gmt(cls, path: str | Path, name: str | None = None, remove_empty: bool = True) -> FeatureSets:
         """Create a FeatureSets object from a GMT file.
 
-        Parameters
-        ----------
-        path : Path
-            Path to the GMT file.
-        name : str, optional
-            Name of the collection, by default None.
-
-        Returns:
-        -------
-        FeatureSets
+        Args:
+            path: Path to the GMT file.
+            name: Name of the collection. Defaults to the file name.
+            remove_empty: Whether to remove empty feature sets.
         """
         feature_sets = set()
         with open(path) as f:
             for line in f:
                 fs_name, description, *features = line.strip().split("\t")
                 feature_sets.add(FeatureSet(features, name=fs_name, description=description))
-        return cls(feature_sets, name=name or Path(path).name, **kwargs)
+        return cls(feature_sets, name=name or Path(path).name, remove_empty=remove_empty)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Iterable[str]], name: Optional[str] = None, **kwargs) -> "FeatureSets":
+    def from_dict(cls, d: dict[str, Iterable[str]], name: str | None = None, remove_empty: bool = True) -> FeatureSets:
         """Create a FeatureSets object from a dictionary.
 
-        Parameters
-        ----------
-        d : dict[str, Iterable[str]]
-            Dictionary of feature sets.
-        name : str, optional
-            Name of the collection, by default None.
-
-        Returns:
-        -------
-        FeatureSets
+        Args:
+            d: Dictionary of feature sets.
+            name: Name of the collection.
+            remove_empty: Whether to remove empty feature sets.
+        re
         """
         feature_sets = set()
         for fs_name, features in d.items():
             feature_sets.add(FeatureSet(features, name=fs_name))
-        return cls(feature_sets, name=name, **kwargs)
+        return cls(feature_sets, name=name, remove_empty=remove_empty)
 
     @classmethod
     def from_dataframe(
         cls,
         df: pd.DataFrame,
-        name: Optional[str] = None,
+        name: str | None = None,
         name_col: str = "name",
         features_col: str = "features",
-        desc_col: Optional[str] = None,
-        **kwargs,
-    ) -> "FeatureSets":
+        desc_col: str | None = None,
+        remove_empty: bool = True,
+    ) -> FeatureSets:
         """Create a FeatureSets object from a DataFrame.
 
-        Parameters
-        ----------
-        df : pd.DataFrame
-            DataFrame of feature sets.
-        name : str, optional
-            Name of the collection, by default None.
-        name_col : str, optional
-            Name of the column containing feature set names, by default "name".
-        features_col : str, optional
-            Name of the column containing feature set features, by default "features".
-        desc_col : str, optional
-            Name of the column containing feature set descriptions, by default None.
-
-        Returns:
-        -------
-        FeatureSets
+        Args:
+            df: DataFrame of feature sets.
+            name: Name of the collection.
+            name_col: Name of the column containing feature set names.
+            features_col: Name of the column containing feature set features.
+            desc_col: Name of the column containing feature set descriptions.
+            remove_empty: Whether to remove empty feature sets.
         """
         feature_sets = set()
         for _, row in df.iterrows():
             feature_sets.add(
                 FeatureSet(row[features_col], name=row[name_col], description=desc_col is not None and row[desc_col])
             )
-        return cls(feature_sets, name=name, **kwargs)
+        return cls(feature_sets, name=name, remove_empty=remove_empty)

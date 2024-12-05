@@ -134,7 +134,7 @@ ignore = [
     # We want docstrings to start immediately after the opening triple quote
     "D213",
     # Reenable
-    "D419", "D101", "D102", "D103", "D205", "D207", "C419", "E999", "UP007", "UP038",
+    "D419", "D101", "D102", "D103", "D205",
     # allow relative imports
     "TID252"
 ]

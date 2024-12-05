@@ -34,10 +34,6 @@ def save_model(
         model: The PRISMO model to save. Only needed for `mofa_compat=True`.
         data: The input data. Only needed for `mofa_compat=True`.
         intercepts: The data intercepts. Only needed for `mofa_compat=True`.
-
-    Raises:
-        IOError: If there are issues writing to the file.
-        ValueError: If the model contains invalid data structures.
     """
     if mofa_compat and model is None:
         raise ValueError("Need a PRISMO object if saving in MOFA compatibility mode.")
@@ -223,11 +219,6 @@ def load_model(path: str | Path, map_location=None):
 
     Returns:
         The loaded PRISMO model.
-
-    Raises:
-        IOError: If there are issues reading the file.
-        ValueError: If the file format is invalid.
-        ImportError: If version compatibility issues are detected.
     """
     from .. import __version__
 

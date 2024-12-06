@@ -14,6 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 class FeatureSet:
+    """Class for storing a single set of features (genes).
+
+    This class stores a single set of features (genes) and provides set operations for intersection, union, and difference.
+
+    Attributes:
+        features (frozenset): The set of features in the feature set.
+        name (str): The name of the feature set.
+        description (str): A description of the feature set.
+
+    Notes
+    -----
+    If the feature set is empty, a warning is raised.
+    If the collection of features contains duplicates, a warning is raised.
+    """
+
     def __init__(self, features: Collection[str], name: str, description: str = ""):
         self.name = name
         self.features = frozenset(features)
@@ -36,6 +51,7 @@ class FeatureSet:
 
     @property
     def empty(self):
+        """Check if the feature set is empty."""
         return len(self) == 0
 
     def __len__(self):
@@ -68,14 +84,21 @@ class FeatureSet:
 
         Args:
             features: Features to subset.
-
-        Returns:
-            A new feature set with the subset of features.
         """
         return FeatureSet(self.features & features, name=self.name)
 
 
 class FeatureSets:
+    """Class for storing a collection of feature sets (see FeatureSet).
+
+    This class stores a collection of feature sets and provides set operations for intersection, union, and difference.
+
+    Attributes:
+        feature_sets (frozenset): The collection of feature sets.
+        name (str): The name of the feature set collection.
+        remove_empty (bool): Whether to remove empty feature sets.
+    """
+
     def __init__(self, feature_sets: Collection[FeatureSet], name: str = "UNL", remove_empty: bool = True):
         self.name = name
 
@@ -99,18 +122,22 @@ class FeatureSets:
 
     @property
     def empty(self):
+        """Check if the feature set collection is empty."""
         return len(self) == 0
 
     @property
     def median_size(self) -> int:
+        """Return the median size of the feature sets."""
         return int(np.median([len(fs) for fs in self.feature_sets]))
 
     @property
     def features(self) -> frozenset:
+        """Return the union of all features in the feature sets."""
         return frozenset.union(*[fs.features for fs in self.feature_sets])
 
     @property
     def feature_set_by_name(self) -> dict:
+        """Return a dictionary of feature set names (key) to feature sets (value)."""
         return {feature_set.name: feature_set for feature_set in self.feature_sets}
 
     def __getitem__(self, name: str) -> FeatureSet:
@@ -148,9 +175,6 @@ class FeatureSets:
 
         Args:
             partial_name: Feature set (partial) name to search for.
-
-        Returns:
-            Search results.
         """
         return FeatureSets(
             {feature_set for feature_set in self.feature_sets if partial_name in feature_set.name},
@@ -253,7 +277,7 @@ class FeatureSets:
             sort: Sort feature sets alphabetically.
 
         Returns:
-            Mask of features.
+            Binary mask of features.
         """
         features = features or self.features
         features_list = list(features)
@@ -480,7 +504,6 @@ class FeatureSets:
             d: Dictionary of feature sets.
             name: Name of the collection.
             remove_empty: Whether to remove empty feature sets.
-        re
         """
         feature_sets = set()
         for fs_name, features in d.items():

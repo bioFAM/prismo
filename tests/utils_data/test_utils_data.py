@@ -67,8 +67,8 @@ def test_cast_data():
     for data in datasets:
         data_c = preprocessing.cast_data(data, None)
         assert isinstance(data_c, dict)
-        assert all([isinstance(v, dict) for v in data_c.values()])
-        assert all([all([isinstance(vv, AnnData) for vv in v.values()]) for v in data_c.values()])
+        assert all(isinstance(v, dict) for v in data_c.values())
+        assert all(all(isinstance(vv, AnnData) for vv in v.values()) for v in data_c.values())
 
 
 def test_infer_likelihoods():

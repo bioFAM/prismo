@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 
 
@@ -21,7 +19,7 @@ class EarlyStopper:
         self.mode = mode
         self.min_delta = min_delta
         self.patience = patience
-        self.best: Optional[float] = None
+        self.best: float | None = None
         self.num_bad_epochs: int = 0
         self._init_is_better(mode, min_delta, percentage)
 

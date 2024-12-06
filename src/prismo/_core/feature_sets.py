@@ -23,10 +23,9 @@ class FeatureSet:
         name (str): The name of the feature set.
         description (str): A description of the feature set.
 
-    Notes
-    -----
-    If the feature set is empty, a warning is raised.
-    If the collection of features contains duplicates, a warning is raised.
+    Notes:
+        If the feature set is empty, a warning is raised.
+        If the collection of features contains duplicates, a warning is raised.
     """
 
     def __init__(self, features: Collection[str], name: str, description: str = ""):

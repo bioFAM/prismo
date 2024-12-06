@@ -226,10 +226,10 @@ def load_model(path: str | Path, map_location=None):
     with h5py.File(path, "r") as f:
         prismogrp = f["prismo"]
         if prismogrp.attrs["version"] != __version__:
-            logger.warning("The stored model was created with a different version of PRISMO. Stuff may not work.")
+            logger.warning("The stored model was created with a different version of PRISMO. Some features may not work.")
         state = ad.io.read_elem(prismogrp["state"])
         pickle = BytesIO(prismogrp["pickle"][()].tobytes())
 
-        pickle = torch.load(pickle, map_location=map_location)
+        pickle = torch.load(pickle, map_location=map_location, weights_only=True)
 
     return state, pickle

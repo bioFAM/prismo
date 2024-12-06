@@ -130,7 +130,7 @@ class ModelOptions(_Options):
     annotations: dict[str, pd.DataFrame] | dict[str, np.ndarray] | None = None
     annotations_varm_key: dict[str, str] | str | None = None
     prior_penalty: float = 0.01
-    init_factors: Literal["random", "orthogonal", "pca"] = "random"
+    init_factors: float | Literal["random", "orthogonal", "pca"] = "random"
     init_scale: float = 0.1
 
 
@@ -574,6 +574,19 @@ class PRISMO:
         _logger.info(f"Initializing factors using `{self._model_opts.init_factors}` method...")
 
         with self._train_opts.device:
+            if not isinstance(self._model_opts.init_factors, str):
+                for group_name, n in self.n_samples.items():
+                    init_tensor[group_name]["loc"] = (
+                        (torch.ones(size=(n, self._model_opts.n_factors)) * self._model_opts.init_factors)
+                        .T.unsqueeze(-2)
+                        .float()
+                    )
+                    init_tensor[group_name]["scale"] = (
+                        (torch.ones(size=(n, self._model_opts.n_factors)) * self._model_opts.init_scale)
+                        .T.unsqueeze(-2)
+                        .float()
+                    )
+                return init_tensor
             match self._model_opts.init_factors:
                 case "random":
                     for group_name, n in self.n_samples.items():

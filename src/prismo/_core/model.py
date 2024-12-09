@@ -51,7 +51,7 @@ class Generative(PyroModule):
 
         if isinstance(nonnegative_factors, bool):
             nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
-            
+
         self._have_prior_scales = isinstance(prior_scales, dict) and len(prior_scales)
         if self._have_prior_scales:
             for vn, ps in prior_scales.items():
@@ -283,13 +283,13 @@ class Generative(PyroModule):
     def _sample_dispersion_gamma(self, view_name, plates, **kwargs):
         with plates["features_" + view_name]:
             return pyro.sample(
-                f"dispersion_{view_name}", dist.LogNormal(torch.zeros((1,)), torch.ones((1,)))
+                f"dispersion_{view_name}", dist.Gamma(1e-10 * torch.ones((1,)), 1e-10 * torch.ones((1,)))
             )
 
     def _dist_obs_normal(self, loc, **kwargs):
         view_name = kwargs["view_name"]
         precision = self.sample_dict[f"dispersion_{view_name}"]
-        return dist.Normal(loc * torch.ones(1), precision + EPS)
+        return dist.Normal(loc * torch.ones(1), torch.ones(1) / (precision + EPS))
 
     def _dist_obs_gamma_poisson(self, loc, **kwargs):
         view_name = kwargs["view_name"]
@@ -548,12 +548,12 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"global_scale_z_{group_name}",
-                    PyroParam(self.init_loc * torch.ones((1, )), constraint=constraints.real),
+                    PyroParam(self.init_loc * torch.ones((1,)), constraint=constraints.real),
                 )
                 deep_setattr(
                     self.scales,
                     f"global_scale_z_{group_name}",
-                    PyroParam(self.init_scale * torch.ones((1, )), constraint=constraints.softplus_positive),
+                    PyroParam(self.init_scale * torch.ones((1,)), constraint=constraints.softplus_positive),
                 )
 
                 deep_setattr(
@@ -671,12 +671,12 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"global_scale_w_{view_name}",
-                    PyroParam(self.init_loc * torch.ones((1, )), constraint=constraints.real),
+                    PyroParam(self.init_loc * torch.ones((1,)), constraint=constraints.real),
                 )
                 deep_setattr(
                     self.scales,
                     f"global_scale_w_{view_name}",
-                    PyroParam(self.init_scale * torch.ones((1, )), constraint=constraints.softplus_positive),
+                    PyroParam(self.init_scale * torch.ones((1,)), constraint=constraints.softplus_positive),
                 )
 
                 deep_setattr(
@@ -798,12 +798,15 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"dispersion_{view_name}",
-                    PyroParam(self.init_loc * torch.ones((1,)), constraint=constraints.real),
+                    PyroParam(self.init_loc * torch.ones((n_features[view_name], 1)), constraint=constraints.real),
                 )
                 deep_setattr(
                     self.scales,
                     f"dispersion_{view_name}",
-                    PyroParam(self.init_scale * torch.ones((1,)), constraint=constraints.softplus_positive),
+                    PyroParam(
+                        self.init_scale * torch.ones((n_features[view_name], 1)),
+                        constraint=constraints.softplus_positive,
+                    ),
                 )
 
     def _setup_distributions(self):

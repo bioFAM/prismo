@@ -23,7 +23,7 @@ from sklearn.decomposition import NMF, PCA
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from .._pl import plot_overview
+from ..pl import plot_overview
 from . import gp, preprocessing
 from .io import load_model, save_model
 from .model import Generative, Variational
@@ -82,15 +82,17 @@ class DataOptions(_Options):
 
     Args:
         group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
+
             - String or list of strings. This will be applied to the MuData object or to all AnnData objects
             - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
               is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
               in the corresponding `group_by` element.
+
         scale_per_group: Scale Normal likelihood data per group, otherwise across all groups.
         covariates_obs_key: Key of .obs attribute of each AnnData object that contains covariate values.
         covariates_obsm_key: Key of .obsm attribute of each AnnData object that contains covariate values.
-        use_obs: How to align observations across views. One of 'union', 'intersection'.
-        use_var: How to align variables across groups. One of 'union', 'intersection'.
+        use_obs: How to align observations across views.
+        use_var: How to align variables across groups.
         plot_data_overview: Plot data overview.
     """
 
@@ -175,7 +177,7 @@ class SmoothOptions(_Options):
     Args:
         n_inducing: Number of inducing points.
         kernel: Kernel function to use.
-        warp_groups; List of groups to apply dynamic time warping to.
+        warp_groups: List of groups to apply dynamic time warping to.
         warp_interval: Apply dynamic time warping every `warp_interval` epochs.
         warp_open_begin: Perform open-ended alignment.
         warp_open_end: Perform open-ended alignment.
@@ -207,16 +209,19 @@ def _to_device(data, device):
 
 
 class PRISMO:
-    def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
-        """Fit the model using the provided data.
+    """Fit the model using the provided data.
 
-        Args:
-            data: can be any of:
-                - MuData object
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
-                    (incompatible with `TrainingOptions.group_by`)
-            *args: Options for training.
-        """
+    Args:
+        data: can be any of:
+
+            - MuData object
+            - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
+              (incompatible with :class:`TrainingOptions` `.group_by`)
+
+        *args: Options for training.
+    """
+
+    def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
         self._process_options(*args)
         data = preprocessing.cast_data(data, group_by=self._data_opts.group_by)
 
@@ -1024,12 +1029,14 @@ class PRISMO:
              return_type: Format of the returned object.
              moment: Which moment of the posterior distribution to return.
              sparse_type: How to handle sparsity when using the spike and slab prior.
+
                  - raw: Do nothing, return inferred values for all entries.
                  - mix: Return the corresponding moment of a mixture distribution of two
-                     Normal distributions: One centered at 0 and the other centered at the
-                     inferred non-sparse value. The mixture is weighted by the inferred
-                     sparsity probability. This is what MOFA does.
+                   Normal distributions: One centered at 0 and the other centered at the
+                   inferred non-sparse value. The mixture is weighted by the inferred
+                   sparsity probability. This is what MOFA does.
                  - thresh: Set all values with a sparsity probablity > 0.5 to 0.
+
              ordered: Whether to return the factors ordered by explained variance (highest to lowest).
         """
         factors = {
@@ -1079,12 +1086,14 @@ class PRISMO:
              return_type: Format of the returned object.
              moment: Which moment of the posterior distribution to return.
              sparse_type: How to handle sparsity when using the spike and slab prior.
+
                  - raw: Do nothing, return inferred values for all entries.
                  - mix: Return the corresponding moment of a mixture distribution of two
-                     Normal distributions: One centered at 0 and the other centered at the
-                     inferred non-sparse value. The mixture is weighted by the inferred
-                     sparsity probability. This is what MOFA does.
+                   Normal distributions: One centered at 0 and the other centered at the
+                   inferred non-sparse value. The mixture is weighted by the inferred
+                   sparsity probability. This is what MOFA does.
                  - thresh: Set all values with a sparsity probablity > 0.5 to 0.
+
              ordered: Whether to return the factors ordered by explained variance (highest to lowest).
         """
         weights = {
@@ -1245,16 +1254,16 @@ class PRISMO:
     def impute_data(
         self, data: MuData | dict[str, dict[str, ad.AnnData]], missing_only=False
     ) -> dict[dict[str, ad.AnnData]]:
-        """Impute (missing) values in the training data using the trained factorization.
-
-        By default, we use the factorization to impute all values in the data.
+        """Impute values in the training data using the trained factorization.
 
         Args:
             data: can be any of:
+
                 - MuData object
                 - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
-                    (incompatible with `TrainingOptions.group_by`)
-            missing_only: Only impute missing values in the data. Default is False.
+                  (incompatible with :py:class:`TrainingOptions` `.group_by`)
+
+            missing_only: Only impute missing values in the data.
         """
         imputed_data = preprocessing.cast_data(data, group_by=self._data_opts.group_by, copy=True)
 

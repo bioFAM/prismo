@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from functools import partial
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import anndata as ad
 import numpy as np
@@ -8,6 +8,9 @@ import pandas as pd
 import plotnine as p9
 from mizani import bounds
 from mizani.palettes import brewer_pal
+
+if TYPE_CHECKING:
+    from .._core import PRISMO
 
 
 def _rescale_zerosymmetric(x, to: tuple[float, float] = (0, 1), _from: tuple[float, float] | None = None):
@@ -31,7 +34,7 @@ _scale_color_zerosymmetric_diverging = partial(
 
 
 def plot_factors_scatter(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     x: int,
     y: int,
     group: str | None = None,
@@ -84,7 +87,7 @@ def plot_factors_scatter(
 
 
 def plot_covariates_factor_scatter(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     factor: int,
     group: str | None = None,
     covariate_dims: list[int] | None = None,
@@ -160,10 +163,7 @@ def plot_covariates_factor_scatter(
 
 
 def plot_training_curve(
-    model: "PRISMO",  # noqa F821
-    linecolor: str = "#214D83",
-    linewidth: int = 1,
-    figsize: tuple[float, float] = (12, 4),
+    model: "PRISMO", linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
 ) -> p9.ggplot:
     """Plot the training curve: -ELBO vs epoch.
 
@@ -185,7 +185,7 @@ def plot_training_curve(
     return plot
 
 
-def plot_factor_correlation(model: "PRISMO", figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:  # noqa F821
+def plot_factor_correlation(model: "PRISMO", figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
     """Plot the correlation between factors.
 
     Args:
@@ -297,9 +297,7 @@ def plot_overview(
 
 
 def plot_variance_explained(
-    model: "PRISMO",  # noqa F821
-    group_by: Literal["group", "view"] = "group",
-    figsize: tuple[float, float] | None = None,
+    model: "PRISMO", group_by: Literal["group", "view"] = "group", figsize: tuple[float, float] | None = None
 ) -> p9.ggplot:
     """Plot the variance explained per factor in each group and view.
 
@@ -343,7 +341,7 @@ def plot_variance_explained(
 
 
 def plot_all_weights(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     clip: tuple[float, float] | None = (-1, 1),
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,
@@ -387,7 +385,7 @@ def plot_all_weights(
 
 
 def plot_factor(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     factor: int = 1,
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,  # F821
@@ -437,7 +435,7 @@ def _check_covariate(cov, cnames, group_name, covars):
 
 
 def _plot_factors_covariate(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     covariate1: str | int,
     covariate2: str | int | None = None,
     gp: bool = False,
@@ -507,7 +505,7 @@ def _plot_factors_covariate(
 
 
 def plot_factors_covariate(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     covariate1: str | int,
     covariate2: str | int | None = None,
     figsize: tuple[float, float] | None = None,
@@ -525,7 +523,7 @@ def plot_factors_covariate(
 
 
 def plot_gp_covariate(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     ci_opacity: float = 0.3,
     group: Literal["facet", "color"] = "facet",
     color: str = "black",
@@ -609,7 +607,7 @@ def plot_gp_covariate(
     return plt
 
 
-def plot_smoothness(model: "PRISMO", figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:  # noqa F821
+def plot_smoothness(model: "PRISMO", figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
     """Plot the smoothness of the GP for each factor.
 
     Args:
@@ -633,7 +631,7 @@ def plot_smoothness(model: "PRISMO", figsize: tuple[float, float] = (3, 3)) -> p
 
 
 def _prepare_weights_df(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
@@ -695,7 +693,7 @@ _weights_inferred_color_scale = p9.scale_color_manual(
 
 
 def plot_top_weights(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
@@ -741,7 +739,7 @@ def plot_top_weights(
 
 
 def plot_weights(
-    model: "PRISMO",  # noqa F821
+    model: "PRISMO",
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | str | Sequence[int] | Sequence[str] | None = None,

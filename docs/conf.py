@@ -36,8 +36,8 @@ needs_sphinx = "4.0"
 
 html_context = {
     "display_github": True,  # Integrate GitHub
-    "github_user": "martinrohbeck",
-    "github_repo": "https://github.com/bioFAM/prismo",
+    "github_user": "bioFAM",
+    "github_repo": "prismo",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }
@@ -52,6 +52,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.autosummary",
+    "sphinx_automodapi.automodapi",
     "sphinx.ext.napoleon",
     "sphinxcontrib.bibtex",
     "sphinx_autodoc_typehints",
@@ -64,8 +65,8 @@ extensions = [
 autosummary_generate = True
 autodoc_member_order = "groupwise"
 default_role = "literal"
-napoleon_google_docstring = False
-napoleon_numpy_docstring = True
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False
 napoleon_include_init_with_doc = False
 napoleon_use_rtype = True  # having a separate entry generally helps readability
 napoleon_use_param = True
@@ -82,7 +83,11 @@ source_suffix = {".rst": "restructuredtext", ".ipynb": "myst-nb", ".myst": "myst
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "anndata": ("https://anndata.readthedocs.io/en/stable/", None),
+    "mudata": ("https://mudata.readthedocs.io/en/stable/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "plotnine": ("https://plotnine.org/", None),
+    "pytorch": ("https://pytorch.org/docs/stable/", None),
 }
 
 # List of patterns, relative to source directory, that match files and

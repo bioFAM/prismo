@@ -1,7 +1,6 @@
 import logging
 
-from . import _pl as pl
-from . import _tl as tl
+from . import pl, tl
 from ._core import *  # noqa F403
 from ._version import __version__, __version_tuple__
 

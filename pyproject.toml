@@ -143,6 +143,7 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "notebooks/*" = ["F403", "F405"]
 "docs/*" = ["I"]
+"docs/extensions/*" = ["D"]
 "tests/*" = ["D"]
 "*/__init__.py" = ["F401"]
 

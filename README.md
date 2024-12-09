@@ -8,12 +8,12 @@ Factor Analysis Models
 
 Please refer to the [documentation][link-docs]. In particular, the
 
--   [API documentation][link-api].
+- [API documentation][link-api].
 
 ## Installation
 
 You need to have Python 3.10 or newer installed on your system. If you don't have
-Python installed, we recommend installing [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge).
+Python installed, we recommend installing [Micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html).
 
 There are several alternative options to install prismo:
 
@@ -44,7 +44,7 @@ If you found a bug, please use the [issue tracker][issue-tracker].
 
 > t.b.a
 
-[issue-tracker]: https://github.com/martinrohbeck/prismo/issues
+[issue-tracker]: https://github.com/bioFAM/prismo/issues
 [changelog]: https://prismo.readthedocs.io/latest/changelog.html
 [link-docs]: https://prismo.readthedocs.io
 [link-api]: https://prismo.readthedocs.io/latest/api.html

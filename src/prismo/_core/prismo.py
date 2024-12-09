@@ -407,7 +407,10 @@ class PRISMO:
             for vn in self._model_opts.annotations_varm_key.keys():
                 for gn in data.keys():
                     if self._model_opts.annotations_varm_key[vn] in data[gn][vn].varm:
-                        annotations[vn] = data[gn][vn].varm[self._model_opts.annotations_varm_key[vn]].fillna(0).T
+                        view_annotations = data[gn][vn].varm[self._model_opts.annotations_varm_key[vn]]
+                        if not isinstance(view_annotations, pd.DataFrame):
+                            view_annotations = pd.DataFrame(view_annotations, index=data[gn][vn].var_names)
+                        annotations[vn] = view_annotations.fillna(0).T
                         break
 
         informed = annotations is not None and len(annotations) > 0

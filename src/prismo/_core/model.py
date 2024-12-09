@@ -51,13 +51,11 @@ class Generative(PyroModule):
 
         if isinstance(nonnegative_factors, bool):
             nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
-
-        if isinstance(prior_scales, dict) and len(prior_scales):
+            
+        self._have_prior_scales = isinstance(prior_scales, dict) and len(prior_scales)
+        if self._have_prior_scales:
             for vn, ps in prior_scales.items():
                 self.register_buffer(f"prior_scales_{vn}", torch.as_tensor(ps), persistent=False)
-            self._have_prior_scales = True
-        else:
-            self._have_prior_scales = False
 
         self.n_samples = n_samples
         self.n_features = n_features
@@ -272,7 +270,7 @@ class Generative(PyroModule):
                         c = c * prior_scales.unsqueeze(-1)
                     local_scale = (c * local_scale) / torch.sqrt(c**2 + local_scale**2)
 
-                return pyro.sample(f"w_{view_name}", dist.Normal(torch.zeros((1,)), torch.ones((1,)) * local_scale))
+                return pyro.sample(f"w_{view_name}", dist.Normal(torch.zeros((1,)), local_scale))
 
     def _sample_weights_sns(self, view_name, plates, **kwargs):
         with plates["factors"]:
@@ -285,13 +283,13 @@ class Generative(PyroModule):
     def _sample_dispersion_gamma(self, view_name, plates, **kwargs):
         with plates["features_" + view_name]:
             return pyro.sample(
-                f"dispersion_{view_name}", dist.Gamma(1e-10 * torch.ones((1,)), 1e-10 * torch.ones((1,)))
+                f"dispersion_{view_name}", dist.LogNormal(torch.zeros((1,)), torch.ones((1,)))
             )
 
     def _dist_obs_normal(self, loc, **kwargs):
         view_name = kwargs["view_name"]
         precision = self.sample_dict[f"dispersion_{view_name}"]
-        return dist.Normal(loc * torch.ones(1), torch.ones(1) / (precision + EPS))
+        return dist.Normal(loc * torch.ones(1), precision + EPS)
 
     def _dist_obs_gamma_poisson(self, loc, **kwargs):
         view_name = kwargs["view_name"]
@@ -370,8 +368,9 @@ class Generative(PyroModule):
                 self.sample_dict[f"z_{group_name}"] = factor
 
         # non-negative transform
-        for group_name in self.nonnegative_factors.keys():
-            self.sample_dict[f"z_{group_name}"] = self.pos_transform(self.sample_dict[f"z_{group_name}"])
+        for group_name in data.keys():
+            if self.nonnegative_factors[group_name]:
+                self.sample_dict[f"z_{group_name}"] = self.pos_transform(self.sample_dict[f"z_{group_name}"])
 
         # sample weights and transform if non-negative is required
         for view_name in self.view_names:
@@ -549,12 +548,12 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"global_scale_z_{group_name}",
-                    PyroParam(self.init_loc * torch.ones(1), constraint=constraints.real),
+                    PyroParam(self.init_loc * torch.ones((1, )), constraint=constraints.real),
                 )
                 deep_setattr(
                     self.scales,
                     f"global_scale_z_{group_name}",
-                    PyroParam(self.init_scale * torch.ones(1), constraint=constraints.softplus_positive),
+                    PyroParam(self.init_scale * torch.ones((1, )), constraint=constraints.softplus_positive),
                 )
 
                 deep_setattr(
@@ -672,12 +671,12 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"global_scale_w_{view_name}",
-                    PyroParam(self.init_loc * torch.ones(1), constraint=constraints.real),
+                    PyroParam(self.init_loc * torch.ones((1, )), constraint=constraints.real),
                 )
                 deep_setattr(
                     self.scales,
                     f"global_scale_w_{view_name}",
-                    PyroParam(self.init_scale * torch.ones(1), constraint=constraints.softplus_positive),
+                    PyroParam(self.init_scale * torch.ones((1, )), constraint=constraints.softplus_positive),
                 )
 
                 deep_setattr(

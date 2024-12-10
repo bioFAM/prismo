@@ -204,13 +204,23 @@ class Generative(PyroModule):
             return pyro.sample(f"z_{group_name}", dist.Laplace(torch.zeros((1,)), torch.ones((1,))))
 
     def _sample_factors_horseshoe(self, group_name, plates, **kwargs):
+        regularized = kwargs.get("regularized", True)
+
         global_scale = pyro.sample(f"global_scale_z_{group_name}", dist.HalfCauchy(torch.ones((1,))))
         with plates["factors"]:
             inter_scale = pyro.sample(f"inter_scale_z_{group_name}", dist.HalfCauchy(torch.ones((1,))))
             with plates[f"samples_{group_name}"]:
                 local_scale = pyro.sample(f"local_scale_z_{group_name}", dist.HalfCauchy(torch.ones((1,))))
                 local_scale = local_scale * inter_scale * global_scale
-                return pyro.sample(f"z_{group_name}", dist.Normal(torch.zeros((1,)), torch.ones((1,)) * local_scale))
+
+                if regularized:
+                    caux = pyro.sample(
+                        f"caux_z_{group_name}", dist.InverseGamma(torch.ones((1,)) * 0.5, torch.ones((1,)) * 0.5)
+                    )
+                    c = torch.sqrt(caux)
+                    local_scale = (c * local_scale) / torch.sqrt(c**2 + local_scale**2)
+
+                return pyro.sample(f"z_{group_name}", dist.Normal(torch.zeros((1,)), local_scale))
 
     def _sample_factors_sns(self, group_name, plates, **kwargs):
         with plates["factors"]:

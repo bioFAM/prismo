@@ -237,13 +237,6 @@ class PRISMO:
             k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names
         }  # this must be after _preprocess_data
 
-        for view_name in self.view_names:
-            if self._model_opts.likelihoods[view_name] == "BetaBinomial":
-                feature_names_base = pd.Series(self._feature_names[view_name]).str.rsplit("_", n=1, expand=True)[0]
-                unique_feature_names = feature_names_base.unique()
-                if len(unique_feature_names) == len(feature_names_base) // 2:
-                    self._feature_names[view_name] = unique_feature_names
-
         self._setup_annotations(data)
 
         if self._data_opts.plot_data_overview:
@@ -718,7 +711,7 @@ class PRISMO:
         if self._data_opts.use_obs is not None:
             data = preprocessing.align_obs(data, self._data_opts.use_obs)
         if self._data_opts.use_var is not None:
-            data = preprocessing.align_var(data, self._model_opts.likelihoods, self._data_opts.use_var)
+            data = preprocessing.align_var(data, self._data_opts.use_var)
 
         # obtain observations DataFrame and covariates
         self._covariates, self._covariates_names = preprocessing.extract_covariate(
@@ -891,22 +884,6 @@ class PRISMO:
             y_pred = expit(y_pred)
             ss_res = np.nansum(self._dV_square(y_true, y_pred, -1, 1))
             ss_tot = np.nansum(self._dV_square(y_true, np.nanmean(y_true), -1, 1))
-        elif likelihood == "BetaBinomial":
-            y_pred = expit(y_pred)
-            obs_total = y_true[..., 1, :, :]
-            y_true = y_true[..., 0, :, :]
-            dispersion = self._dispersions.mean[view_name]
-            nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
-            ss_res = np.nansum(self._dV_square(y_true, y_pred, nu2, nu1))
-
-            pi = np.nansum(y_true) / np.nansum(obs_total)
-            truemean = obs_total * pi
-            truevar = obs_total * np.nanvar(y_true / obs_total)
-            dispersion = (obs_total * pi * (1 - pi) - truevar) / (
-                obs_total * (truevar - pi * (1 - pi))
-            )  # method of moments estimator
-            nu2 = nu1 = obs_total * (1 + obs_total * dispersion) / (1 + dispersion)
-            ss_res = np.nansum(self._dV_square(y_true, truemean, nu2, nu1))
         else:
             raise NotImplementedError(likelihood)
 

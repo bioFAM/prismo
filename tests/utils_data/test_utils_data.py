@@ -76,9 +76,6 @@ def test_infer_likelihoods():
         "view1": create_adata(np.random.randn(2, 2)),
         "view2": create_adata(np.random.randint(0, 1, (2, 2))),
         "view3": create_adata(np.random.randint(0, 100, (2, 2))),
-        "view4": create_adata(
-            np.random.randint(0, 100, (2, 6)), var_names=["g3_b", "g1_a", "g2_a", "g1_b", "g2_b", "g3_a"]
-        ),
     }
 
     likelihoods = preprocessing.infer_likelihoods(data)
@@ -86,7 +83,6 @@ def test_infer_likelihoods():
     assert likelihoods["view1"] == "Normal"
     assert likelihoods["view2"] == "Bernoulli"
     assert likelihoods["view3"] == "GammaPoisson"
-    assert likelihoods["view4"] == "BetaBinomial"
 
 
 def test_validate_likelihoods():
@@ -94,49 +90,11 @@ def test_validate_likelihoods():
         "view1": create_adata(np.random.randn(2, 2)),
         "view2": create_adata(np.random.randint(0, 1, (2, 2))),
         "view3": create_adata(np.random.randint(0, 100, (2, 2))),
-        "view4": create_adata(
-            np.random.randint(0, 100, (2, 6)), var_names=["g3_b", "g1_a", "g2_a", "g1_b", "g2_b", "g3_a"]
-        ),
     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
+    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
     preprocessing.validate_likelihoods(data, likelihoods)
-
-
-# def test_remove_constant_features():
-#     var_names_g1_v4 = ["g3_b", "g1_a", "g4_a", "g2_a", "g1_b", "g2_b", "g3_a", "g4_b"]
-#     var_names_g2_v4 = ["g5_b", "g1_a", "g4_a", "g2_a", "g1_b", "g2_b", "g5_a", "g4_b"]
-
-#     data = {
-#         "group1": {
-#             "view1": create_adata(np.random.randn(500, 5)),
-#             "view2": create_adata(np.random.randint(0, 1, (500, 5))),
-#             "view3": create_adata(np.random.randint(0, 100, (500, 5))),
-#             "view4": create_adata(np.random.randint(0, 100, (500, 8)), var_names=var_names_g1_v4),
-#         },
-#         "group2": {
-#             "view1": create_adata(np.random.randn(500, 5)),
-#             "view2": create_adata(np.random.randint(0, 1, (500, 5))),
-#             "view3": create_adata(np.random.randint(0, 100, (500, 5))),
-#             "view4": create_adata(np.random.randint(0, 100, (500, 8)), var_names=var_names_g2_v4),
-#         },
-#     }
-
-#     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
-
-#     data["group1"]["view1"][:, "var3"] = 2.2
-#     data["group2"]["view2"][:, "var2"] = 1
-#     data["group1"]["view3"][:, "var1"] = 8
-#     data["group2"]["view4"][:, "g4_a"] = 3
-
-#     data_c = utils_data.remove_constant_features(data, likelihoods)
-
-#     assert "var3" not in data_c["group1"]["view1"].var_names
-#     assert "var2" not in data_c["group2"]["view2"].var_names
-#     assert "var1" not in data_c["group1"]["view3"].var_names
-#     assert "g4_a" not in data_c["group2"]["view4"].var_names
-#     assert "g4_b" not in data_c["group2"]["view4"].var_names
 
 
 def test_get_data_mean():
@@ -145,23 +103,15 @@ def test_get_data_mean():
             "view1": create_adata(np.array([[1.5, -5.2], [4.4, 1.1], [70.0, 9.1]])),
             "view2": create_adata(np.array([[1.0, 1.0], [0.0, 1.0], [0.0, 0.0]])),
             "view3": create_adata(np.array([[1.0, 10.0], [8.0, 2.0], [18.0, 12.0]])),
-            "view4": create_adata(
-                np.array([[11.0, 5.0, 2.0, 2.0], [3.0, 12.0, 18.0, 9.0], [9.0, 8.0, 7.0, 6.0]]),
-                var_names=["g1_a", "g1_b", "g2_a", "g2_b"],
-            ),
         },
         "group2": {
             "view1": create_adata(np.array([[1.5, -5.2], [4.4, 1.1], [70.0, 9.1]])),
             "view2": create_adata(np.array([[1.0, 1.0], [0.0, 1.0], [0.0, 0.0]])),
             "view3": create_adata(np.array([[1.0, 10.0], [8.0, 2.0], [18.0, 12.0]])),
-            "view4": create_adata(
-                np.array([[11.0, 5.0, 2.0, 2.0], [3.0, 12.0, 18.0, 9.0], [9.0, 8.0, 7.0, 6.0]]),
-                var_names=["g1_a", "g1_b", "g2_a", "g2_b"],
-            ),
         },
     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
+    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
     feature_mean = preprocessing.get_data_mean(data, likelihoods, how="feature")
 
@@ -171,9 +121,6 @@ def test_get_data_mean():
     assert isclose(feature_mean["group2"]["view2"][0], (1 + 0 + 0) / 3)
     assert isclose(feature_mean["group1"]["view3"][1], (10 + 2 + 12) / 3)
     assert isclose(feature_mean["group2"]["view3"][1], (10 + 2 + 12) / 3)
-    assert isclose(
-        feature_mean["group1"]["view4"][0], ((11 / (5 + 11)) + (3 / (12 + 3)) + (9 / (8 + 9))) / 3, abs_tol=1e-3
-    )
 
 
 def test_center_data():
@@ -183,19 +130,15 @@ def test_center_data():
             "view1": create_adata(np.random.randn(5, 3)),
             "view2": create_adata(np.random.randint(0, 1, (5, 3))),
             "view3": create_adata(np.random.randint(0, 1e4, (5, 3))),
-            "view4": create_adata(
-                np.random.randint(0, 1e3, (5, 6)), var_names=["g3_b", "g1_a", "g2_a", "g1_b", "g2_b", "g3_a"]
-            ),
         },
         "group2": {
             "view1": create_adata(np.random.randn(8, 3)),
             "view2": create_adata(np.random.randint(0, 1, (7, 5))),
             "view3": create_adata(np.random.randint(0, 1e4, (2, 8))),
-            "view4": create_adata(np.random.randint(0, 1e3, (9, 4)), var_names=["g1_a", "g2_a", "g1_b", "g2_b"]),
         },
     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
+    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
     data_c = preprocessing.center_data(
         data,
@@ -214,19 +157,15 @@ def test_scale_data():
             "view1": create_adata(np.random.randn(5, 3)),
             "view2": create_adata(np.random.randint(0, 1, (5, 3))),
             "view3": create_adata(np.random.randint(0, 1e4, (5, 3))),
-            "view4": create_adata(
-                np.random.randint(0, 1e3, (5, 6)), var_names=["g3_b", "g1_a", "g2_a", "g1_b", "g2_b", "g3_a"]
-            ),
         },
         "group2": {
             "view1": create_adata(np.random.randn(5, 3)),
             "view2": create_adata(np.random.randint(0, 1, (5, 5))),
             "view3": create_adata(np.random.randint(0, 1e4, (5, 8))),
-            "view4": create_adata(np.random.randint(0, 1e3, (5, 4)), var_names=["g1_a", "g2_a", "g1_b", "g2_b"]),
         },
     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
+    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
     data_c = preprocessing.scale_data(data, scale_per_group=True, likelihoods=likelihoods)
 
@@ -279,11 +218,6 @@ def test_align_obs_var():
                 obs_names=g1_v3_obs_names,
                 var_names=g1_v3_var_names,
             ),
-            "view4": create_adata(
-                np.random.randint(0, 100, (len(g1_v4_obs_names), len(g1_v4_var_names))),
-                obs_names=g1_v4_obs_names,
-                var_names=g1_v4_var_names,
-            ),
         },
         "group2": {
             "view1": create_adata(
@@ -301,18 +235,13 @@ def test_align_obs_var():
                 obs_names=g2_v3_obs_names,
                 var_names=g2_v3_var_names,
             ),
-            "view4": create_adata(
-                np.random.randint(0, 100, (len(g2_v4_obs_names), len(g2_v4_var_names))),
-                obs_names=g2_v4_obs_names,
-                var_names=g2_v4_var_names,
-            ),
         },
     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson", "view4": "BetaBinomial"}
+    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
     data_c = preprocessing.align_obs(data, use_obs="union")
-    data_c = preprocessing.align_var(data_c, use_var="union", likelihoods=likelihoods)
+    data_c = preprocessing.align_var(data_c, use_var="union")
 
     feature_names = {}
     for k_groups, v_groups in data_c.items():

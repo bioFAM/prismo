@@ -188,8 +188,6 @@ class Generative(PyroModule):
                 self.dist_obs[view_name] = self._dist_obs_gamma_poisson
             elif self.likelihoods[view_name] == "Bernoulli":
                 self.dist_obs[view_name] = self._dist_obs_bernoulli
-            elif self.likelihoods[view_name] == "BetaBinomial":
-                self.dist_obs[view_name] = self._dist_obs_beta_binomial
             else:
                 raise ValueError(f"Invalid likelihood: {self.likelihoods[view_name]}")
 
@@ -301,26 +299,6 @@ class Generative(PyroModule):
     def _dist_obs_bernoulli(self, loc, **kwargs):
         return dist.Bernoulli(logits=loc)
 
-    def _dist_obs_beta_binomial(self, loc, **kwargs):
-        obs = kwargs["obs"]
-        obs_mask = kwargs["obs_mask"]
-        view_name = kwargs["view_name"]
-        obs_reshaped = obs.reshape(obs.shape[0] // 2, 2, obs.shape[-1])
-        obs_mask_reshaped = obs_mask.reshape(obs.shape[0] // 2, 2, obs_mask.shape[-1])
-        obs_total = obs_reshaped.sum(dim=1)
-        obs = obs_reshaped[:, 0, :]  # equals success counts
-
-        # add feature to mask if any of paired features is masked
-        obs_mask = obs_mask_reshaped.all(dim=1)
-
-        dispersion = self.sample_dict[f"dispersion_{view_name}"]
-        probs = torch.nn.Sigmoid()(loc)
-        return dist.BetaBinomial(
-            concentration1=(dispersion * probs).clamp(EPS),
-            concentration0=(dispersion * (1 - probs)).clamp(EPS),
-            total_count=obs_total,
-        )
-
     def forward(self, data):
         current_gp_groups = {g: self.get_gp_group_idx(g) for g in self.gp_group_names if g in data}
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
@@ -386,7 +364,7 @@ class Generative(PyroModule):
                 self.sample_dict[f"w_{view_name}"] = self.pos_transform(self.sample_dict[f"w_{view_name}"])
 
             # sample dispersion parameter
-            if self.likelihoods[view_name] in ["Normal", "GammaPoisson", "BetaBinomial"]:
+            if self.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
 
         # sample observations
@@ -794,7 +772,7 @@ class Variational(PyroModule):
 
         # dispersion variational parameters
         for view_name in self.generative.view_names:
-            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson", "BetaBinomial"]:
+            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
                 deep_setattr(
                     self.locs,
                     f"dispersion_{view_name}",
@@ -1007,7 +985,7 @@ class Variational(PyroModule):
         for view_name in self.generative.view_names:
             self.sample_dict[f"w_{view_name}"] = self.sample_weights[view_name](view_name, plates)
 
-            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson", "BetaBinomial"]:
+            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
 
         return self.sample_dict

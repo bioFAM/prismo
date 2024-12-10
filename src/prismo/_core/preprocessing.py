@@ -137,7 +137,7 @@ def infer_likelihoods(data: dict) -> dict:
 
     This function analyzes the data distribution in each view and infers the
     appropriate likelihood model. The possible likelihoods are "Normal",
-    "Bernoulli", "BetaBinomial", and "GammaPoisson".
+    "Bernoulli" and "GammaPoisson".
 
     Args:
         data: Dictionary with view names as keys and AnnData objects as values.
@@ -160,10 +160,7 @@ def infer_likelihoods(data: dict) -> dict:
             elif torch.all(torch.isclose(v_X, torch.round(v_X))) and torch.all(v_X >= 0.0):
                 # check if every variable name exists twice with different suffixes
                 var_names_base = v.var_names.str.rsplit("_", n=1, expand=True).to_frame().reset_index(drop=True)[0]
-                if var_names_base.nunique() * 2 == len(var_names_base):
-                    likelihoods[k] = "BetaBinomial"
-
-                else:
+                if var_names_base.nunique() * 2 != len(var_names_base):
                     likelihoods[k] = "GammaPoisson"
 
             else:
@@ -179,9 +176,8 @@ def infer_likelihoods(data: dict) -> dict:
 def validate_likelihoods(data: dict, likelihoods: dict) -> dict:
     """Validate likelihoods for each view based on the data distribution.
 
-    This function validates the specified likelihoods ("Normal", "Bernoulli",
-    "BetaBinomial", "GammaPoisson") for each view by comparing them against
-    the actual data distribution.
+    This function validates the specified likelihoods ("Normal", "Bernoulli", "GammaPoisson")
+    for each view by comparing them against the actual data distribution.
 
     Args:
         data: Dictionary with view names as keys and AnnData objects as values.
@@ -200,20 +196,12 @@ def validate_likelihoods(data: dict, likelihoods: dict) -> dict:
             if not torch.all(torch.isclose(v_X, torch.zeros_like(v_X)) | torch.isclose(v_X, torch.ones_like(v_X))):
                 raise ValueError(f"Bernoulli likelihood in view {k} must be used with binary data.")
 
-        elif likelihoods[k] in ["GammaPoisson", "BetaBinomial"]:
+        if likelihoods[k] == "GammaPoisson":
             # check if all values are positive integers
             if not (torch.all(torch.isclose(v_X, torch.round(v_X))) and torch.all(v_X >= 0.0)):
                 raise ValueError(
                     f"{likelihoods[k]} likelihood in view {k} must be used with (integer, non-negative) count data."
                 )
-
-            if likelihoods[k] == "BetaBinomial":
-                var_names_base = v.var_names.str.rsplit("_", n=1, expand=True).to_frame().reset_index(drop=True)[0]
-                # check if all var_names appear twice with different suffixes
-                if (not var_names_base.nunique() * 2 == len(var_names_base)) or v.var_names.duplicated().any():
-                    raise ValueError(
-                        f"BetaBinomial likelihood in view {k} requires every var_name to exist twice with different suffixes."
-                    )
 
 
 def remove_constant_features(data: dict, likelihoods: dict) -> dict:
@@ -259,8 +247,6 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
     """Compute the mean of each feature across all observations in a group.
 
     This function calculates the mean of each feature for all observations within a group.
-    For BetaBinomial data, the mean is computed as the ratio of the first occurrence
-    of a feature to the sum of both occurrences.
 
     Args:
         data: Nested dictionary of AnnData objects with group names as keys
@@ -280,27 +266,10 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
     for k_groups, v_groups in data.items():
         means[k_groups] = {}
         for k_views, v_views in v_groups.items():
-            if likelihoods[k_views] in ["Normal", "Bernoulli", "GammaPoisson"]:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=RuntimeWarning)
-                    # In some views all values of a sample might be nan, so we need to ignore the warning
-                    means[k_groups][k_views] = np.nanmean(v_views.X, axis=0 if how == "feature" else 1)
-
-            if likelihoods[k_views] == "BetaBinomial":
-                # create DataFrame with indices of first and second occurence (columns) of every feature (rows)
-                split_var_names = pd.Series(v_views.var_names).str.rsplit("_", n=1, expand=True)
-                split_var_names.columns = ["base", "suffix"]
-                suffix_indices = split_var_names.groupby("base").apply(
-                    lambda x: pd.Series(x.index.values), include_groups=False
-                )
-
-                # get values of first and second occurence of every feature
-                x_0 = v_views.X[:, suffix_indices.loc[split_var_names["base"]].values[:, 0]]
-                x_1 = v_views.X[:, suffix_indices.loc[split_var_names["base"]].values[:, 1]]
-
-                # compute mean of the ratio of the first occurence to the sum of both occurences
-                ratio = x_0 / (x_0 + x_1 + 1e-6)
-                means[k_groups][k_views] = np.nanmean(ratio, axis=0 if how == "feature" else 1)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                # In some views all values of a sample might be nan, so we need to ignore the warning
+                means[k_groups][k_views] = np.nanmean(v_views.X, axis=0 if how == "feature" else 1)
 
     return means
 
@@ -500,7 +469,7 @@ def extract_obs(data: dict) -> dict:
     return metadata
 
 
-def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> dict:
+def align_var(data: dict, use_var: str = "intersection") -> dict:
     """Align features across groups.
 
     This function aligns features across different groups in the data. The alignment
@@ -510,7 +479,6 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
     Args:
         data: Nested dictionary of AnnData objects with group names as keys
             and view names as subkeys.
-        likelihoods: Dictionary with view names as keys and likelihoods as values.
         use_var: Strategy for feature alignment. Must be either:
             - "union": Include all features from all groups
             - "intersection": Include only features present in all groups
@@ -533,12 +501,6 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
                 reduce(np.intersect1d, [data[k_groups][k_views].var_names for k_groups in group_names])
             ).sort_values()
 
-            if likelihoods[k_views] == "BetaBinomial":
-                # keep only var names that have a base that occurs twice with different suffixes
-                var_names_intersection_base = var_names_intersection.str.rsplit("_", n=1, expand=True)[0]
-                duplicated = var_names_intersection_base.duplicated(keep=False)
-                var_names_intersection = var_names_intersection[duplicated]
-
             for k_groups in group_names:
                 data_aligned[k_groups][k_views] = data[k_groups][k_views][:, var_names_intersection].copy()
 
@@ -546,12 +508,6 @@ def align_var(data: dict, likelihoods: dict, use_var: str = "intersection") -> d
             var_names_union = pd.Series(
                 reduce(np.union1d, [data[k_groups][k_views].var_names for k_groups in group_names])
             ).sort_values()
-
-            if likelihoods[k_views] == "BetaBinomial":
-                # keep only var names that have a base that occurs twice with different suffixes
-                var_names_union_base = var_names_union.str.rsplit("_", n=1, expand=True)[0]
-                duplicated = var_names_union_base.duplicated(keep=False)
-                var_names_union = np.sort(var_names_union[duplicated])
 
             for k_groups in group_names:
                 # use pandas data frames indices to expand var

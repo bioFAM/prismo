@@ -48,9 +48,9 @@ def plot_factors_scatter(
         model: A PRISMO model.
         x: The factor to plot on the x-axis.
         y: The factor to plot on the y-axis.
-        group: The name of the group. If None, we use the first group. Defaults to None.
-        color: The covariate name to color by. Defaults to None.
-        shape: The covariate name to shape by. Defaults to None.
+        group: The name of the group. If None, we use the first group.
+        color: The covariate name to color by.
+        shape: The covariate name to shape by.
         figsize: Figure size in inches.
     """
     if group is None:
@@ -100,12 +100,12 @@ def plot_covariates_factor_scatter(
     Args:
         model: A PRISMO model.
         factor: The factor to plot.
-        group: The name of the group. If None, we use the first group with a covariate. Defaults to None.
+        group: The name of the group. If None, we use the first group with a covariate.
         covariate_dims: The dimensions of the covariates to plot against. If a list of length 1, plot covariate
             on the x-axis and factor on the y-axis. If a list of length 2, plot the first covariate on the x-axis,
-            the second covariate on the y-axis, and factor as color. If None, use all dimensions. Defaults to None.
-        color: The covariate name to color by. Only used when one covariate dimension is plotted. Defaults to None.
-        shape: The covariate name to shape by. Defaults to None.
+            the second covariate on the y-axis, and factor as color. If None, use all dimensions.
+        color: The covariate name to color by. Only used when one covariate dimension is plotted.
+        shape: The covariate name to shape by.
         figsize: Figure size in inches.
     """
     if len(covariate_dims) == 2 and color is not None:
@@ -303,7 +303,7 @@ def plot_variance_explained(
 
     Args:
         model: The PRISMO model.
-        group_by: The grouping to use for the plots. Either "group" or "view". Defaults to "group".
+        group_by: The grouping to use for the plots.
         figsize: Figure size in inches.
     """
     if group_by == "group":
@@ -704,8 +704,8 @@ def plot_top_weights(
     Args:
         model: The PRISMO model.
         n_features: Number of top features to plot.
-        views: The views to consider in the ranking. Defaults to all views.
-        factors: The factors to plot. Defaults to all factors.
+        views: The views to consider in the ranking. If `None`, plot all views.
+        factors: The factors to plot. If `None`, plot all factors.
         figsize: Figure size in inches.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
@@ -751,8 +751,8 @@ def plot_weights(
     Args:
         model: The PRISMO model.
         n_features: Number of top features to annotate.
-        views: The views to consider in the ranking. Defaults to all views.
-        factors: The factors to plot. Defaults to all factors.
+        views: The views to consider in the ranking. If `None`, use all views.
+        factors: The factors to plot. If `None`, plot all factors.
         pointsize: Point size for the annotated features. Points for unannotated features will be
             of size `0.25 * pointsize`.
         figsize: Figure size in inches.

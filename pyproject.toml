@@ -53,6 +53,7 @@ doc = [
     "setuptools",  # Until pybtex >0.23.0 releases: https://bitbucket.org/pybtex-devs/pybtex/issues/169/
     "sphinx-autodoc-typehints",
     "sphinxext-opengraph",
+    "sphinx-automodapi",
     # For notebooks
     "ipykernel",
     "ipython",

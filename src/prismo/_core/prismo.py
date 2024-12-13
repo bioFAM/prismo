@@ -550,6 +550,7 @@ class PRISMO:
     def _post_fit(self, data, feature_means, variational, train_loss_elbo):
         self._weights = variational.get_weights()
         self._factors = variational.get_factors()
+        self._dispersions = variational.get_dispersion()
         self._df_r2_full, self._df_r2_factors, self._factor_order = self._sort_factors(
             data, weights=self._weights.mean, factors=self._factors.mean
         )
@@ -558,7 +559,6 @@ class PRISMO:
         self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
         self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
         self._gps = self._get_gps(self._covariates)
-        self._dispersions = variational.get_dispersion()
         self._train_loss_elbo = np.asarray(train_loss_elbo)
 
         if self._covariates is not None:

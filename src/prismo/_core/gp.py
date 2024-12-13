@@ -119,7 +119,7 @@ class GP(ApproximateGP):
             base_kernel = MaternKernel(
                 batch_shape=batch_shape,
                 lengthscale_constraint=Interval(max_dist / 20, max_dist),
-                nu=kwargs.get("nu", 2.5),
+                nu=kwargs.get("nu", 1.5),
             )
         base_kernel = ScaleKernel(base_kernel, outputscale_constraint=Interval(1e-3, 1 - 1e-3), batch_shape=batch_shape)
         base_kernel.outputscale = torch.sigmoid(torch.randn(batch_shape, device=device)).clamp(1e-3, 1 - 1e-3)

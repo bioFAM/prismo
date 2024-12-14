@@ -290,14 +290,12 @@ class Generative(PyroModule):
 
     def _sample_dispersion_gamma(self, view_name, plates, **kwargs):
         with plates["features_" + view_name]:
-            return pyro.sample(
-                f"dispersion_{view_name}", dist.Gamma(1e-10 * torch.ones((1,)), 1e-10 * torch.ones((1,)))
-            )
+            return pyro.sample(f"dispersion_{view_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
 
     def _dist_obs_normal(self, loc, **kwargs):
         view_name = kwargs["view_name"]
         precision = self.sample_dict[f"dispersion_{view_name}"]
-        return dist.Normal(loc * torch.ones(1), torch.ones(1) / (precision + EPS))
+        return dist.Normal(loc, torch.reciprocal(precision + EPS))
 
     def _dist_obs_gamma_poisson(self, loc, **kwargs):
         view_name = kwargs["view_name"]

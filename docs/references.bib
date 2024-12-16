@@ -8,3 +8,330 @@
 	title = {The scverse project provides a computational ecosystem for single-cell omics data analysis},
 	journal = {Nature Biotechnology}
 }
+
+@article{pmid32393329,
+	abstract = {Technological advances have enabled the profiling of multiple molecular layers at single-cell resolution, assaying cells from multiple samples or conditions. Consequently, there is a growing need for computational strategies to analyze data from complex experimental designs that include multiple data modalities and multiple groups of samples. We present Multi-Omics Factor Analysis v2 (MOFA+), a statistical framework for the comprehensive and scalable integration of single-cell multi-modal data. MOFA+ reconstructs a low-dimensional representation of the data using computationally efficient variational inference and supports flexible sparsity constraints, allowing to jointly model variation across multiple sample groups and data modalities.},
+	author = {Argelaguet, Ricard and Arnol, Damien and Bredikhin, Danila and Deloro, Yonatan and Velten, Britta and Marioni, John C and Stegle, Oliver},
+	doi = {10.1186/s13059-020-02015-1},
+	journal = {{Genome Biol.}},
+	localfile = {argelaguet2020.pdf; 13059_2020_2015_MOESM1_ESM.pdf; 13059_2020_2015_MOESM2_ESM.pdf; 13059_2020_2015_MOESM3_ESM.pdf},
+	month = may,
+	nlmuniqueid = {100960660},
+	number = {1},
+	pages = {111},
+	pii = {10.1186/s13059-020-02015-1},
+	pmc = {PMC7212577},
+	pubmed = {32393329},
+	title = {{MOFA+: a statistical framework for comprehensive integration of multi-modal single-cell data.}},
+	volume = {21},
+	x-fetchedfrom = {PubMed},
+	year = {2020}
+}
+
+@article{pmid29925568,
+	abstract = {Multi-omics studies promise the improved characterization of biological processes across molecular layers. However, methods for the unsupervised integration of the resulting heterogeneous data sets are lacking. We present Multi-Omics Factor Analysis (MOFA), a computational method for discovering the principal sources of variation in multi-omics data sets. MOFA infers a set of (hidden) factors that capture biological and technical sources of variability. It disentangles axes of heterogeneity that are shared across multiple modalities and those specific to individual data modalities. The learnt factors enable a variety of downstream analyses, including identification of sample subgroups, data imputation and the detection of outlier samples. We applied MOFA to a cohort of 200 patient samples of chronic lymphocytic leukaemia, profiled for somatic mutations, RNA expression, DNA methylation and ex�vivo drug responses. MOFA identified major dimensions of disease heterogeneity, including immunoglobulin heavy-chain variable region status, trisomy of chromosome 12 and previously underappreciated drivers, such as response to oxidative stress. In a second application, we used MOFA to analyse single-cell multi-omics data, identifying coordinated transcriptional and epigenetic changes along cell differentiation.},
+	author = {Argelaguet, Ricard and Velten, Britta and Arnol, Damien and Dietrich, Sascha and Zenz, Thorsten and Marioni, John C and Buettner, Florian and Huber, Wolfgang and Stegle, Oliver},
+	doi = {10.15252/msb.20178124},
+	journal = {{Mol. Syst. Biol.}},
+	month = 06,
+	nlmuniqueid = {101235389},
+	number = {6},
+	pages = {e8124},
+	pmc = {PMC6010767},
+	pubmed = {29925568},
+	title = {{Multi-Omics Factor Analysis-a framework for unsupervised integration of multi-omics data sets.}},
+	volume = {14},
+	x-fetchedfrom = {PubMed},
+	year = {2018}
+}
+
+@article{pmid35027765,
+	abstract = {Factor analysis is a widely used method for dimensionality reduction in genome biology, with applications from personalized health to single-cell biology. Existing factor analysis models assume independence of the observed samples, an assumption that fails in spatio-temporal profiling studies. Here we present MEFISTO, a flexible and versatile toolbox for modeling high-dimensional data when spatial or temporal dependencies between the samples are known. MEFISTO maintains the established benefits of factor analysis for multimodal data, but enables the performance of spatio-temporally informed dimensionality reduction, interpolation, and separation of smooth from non-smooth patterns of variation. Moreover, MEFISTO can integrate multiple related datasets by simultaneously identifying and aligning the underlying patterns of variation in a data-driven manner. To illustrate MEFISTO, we apply the model to different datasets with spatial or temporal resolution, including an evolutionary atlas of organ development, a longitudinal microbiome study, a single-cell multi-omics atlas of mouse gastrulation and spatially resolved transcriptomics.},
+	author = {Velten, Britta and Braunger, Jana M and Argelaguet, Ricard and Arnol, Damien and Wirbel, Jakob and Bredikhin, Danila and Zeller, Georg and Stegle, Oliver},
+	doi = {10.1038/s41592-021-01343-9},
+	journal = {{Nat Methods}},
+	month = 02,
+	nlmuniqueid = {101215604},
+	number = {2},
+	pages = {179–186},
+	pii = {10.1038/s41592-021-01343-9},
+	pmc = {PMC8828471},
+	pubmed = {35027765},
+	title = {{Identifying temporal and spatial patterns of variation from multimodal data using MEFISTO.}},
+	volume = {19},
+	x-fetchedfrom = {PubMed},
+	year = {2022}
+}
+
+@inproceedings{pmlr-v206-qoku23a,
+	abstract = {Many real-world systems are described not only by data from a single source but via multiple data views. In genomic medicine, for instance, patients can be characterized by data from different molecular layers. Latent variable models with structured sparsity are a commonly used tool for disentangling variation within and across data views. However, their interpretability is cumbersome since it requires a direct inspection and interpretation of each factor from domain experts. Here, we propose MuVI, a novel multi-view latent variable model based on a modified horseshoe prior for modeling structured sparsity. This facilitates the incorporation of limited and noisy domain knowledge, thereby allowing for an analysis of multi-view data in an inherently explainable manner. We demonstrate that our model (i) outperforms state-of-the-art approaches for modeling structured sparsity in terms of the reconstruction error and the precision/recall, (ii) robustly integrates noisy domain expertise in the form of feature sets, (iii) promotes the identifiability of factors and (iv) infers interpretable and biologically meaningful axes of variation in a real-world multi-view dataset of cancer patients.},
+	author = {Qoku, Arber and Buettner, Florian},
+	booktitle = {Proceedings of The 26th International Conference on Artificial Intelligence and Statistics},
+	editor = {Ruiz, Francisco and Dy, Jennifer and van de Meent, Jan-Willem},
+	month = {25–27 Apr},
+	pages = {11545–11562},
+	pdf = {https://proceedings.mlr.press/v206/qoku23a/qoku23a.pdf},
+	publisher = {PMLR},
+	series = {Proceedings of Machine Learning Research},
+	title = {Encoding Domain Knowledge in Multi-view Latent Variable Models: A Bayesian Approach with Structured Sparsity},
+	url = {https://proceedings.mlr.press/v206/qoku23a.html},
+	volume = {206},
+	year = {2023}
+}
+
+@article{pmid36587187,
+	abstract = {Nonnegative matrix factorization (NMF) is widely used to analyze high-dimensional count data because, in contrast to real-valued alternatives such as factor analysis, it produces an interpretable parts-based representation. However, in applications such as spatial transcriptomics, NMF fails to incorporate known structure between observations. Here, we present nonnegative spatial factorization (NSF), a spatially-aware probabilistic dimension reduction model based on transformed Gaussian processes that naturally encourages sparsity and scales to tens of thousands of observations. NSF recovers ground truth factors more accurately than real-valued alternatives such as MEFISTO in simulations, and has lower out-of-sample prediction error than probabilistic NMF on three spatial transcriptomics datasets from mouse brain and liver. Since not all patterns of gene expression have spatial correlations, we also propose a hybrid extension of NSF that combines spatial and nonspatial components, enabling quantification of spatial importance for both observations and features. A TensorFlow implementation of NSF is available from https://github.com/willtownes/nsf-paper .},
+	author = {Townes, F William and Engelhardt, Barbara E},
+	doi = {10.1038/s41592-022-01687-w},
+	journal = {{Nat Methods}},
+	month = feb,
+	nlmuniqueid = {101215604},
+	number = {2},
+	pages = {229–238},
+	pii = {10.1038/s41592-022-01687-w},
+	pmc = {PMC9911348},
+	pubmed = {36587187},
+	title = {{Nonnegative spatial factorization applied to spatial genomics.}},
+	volume = {20},
+	x-fetchedfrom = {PubMed},
+	year = {2023}
+}
+
+@article{JMLR:v20:18-403,
+	author = {Bingham, Eli and Chen, Jonathan P. and Jankowiak, Martin and Obermeyer, Fritz and Pradhan, Neeraj and Karaletsos, Theofanis and Singh, Rohit and Szerlip, Paul and Horsfall, Paul and Goodman, Noah D.},
+	journal = {Journal of Machine Learning Research},
+	number = {28},
+	pages = {1–6},
+	title = {Pyro: Deep Universal Probabilistic Programming},
+	url = {http://jmlr.org/papers/v20/18-403.html},
+	volume = {20},
+	year = {2019}
+}
+
+@article{1601.00670v9,
+	abstract = { of the core problems of modern statistics is to approximate difficult-to-compute probability densities. This problem is especially important in Bayesian statistics, which frames all inference about unknown quantities as a calculation involving the posterior density. In this article, we review variational inference (VI), a method from machine learning that approximates probability densities through optimization. VI has been used in many applications and tends to be faster than classical methods, such as Markov chain Monte Carlo sampling. The idea behind VI is to first posit a family of densities and then to find a member of that family which is close to the target density. Closeness is measured by Kullback–Leibler divergence. We review the ideas behind mean-field variational inference, discuss the special case of VI applied to exponential family models, present a full example with a Bayesian mixture of Gaussians, and derive a variant that uses stochastic optimization to scale up to massive data. We discuss modern research in VI and highlight important open problems. VI is powerful, but it is not yet well understood. Our hope in writing this article is to catalyze statistical research on this class of algorithms. Supplementary materials for this article are available online. },
+	archiveprefix = {arXiv},
+	author = {Blei, David M. and Kucukelbir, Alp and McAuliffe, Jon D.},
+	comment = {published = 2016-01-04T21:28:04Z, updated = 2018-05-09T20:52:28Z},
+	doi = {10.1080/01621459.2017.1285773},
+	eprint = {1601.00670v9},
+	journal = {Journal of the American Statistical Association},
+	number = {518},
+	pages = {859–877},
+	primaryclass = {stat.CO},
+	publisher = {Taylor \& Francis},
+	title = {{Variational Inference: A Review for Statisticians}},
+	url = {http://arxiv.org/abs/1601.00670v9; http://arxiv.org/pdf/1601.00670v9},
+	volume = {112},
+	x-color = {#0033ff},
+	year = {2017}
+}
+
+@article{JMLR:v18:16-107,
+	author = {Kucukelbir, Alp and Tran, Dustin and Ranganath, Rajesh and Gelman, Andrew and Blei, David M.},
+	journal = {Journal of Machine Learning Research},
+	keywords = {advi},
+	number = {14},
+	pages = {1–45},
+	title = {Automatic Differentiation Variational Inference},
+	url = {http://jmlr.org/papers/v18/16-107.html},
+	volume = {18},
+	year = {2017}
+}
+
+@inproceedings{pmlr-v33-ranganath14,
+	abstract = {Variational inference has become a widely used method to approximate posteriors in complex latent variables models.  However, deriving a variational inference algorithm generally requires significant model-specific analysis. These efforts can hinder and deter us from quickly developing and exploring a variety of models for a problem at hand.  In this paper, we present a “black box” variational inference algorithm, one that can be quickly applied to many models with little additional derivation.  Our method is based on a stochastic optimization of the variational objective where the noisy gradient is computed from Monte Carlo samples from the variational distribution.  We develop a number of methods to reduce the variance of the gradient, always maintaining the criterion that we want to avoid difficult model-based derivations.  We evaluate our method against the corresponding black box sampling based methods. We find that our method reaches better predictive likelihoods much faster than sampling methods. Finally, we demonstrate that Black Box Variational Inference lets us easily explore a wide space of models by quickly constructing and evaluating several models of longitudinal healthcare data.},
+	address = {Reykjavik, Iceland},
+	author = {Ranganath, Rajesh and Gerrish, Sean and Blei, David},
+	booktitle = {Proceedings of the Seventeenth International Conference on Artificial Intelligence and Statistics},
+	editor = {Kaski, Samuel and Corander, Jukka},
+	month = {22–25 Apr},
+	pages = {814–822},
+	pdf = {http://proceedings.mlr.press/v33/ranganath14.pdf},
+	publisher = {PMLR},
+	series = {Proceedings of Machine Learning Research},
+	title = {{Black Box Variational Inference}},
+	url = {https://proceedings.mlr.press/v33/ranganath14.html},
+	volume = {33},
+	year = {2014}
+}
+
+@misc{1301.1299v1,
+	abstract = {  We present a new algorithm for approximate inference in probabilistic
+programs, based on a stochastic gradient for variational programs. This method
+is efficient without restrictions on the probabilistic program; it is
+particularly practical for distributions which are not analytically tractable,
+including highly structured distributions that arise in probabilistic programs.
+We show how to automatically derive mean-field probabilistic programs and
+optimize them, and demonstrate that our perspective improves inference
+efficiency over other algorithms.
+},
+	archiveprefix = {arXiv},
+	author = {Wingate, David and Weber, Theophane},
+	comment = {published = 2013-01-07T18:48:02Z, updated = 2013-01-07T18:48:02Z},
+	eprint = {1301.1299v1},
+	month = jan,
+	primaryclass = {stat.ML},
+	title = {{Automated Variational Inference in Probabilistic Programming}},
+	url = {http://arxiv.org/abs/1301.1299v1},
+	x-fetchedfrom = {arXiv.org},
+	year = {2013}
+}
+
+@misc{1610.05735v1,
+	abstract = {  Probabilistic programming languages (PPLs) are a powerful modeling tool, able
+to represent any computable probability distribution. Unfortunately,
+probabilistic program inference is often intractable, and existing PPLs mostly
+rely on expensive, approximate sampling-based methods. To alleviate this
+problem, one could try to learn from past inferences, so that future inferences
+run faster. This strategy is known as amortized inference; it has recently been
+applied to Bayesian networks and deep generative models. This paper proposes a
+system for amortized inference in PPLs. In our system, amortization comes in
+the form of a parameterized guide program. Guide programs have similar
+structure to the original program, but can have richer data flow, including
+neural network components. These networks can be optimized so that the guide
+approximately samples from the posterior distribution defined by the original
+program. We present a flexible interface for defining guide programs and a
+stochastic gradient-based scheme for optimizing guide parameters, as well as
+some preliminary results on automatically deriving guide programs. We explore
+in detail the common machine learning pattern in which a 'local' model is
+specified by 'global' random values and used to generate independent observed
+data points; this gives rise to amortized local inference supporting global
+model learning.
+},
+	archiveprefix = {arXiv},
+	author = {Ritchie, Daniel and Horsfall, Paul and Goodman, Noah D.},
+	comment = {published = 2016-10-18T18:35:09Z, updated = 2016-10-18T18:35:09Z},
+	eprint = {1610.05735v1},
+	month = oct,
+	primaryclass = {cs.AI},
+	title = {{Deep Amortized Inference for Probabilistic Programs}},
+	url = {http://arxiv.org/abs/1610.05735v1},
+	x-fetchedfrom = {arXiv.org},
+	year = {2016}
+}
+
+@inproceedings{pmlr-v5-carvalho09a,
+	abstract = {This paper presents a general, fully Bayesian framework for sparse supervised-learning problems based on the horseshoe prior. The horseshoe prior is a member of the family of multivariate scale mixtures of normals, and is therefore closely related to widely used approaches for sparse Bayesian learning, including, among others, Laplacian priors (e.g. the LASSO) and Student-t priors (e.g. the relevance vector machine). The advantages of the horseshoe are its robustness at handling unknown sparsity and large outlying signals. These properties are justifed theoretically via a representation theorem and accompanied by comprehensive empirical experiments that compare its performance to benchmark alternatives.},
+	address = {Hilton Clearwater Beach Resort, Clearwater Beach, Florida USA},
+	author = {Carvalho, Carlos M. and Polson, Nicholas G. and Scott, James G.},
+	booktitle = {Proceedings of the Twelth International Conference on Artificial Intelligence and Statistics},
+	editor = {van Dyk, David and Welling, Max},
+	month = {apr},
+	pages = {73–80},
+	pdf = {http://proceedings.mlr.press/v5/carvalho09a/carvalho09a.pdf},
+	publisher = {PMLR},
+	series = {Proceedings of Machine Learning Research},
+	title = {Handling Sparsity via the Horseshoe},
+	url = {https://proceedings.mlr.press/v5/carvalho09a.html},
+	volume = {5},
+	year = {2009}
+}
+
+@article{10.2307/25734098,
+	abstract = {This paper proposes a new approach to sparsity, called the horseshoe estimator, which arises from a prior based on multivariate-normal scale mixtures. We describe the estimator's advantages over existing approaches, including its robustness, adaptivity to different sparsity patterns and analytical tractability. We prove two theorems: one that characterizes the horseshoe estimator's tail robustness and the other that demonstrates a super-efficient rate of convergence to the correct estimate of the sampling density in sparse situations. Finally, using both real and simulated data, we show that the horseshoe estimator corresponds quite closely to the answers obtained by Bayesian model averaging under a point-mass mixture prior.},
+	author = {Carvalho, Carlos M. and Polson, Nicholas G. and Scott, James G.},
+	doi = {10.2307/25734098},
+	issn = {00063444, 14643510},
+	journal = {Biometrika},
+	number = {2},
+	pages = {465–480},
+	publisher = {[Oxford University Press, Biometrika Trust]},
+	title = {{The horseshoe estimator for sparse signals}},
+	url = {http://www.jstor.org/stable/25734098},
+	urldate = {2023-03-17},
+	volume = {97},
+	x-fetchedfrom = {JSTOR},
+	year = {2010}
+}
+
+@incollection{10.1093/acprof:oso/9780199694587.003.0017,
+	abstract = {{We study the classic problem of choosing a prior distribution for a location parameter \ensuremath{\beta} = (\ensuremath{\beta}  1,…, \ensuremath{\beta}  p) as p grows large. First, we study the standard “global‐local shrinkage” approach, based on scale mixtures of normals. Two theorems are presented which characterize certain desirable properties of shrinkage priors for sparse problems. Next, we review some recent results showing how Lévy processes can be used to generate infinite‐dimensional versions of standard normal scale‐mixture priors, along with new priors that have yet to be seriously studied in the literature. This approach provides an intuitive framework both for generating new regularization penalties and shrinkage rules, and for performing asymptotic analysis on existing models.}},
+	author = {Polson, Nicholas G. and Scott, James G.},
+	booktitle = {{Bayesian Statistics 9}},
+	doi = {10.1093/acprof:oso/9780199694587.003.0017},
+	eprint = {https://academic.oup.com/book/0/chapter/141655378/chapter-ag-pdf/45229839/book\_1879\_section\_141655378.ag.pdf},
+	isbn = {9780199694587},
+	localfile = {Bayes1.pdf},
+	month = {10},
+	publisher = {Oxford University Press},
+	title = {{Shrink Globally, Act Locally: Sparse Bayesian Regularization and Prediction}},
+	url = {https://doi.org/10.1093/acprof:oso/9780199694587.003.0017},
+	year = {2011}
+}
+
+@misc{1709.04333v3,
+	abstract = {  Most estimates for penalised linear regression can be viewed as posterior
+modes for an appropriate choice of prior distribution. Bayesian shrinkage
+methods, particularly the horseshoe estimator, have recently attracted a great
+deal of attention in the problem of estimating sparse, high-dimensional linear
+models. This paper extends these ideas, and presents a Bayesian grouped model
+with continuous global-local shrinkage priors to handle complex group
+hierarchies that include overlapping and multilevel group structures. As the
+posterior mean is never a sparse estimate of the linear model coefficients, we
+extend the recently proposed decoupled shrinkage and selection (DSS) technique
+to the problem of selecting groups of variables from posterior samples. To
+choose a final, sparse model, we also adapt generalised information criteria
+approaches to the DSS framework. To ensure that sparse groups, in which only a
+few predictors are active, can be effectively identified, we provide an
+alternative degrees of freedom estimator for sparse Bayesian linear models that
+takes into account the effects of shrinkage on the model coefficients.
+Simulations and real data analysis using our proposed method show promising
+performance in terms of correct identification of active and inactive groups,
+and prediction, in comparison with a Bayesian grouped slab-and-spike approach.
+},
+	archiveprefix = {arXiv},
+	author = {Xu, Zemei and Schmidt, Daniel F. and Makalic, Enes and Qian, Guoqi and Hopper, John L.},
+	comment = {published = 2017-09-13T13:58:26Z, updated = 2017-11-03T09:15:17Z},
+	eprint = {1709.04333v3},
+	month = nov,
+	primaryclass = {stat.ME},
+	title = {{Bayesian Sparse Global-Local Shrinkage Regression for Selection of Grouped Variables}},
+	url = {http://arxiv.org/abs/1709.04333v3; http://arxiv.org/pdf/1709.04333v3},
+	x-fetchedfrom = {arXiv.org},
+	year = {2017}
+}
+
+@article{10.1214/17-EJS1337SI,
+	abstract = {The horseshoe prior has proven to be a noteworthy alternative for sparse Bayesian estimation, but has previously suffered from two problems. First, there has been no systematic way of specifying a prior for the global shrinkage hyperparameter based on the prior information about the degree of sparsity in the parameter vector. Second, the horseshoe prior has the undesired property that there is no possibility of specifying separately information about sparsity and the amount of regularization for the largest coefficients, which can be problematic with weakly identified parameters, such as the logistic regression coefficients in the case of data separation. This paper proposes solutions to both of these problems. We introduce a concept of effective number of nonzero parameters, show an intuitive way of formulating the prior for the global hyperparameter based on the sparsity assumptions, and argue that the previous default choices are dubious based on their tendency to favor solutions with more unshrunk parameters than we typically expect a priori. Moreover, we introduce a generalization to the horseshoe prior, called the regularized horseshoe, that allows us to specify a minimum level of regularization to the largest values. We show that the new prior can be considered as the continuous counterpart of the spike-and-slab prior with a finite slab width, whereas the original horseshoe resembles the spike-and-slab with an infinitely wide slab. Numerical experiments on synthetic and real world data illustrate the benefit of both of these theoretical advances.},
+	author = {Piironen, Juho and Vehtari, Aki},
+	doi = {10.1214/17-EJS1337SI},
+	journal = {Electronic Journal of Statistics},
+	keywords = {Bayesian inference; horseshoe prior; shrinkage priors; Sparse estimation},
+	number = {2},
+	pages = {5018 – 5051},
+	publisher = {Institute of Mathematical Statistics and Bernoulli Society},
+	title = {{Sparsity information and regularization in the horseshoe and other shrinkage priors}},
+	url = {https://doi.org/10.1214/17-EJS1337SI},
+	volume = {11},
+	year = {2017}
+}
+
+@misc{2304.08612v1,
+	abstract = {  Backpropagation, the cornerstone of deep learning, is limited to computing
+gradients solely for continuous variables. This limitation hinders various
+research on problems involving discrete latent variables. To address this
+issue, we propose a novel approach for approximating the gradient of parameters
+involved in generating discrete latent variables. First, we examine the widely
+used Straight-Through (ST) heuristic and demonstrate that it works as a
+first-order approximation of the gradient. Guided by our findings, we propose a
+novel method called ReinMax, which integrates Heun's Method, a second-order
+numerical method for solving ODEs, to approximate the gradient. Our method
+achieves second-order accuracy without requiring Hessian or other second-order
+derivatives. We conduct experiments on structured output prediction and
+unsupervised generative modeling tasks. Our results show that \ours brings
+consistent improvements over the state of the art, including ST and
+Straight-Through Gumbel-Softmax. Implementations are released at
+https://github.com/microsoft/ReinMax.
+},
+	archiveprefix = {arXiv},
+	author = {Liu, Liyuan and Dong, Chengyu and Liu, Xiaodong and Yu, Bin and Gao, Jianfeng},
+	comment = {published = 2023-04-17T20:59:49Z, updated = 2023-04-17T20:59:49Z, Work in progress},
+	eprint = {2304.08612v1},
+	month = apr,
+	primaryclass = {cs.LG},
+	title = {{Bridging Discrete and Backpropagation: Straight-Through and Beyond}},
+	url = {http://arxiv.org/abs/2304.08612v1; http://arxiv.org/pdf/2304.08612v1},
+	x-fetchedfrom = {arXiv.org},
+	year = {2023}
+}

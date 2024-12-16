@@ -71,7 +71,7 @@ napoleon_include_init_with_doc = False
 napoleon_use_rtype = True  # having a separate entry generally helps readability
 napoleon_use_param = True
 myst_heading_anchors = 6  # create anchors for h1-h6
-myst_enable_extensions = ["amsmath", "colon_fence", "deflist", "dollarmath", "html_image", "html_admonition"]
+myst_enable_extensions = ["amsmath", "colon_fence", "deflist", "dollarmath", "amsmath", "html_image", "html_admonition"]
 myst_url_schemes = ("http", "https", "mailto")
 nb_output_stderr = "remove"
 nb_execution_mode = "off"
@@ -121,3 +121,49 @@ nitpick_ignore = [
     # you can add an exception to this list.
     #     ("py:class", "igraph.Graph"),
 ]
+
+# -- MathJax macros -----------------------------------------------------------
+mathjax3_config = {
+    "tex": {
+        "macros": {
+            "vec": ["\\boldsymbol{\\mathrm{#1}}", 1],
+            "mat": ["\\boldsymbol{\\mathrm{#1}}", 1],
+            "zeros": "\\vec{0}",
+            "ones": "\\vec{1}",
+            "eye": "\\mat{I}",
+            "trns": "^\\mathrm{T}",
+            "itrns": "^{-\\mathrm{T}}",
+            "cond": "\\;\\middle|\\;",
+            "Uniform": ["\\mathcal{U}\\left(#1, #2\\right)", 2],
+            "Normal": ["\\mathcal{N}\\left(#1, #2\\right)", 2],
+            "Lognormal": ["\\mathrm{Lognormal}\\left(#1, #2\\right)", 2],
+            "Laplace": ["\\mathrm{Laplace}\\left(#1, #2\\right)", 2],
+            "dGamma": ["\\mathcal{G}\\left(#1, #2\\right)", 2],
+            "InvGamma": ["\\mathrm{Inv}\\mathcal{G}\\left(#1, #2\\right)", 2],
+            "dBeta": ["\\mathrm{Beta}\\left(#1, #2\\right)", 2],
+            "Cauchy": ["C\\left(#1, #2\\right)", 2],
+            "HalfCauchy": ["C^+\\left(#1, #2\\right)", 2],
+            "dMultinomial": ["\\mathrm{Multinomial}\\left(#1\\right)", 1],
+            "Dirichlet": ["\\mathrm{Dir}\\left(#1\\right)", 1],
+            "Categorical": ["\\mathrm{Cat}\\left(#1\\right)", 1],
+            "dExp": ["\\mathrm{Exp}\\left(#1\\right)", 1],
+            "dBernoulli": ["\\mathrm{Ber}\\left(#1\\right)", 1],
+            "Poisson": ["\\mathrm{Pois}\\left(#1\\right)", 1],
+            "NegativeBinomial": ["\\mathrm{NB}\\left(#1, #2\\right)", 2],
+            "GammaPoisson": ["\\mathrm{GamPoi}\\left(#1, #2\\right)", 2],
+            "HorseShoe": ["\\mathrm{HS}\\left(#1\\right)", 1],
+            "HorseShoePlus": ["\\mathrm{HS+}\\left(#1\\right)", 1],
+            "dDiracDelta": ["\\delta_{#1}", 1],
+            "KL": ["\\mathrm{KL}\\left(#1\\parallel#2\\right)", 2],
+            "Exp": "\\operatorname{\\mathbb{E}}",
+            "Var": "\\operatorname{\\mathbb{V}ar}",
+            "Cov": "\\operatorname{\\mathbb{C}ov}",
+            "Prob": "\\operatorname{\\mathbb{P}}",
+            "diag": "\\operatorname{diag}",
+            "GP": "\\operatorname{\\mathcal{GP}}",
+            "relu": "\\operatorname{ReLU}",
+        },
+        "packages": {"[+]": ["physics", "mathtools"]},
+    },
+    "loader": {"load": ["[tex]/physics", "[tex]/mathtools"]},
+}

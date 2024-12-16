@@ -459,6 +459,10 @@ class PRISMO:
             for vn in self.view_names:
                 if vn not in prior_masks:
                     prior_masks[vn] = np.zeros((n_dense_factors + n_informed_factors, self.n_features[vn]), dtype=bool)
+                elif (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
+                    _logger.warn(
+                        f"Horseshoe prior required for annotations, but got {prior} for view {vn}. Annotations will be ignored."
+                    )
 
         self._n_dense_factors = n_dense_factors
         self._n_informed_factors = n_informed_factors

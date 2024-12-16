@@ -567,6 +567,8 @@ class PRISMO:
             self._orig_covariates = {g: cov.numpy() for g, cov in self._orig_covariates.items()}
 
         self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+        if not self._train_opts.save_path.endswith(".h5"):
+            self._train_opts.save_path += ".h5"
         _logger.info("Saving results...")
         self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 

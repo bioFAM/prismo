@@ -6,6 +6,7 @@
 :hidden: true
 :maxdepth: 1
 
+modeldescription.md
 api/index
 changelog.md
 contributing.md

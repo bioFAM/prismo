@@ -28,7 +28,7 @@ from . import gp, preprocessing
 from .io import load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
-from .utils import MeanStd
+from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior
 
 _logger = logging.getLogger(__name__)
 
@@ -78,92 +78,106 @@ class _Options:
 
 @dataclass(kw_only=True)
 class DataOptions(_Options):
-    """Options for the data.
-
-    Args:
-        group_by: Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
-
-            - String or list of strings. This will be applied to the MuData object or to all AnnData objects
-            - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
-              is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
-              in the corresponding `group_by` element.
-
-        scale_per_group: Scale Normal likelihood data per group, otherwise across all groups.
-        covariates_obs_key: Key of .obs attribute of each AnnData object that contains covariate values.
-        covariates_obsm_key: Key of .obsm attribute of each AnnData object that contains covariate values.
-        use_obs: How to align observations across views.
-        use_var: How to align variables across groups.
-        plot_data_overview: Plot data overview.
-    """
+    """Options for the data."""
 
     group_by: str | list[str] | dict[str] | dict[list[str]] | None = None
+    """Columns of `.obs` in MuData and AnnData objects to group data by. Can be any of:
+
+    - String or list of strings. This will be applied to the MuData object or to all AnnData objects
+    - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
+      is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
+      in the corresponding `group_by` element.
+"""
     scale_per_group: bool = True
+    """Scale Normal likelihood data per group, otherwise across all groups."""
+
     covariates_obs_key: dict[str, str] | str | None = None
+    """Key of .obs attribute of each AnnData object that contains covariate values."""
+
     covariates_obsm_key: dict[str, str] | str | None = None
+    """Key of .obsm attribute of each AnnData object that contains covariate values."""
+
     use_obs: Literal["union", "intersection"] | None = "union"
+    """How to align observations across views."""
+
     use_var: Literal["union", "intersection"] | None = "union"
+    """How to align variables across groups."""
+
     plot_data_overview: bool = True
+    """Plot data overview."""
 
 
 @dataclass(kw_only=True)
 class ModelOptions(_Options):
-    """Options for the model.
-
-    Args:
-        n_factors: Number of latent factors.
-        weight_prior: Weight priors for each view (if dict) or for all views (if str).
-        factor_prior: Factor priors for each group (if dict) or for all groups (if str).
-        likelihoods: Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None.
-        nonnegative_weights: Non-negativity constraints for weights for each view (if dict) or for all views (if bool).
-        nonnegative_factors: Non-negativity constraints for factors for each group (if dict) or for all groups (if bool).
-        annotations: Dictionary with weight annotations for informed views. Must have shape (n_factors, n_features).
-        annotations_varm_key: Key of .varm attribute of each AnnData object that contains annotation values.
-        prior_penalty: Prior penalty for annotations. #TODO: add more detail
-        init_factors: Initialization method for factors.
-        init_scale: Initialization scale of Normal distribution for factors.
-    """
+    """Options for the model."""
 
     n_factors: int = 0
-    weight_prior: dict[str, str] | str = "Normal"
-    factor_prior: dict[str, str] | str = "Normal"
-    likelihoods: dict[str, str] | str | None = None
+    """Number of latent factors."""
+
+    weight_prior: dict[str, WeightPrior] | WeightPrior = "Normal"
+    """Weight priors for each view (if dict) or for all views (if str)."""
+
+    factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal"
+    """Factor priors for each group (if dict) or for all groups (if str)."""
+
+    likelihoods: dict[str, Likelihood] | Likelihood | None = None
+    """Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None."""
+
     nonnegative_weights: dict[str, bool] | bool = False
+    """Non-negativity constraints for weights for each view (if dict) or for all views (if bool)."""
+
     nonnegative_factors: dict[str, bool] | bool = False
+    """Non-negativity constraints for factors for each group (if dict) or for all groups (if bool)."""
+
     annotations: dict[str, pd.DataFrame] | dict[str, np.ndarray] | None = None
+    """Dictionary with weight annotations for informed views. Must have shape (n_factors, n_features)."""
+
     annotations_varm_key: dict[str, str] | str | None = None
+    """Key of .varm attribute of each AnnData object that contains annotation values."""
+
     prior_penalty: float = 0.01
+    """Prior penalty for annotations."""  # TODO: add more detail
+
     init_factors: float | Literal["random", "orthogonal", "pca"] = "random"
+    """Initialization method for factors."""
+
     init_scale: float = 0.1
+    """Initialization scale of Normal distribution for factors."""
 
 
 @dataclass(kw_only=True)
 class TrainingOptions(_Options):
-    """Options for training.
-
-    Args:
-        device: Device to run training on.
-        batch_size: Batch size.
-        max_epochs: Maximum number of training epochs.
-        n_particles: Number of particles for ELBO estimation.
-        lr: Learning rate.
-        early_stopper_patience: Number of steps without relevant improvement to stop training.
-        print_every: Print loss every n steps.
-        save: Save model.
-        save_path: Path to save model.
-        mofa_compat: Save model in MOFA2 compatible format.
-        seed : Random seed.
-    """
+    """Options for training."""
 
     device: str | torch.device = "cuda"
+    """Device to run training on."""
+
     batch_size: int = 0
+    """Batch size."""
+
     max_epochs: int = 10_000
+    """Maximum number of training epochs."""
+
     n_particles: int = 1
+    """Number of particles for ELBO estimation."""
+
     lr: float = 0.001
+    """Learning rate."""
+
     early_stopper_patience: int = 100
+    """Number of steps without relevant improvement to stop training."""
+
     print_every: int = 100
+    """Print loss every n steps."""
+
     save_path: str | None = None
+    """Path to save model."""
+
     mofa_compat: bool = False
+    """Save model in MOFA2 compatible format."""
+
     seed: int | None = None
+    """Seed for the pseudorandom number generator."""
 
     def __post_init__(self):
         super().__post_init__()
@@ -172,25 +186,28 @@ class TrainingOptions(_Options):
 
 @dataclass(kw_only=True)
 class SmoothOptions(_Options):
-    """Options for Gaussian processes.
-
-    Args:
-        n_inducing: Number of inducing points.
-        kernel: Kernel function to use.
-        warp_groups: List of groups to apply dynamic time warping to.
-        warp_interval: Apply dynamic time warping every `warp_interval` epochs.
-        warp_open_begin: Perform open-ended alignment.
-        warp_open_end: Perform open-ended alignment.
-        warp_reference_group: Reference group to align the others to. Defaults to the first group of `warp_groups`.
-    """
+    """Options for Gaussian processes."""
 
     n_inducing: int = 100
+    """Number of inducing points."""
+
     kernel: Literal["RBF", "Matern"] = "RBF"
+    """Kernel function to use."""
+
     warp_groups: list[str] = field(default_factory=list)
+    """List of groups to apply dynamic time warping to."""
+
     warp_interval: int = 20
+    """Apply dynamic time warping every `warp_interval` epochs."""
+
     warp_open_begin: bool = True
+    """Perform open-ended alignment."""
+
     warp_open_end: bool = True
+    """Perform open-ended alignment."""
+
     warp_reference_group: str | None = None
+    """Reference group to align the others to. Defaults to the first group of `warp_groups`."""
 
     def __post_init__(self):
         super().__post_init__()
@@ -459,6 +476,10 @@ class PRISMO:
             for vn in self.view_names:
                 if vn not in prior_masks:
                     prior_masks[vn] = np.zeros((n_dense_factors + n_informed_factors, self.n_features[vn]), dtype=bool)
+                elif (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
+                    _logger.warn(
+                        f"Horseshoe prior required for annotations, but got {prior} for view {vn}. Annotations will be ignored."
+                    )
 
         self._n_dense_factors = n_dense_factors
         self._n_informed_factors = n_informed_factors

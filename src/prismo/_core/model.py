@@ -9,7 +9,7 @@ from pyro.nn import PyroModule, PyroParam
 
 from .dist import ReinMaxBernoulli
 from .gp import GP
-from .utils import MeanStd
+from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior
 
 EPS = 1e-8
 
@@ -21,9 +21,9 @@ class Generative(PyroModule):
         n_features: dict[str, int],
         n_factors: int,
         prior_scales=None,
-        factor_prior: dict[str, str] | str = "Normal",
-        weight_prior: dict[str, str] | str = "Normal",
-        likelihoods: dict[str, str] | str = "Normal",
+        factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal",
+        weight_prior: dict[str, WeightPrior] | WeightPrior = "Normal",
+        likelihoods: dict[str, Likelihood] | Likelihood = "Normal",
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
         feature_means: dict[dict[str, torch.Tensor]] = None,

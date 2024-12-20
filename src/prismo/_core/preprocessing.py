@@ -11,6 +11,8 @@ from anndata import AnnData
 from mudata import MuData
 from scipy.sparse._csr import csr_matrix
 
+from .utils import MeanStd
+
 logger = logging.getLogger(__name__)
 
 
@@ -241,6 +243,30 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
                 data[group_name][view_name] = group_dict[view_name][:, new_vars].copy()
 
     return data
+
+
+def calc_data_statistics(data: dict, likelihoods: dict) -> dict:
+    """Calculate additional statistics from the data.
+
+    These may be required by the model for some likelihoods.
+
+    Args:
+        data: Nested dictionary of AnnData objects with group names as keys
+            and view names as subkeys.
+        likelihoods: Dictionary with view names as keys and likelihoods as values.
+
+    Returns:
+        dict: Nested dictionary of likelihood-specific objects.
+    """
+    stats = {}
+    for gname, group in data.items():
+        cstats = {}
+        for vname, view in group.items():
+            if likelihoods[vname] == "GammaPoisson":
+                loglibsize = np.log(np.nansum(view.X, axis=1))
+                cstats[vname] = MeanStd(loglibsize.mean(), loglibsize.var())
+        stats[gname] = cstats
+    return stats
 
 
 def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:

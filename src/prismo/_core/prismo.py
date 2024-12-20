@@ -247,7 +247,7 @@ class PRISMO:
         self._sample_names = {k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()}
 
         self._adjust_options(data)
-        data, feature_means, sample_means = self._preprocess_data(data)
+        data, feature_means, sample_means, data_stats = self._preprocess_data(data)
 
         self._metadata = preprocessing.extract_obs(data)
         self._feature_names = {
@@ -259,7 +259,7 @@ class PRISMO:
         if self._data_opts.plot_data_overview:
             plot_overview(data).show()
 
-        self._fit(data, feature_means, sample_means)
+        self._fit(data, feature_means, sample_means, data_stats)
 
     @property
     def group_names(self) -> list[str]:
@@ -531,7 +531,7 @@ class PRISMO:
             self._gp_group_names = None
         return gp_warp_groups_order
 
-    def _setup_svi(self, prior_scales, init_tensor, feature_means, sample_means):
+    def _setup_svi(self, prior_scales, init_tensor, feature_means, sample_means, data_stats):
         gp_warp_groups_order = self._setup_gp()
         generative = Generative(
             n_samples=self.n_samples,
@@ -545,8 +545,7 @@ class PRISMO:
             nonnegative_weights=self._model_opts.nonnegative_weights,
             gp=self._gp,
             gp_group_names=self._gp_group_names,
-            feature_means=feature_means,
-            sample_means=sample_means,
+            data_stats=data_stats,
         ).to(self._train_opts.device)
 
         variational = Variational(generative, init_tensor).to(self._train_opts.device)
@@ -721,6 +720,10 @@ class PRISMO:
     def _preprocess_data(self, data):
         data = preprocessing.anndata_to_dense(data)
         self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
+
+        # calculate data stats on raw data
+        data_stats = preprocessing.calc_data_statistics(data, self._model_opts.likelihoods)
+
         data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
         data = preprocessing.scale_data(data, self._model_opts.likelihoods, self._data_opts.scale_per_group)
         data = preprocessing.center_data(
@@ -745,9 +748,9 @@ class PRISMO:
         feature_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="feature")
         sample_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="sample")
 
-        return data, feature_means, sample_means
+        return data, feature_means, sample_means, data_stats
 
-    def _fit(self, data, feature_means, sample_means):
+    def _fit(self, data, feature_means, sample_means, data_stats):
         init_tensor = self._initialize_factors(data)
 
         prior_scales = None
@@ -761,7 +764,9 @@ class PRISMO:
                 for vn in self._annotations.keys():
                     prior_scales[vn][: self._n_dense_factors, :] = dense_scale
 
-        svi, variational, gp_warp_groups_order = self._setup_svi(prior_scales, init_tensor, feature_means, sample_means)
+        svi, variational, gp_warp_groups_order = self._setup_svi(
+            prior_scales, init_tensor, feature_means, sample_means, data_stats
+        )
 
         # convert AnnData to torch.Tensor objects
         tensor_dict = {}

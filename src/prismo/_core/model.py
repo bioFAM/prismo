@@ -20,14 +20,13 @@ class Generative(PyroModule):
         n_samples: dict[str, int],
         n_features: dict[str, int],
         n_factors: int,
+        data_stats: dict[dict],
         prior_scales=None,
         factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal",
         weight_prior: dict[str, WeightPrior] | WeightPrior = "Normal",
         likelihoods: dict[str, Likelihood] | Likelihood = "Normal",
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
-        feature_means: dict[dict[str, torch.Tensor]] = None,
-        sample_means: dict[dict[str, torch.Tensor]] = None,
         gp: GP | None = None,
         gp_group_names: list[str] | None = None,
         **kwargs,
@@ -52,6 +51,8 @@ class Generative(PyroModule):
         if isinstance(nonnegative_factors, bool):
             nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
 
+        self.data_stats = data_stats
+
         self._have_prior_scales = isinstance(prior_scales, dict) and len(prior_scales)
         if self._have_prior_scales:
             for vn, ps in prior_scales.items():
@@ -65,8 +66,6 @@ class Generative(PyroModule):
         self.likelihoods = likelihoods
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
-        self.feature_means = feature_means
-        self.sample_means = sample_means
         self.gp = gp
         if self.gp is not None:
             pyro.module("gp", self.gp)
@@ -297,11 +296,16 @@ class Generative(PyroModule):
         precision = self.sample_dict[f"dispersion_{view_name}"]
         return dist.Normal(loc, torch.reciprocal(precision + EPS))
 
-    def _dist_obs_gamma_poisson(self, loc, **kwargs):
-        view_name = kwargs["view_name"]
-        mean = kwargs["sample_means"][kwargs["group_name"]][kwargs["view_name"]]
+    def _dist_obs_gamma_poisson(self, loc, view_name, group_name, plates, **kwargs):
+        libsizes = self.data_stats[group_name][view_name]
+        with plates[f"samples_{group_name}"]:
+            scalefactor = pyro.sample(
+                f"y_{group_name}",
+                dist.LogNormal(0.0, torch.as_tensor(libsizes.std) / torch.sqrt(torch.as_tensor(libsizes.mean))),
+            )
+
         dispersion = self.sample_dict[f"dispersion_{view_name}"]
-        rate = self.pos_transform(loc) * mean.view(1, -1)
+        rate = self.pos_transform(loc) * scalefactor
         return dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
 
     def _dist_obs_bernoulli(self, loc, **kwargs):
@@ -312,22 +316,6 @@ class Generative(PyroModule):
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
 
         plates = self._get_plates()
-
-        sample_means = {}
-        for group_name in data.keys():
-            sample_means[group_name] = {}
-            for view_name in self.view_names:
-                if self.likelihoods[view_name] in ["GammaPoisson"]:
-                    sample_means[group_name][view_name] = torch.tensor(self.sample_means[group_name][view_name])[
-                        data[group_name]["sample_idx"]
-                    ]
-
-        feature_means = {}
-        for group_name in data.keys():
-            feature_means[group_name] = {}
-            for view_name in self.view_names:
-                if self.likelihoods[view_name] in ["GammaPoisson"]:
-                    feature_means[group_name][view_name] = torch.tensor(self.feature_means[group_name][view_name])
 
         # sample non-GP factors
         for group_name in current_group_names:
@@ -390,13 +378,7 @@ class Generative(PyroModule):
                 obs = torch.nan_to_num(obs, nan=0)
 
                 dist_parameterized = self.dist_obs[view_name](
-                    loc,
-                    obs=obs,
-                    obs_mask=obs_mask,
-                    group_name=group_name,
-                    view_name=view_name,
-                    feature_means=feature_means,
-                    sample_means=sample_means,
+                    loc, obs=obs, obs_mask=obs_mask, group_name=group_name, view_name=view_name, plates=plates
                 )
 
                 with (
@@ -795,6 +777,20 @@ class Variational(PyroModule):
                     ),
                 )
 
+        # likelihood variational parameters
+        if "GammaPoisson" in self.generative.likelihoods.values():
+            for group_name in self.generative.group_names:
+                deep_setattr(
+                    self.locs,
+                    f"y_{group_name}",
+                    PyroParam(self.init_loc * torch.ones((n_samples[group_name],)), constraint=constraints.real),
+                )
+                deep_setattr(
+                    self.scales,
+                    f"y_{group_name}",
+                    PyroParam(self.init_scale * torch.ones((n_samples[group_name],)), constraint=constraints.positive),
+                )
+
     def _setup_distributions(self):
         # factor_prior
         self.sample_factors = {}
@@ -821,6 +817,14 @@ class Variational(PyroModule):
                 self.sample_weights[view_name] = self._sample_weights_horseshoe
             if self.generative.weight_prior[view_name] == "SnS":
                 self.sample_weights[view_name] = self._sample_weights_sns
+
+        # likelihoods
+        self.dist_obs = {}
+        for view_name in self.generative.view_names:
+            if self.generative.likelihoods[view_name] == "GammaPoisson":
+                self.dist_obs[view_name] = self._dist_obs_gamma_poisson
+            else:
+                self.dist_obs[view_name] = lambda *args, **kwargs: None
 
         # dispersion_prior
         self.sample_dispersion = self._sample_dispersion_lognormal
@@ -955,6 +959,11 @@ class Variational(PyroModule):
         with plates[f"features_{view_name}"]:
             return pyro.sample(f"dispersion_{view_name}", dist.LogNormal(dispersion_loc, dispersion_scale))
 
+    def _dist_obs_gamma_poisson(self, view_name, group_name, plates, **kwargs):
+        y_loc, y_scale = self._get_loc_and_scale(f"y_{group_name}")
+        with plates[f"samples_{group_name}"] as idx:
+            return pyro.sample(f"y_{group_name}", dist.LogNormal(y_loc[idx], y_scale[idx]))
+
     def forward(self, data):
         current_gp_groups = {
             g: self.generative.get_gp_group_idx(g) for g in self.generative.gp_group_names if g in data
@@ -995,6 +1004,10 @@ class Variational(PyroModule):
 
             if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
+
+        for group_name in data.keys():
+            for view_name in self.generative.view_names:
+                self.dist_obs[view_name](group_name=group_name, view_name=view_name, plates=plates)
 
         return self.sample_dict
 

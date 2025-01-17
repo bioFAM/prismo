@@ -239,21 +239,23 @@ class PRISMO:
     """
 
     def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
-        self._process_options(*args)
+        self._preprocess_options(*args)
         data = preprocessing.cast_data(data, group_by=self._data_opts.group_by)
 
         self._view_names = list(data[next(iter(data.keys()))].keys())
         self._group_names = list(data.keys())
-        self._sample_names = {k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()}
 
         self._adjust_options(data)
         data, feature_means, sample_means = self._preprocess_data(data)
-
+        self._sample_names = {
+            k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()
+        }  # this must be after _preprocess_data
         self._metadata = preprocessing.extract_obs(data)
         self._feature_names = {
             k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names
         }  # this must be after _preprocess_data
 
+        self._postprocess_options(data)
         self._setup_annotations(data)
 
         if self._data_opts.plot_data_overview:
@@ -670,7 +672,7 @@ class PRISMO:
 
         return init_tensor
 
-    def _process_options(self, *args: _Options):
+    def _preprocess_options(self, *args: _Options):
         self._data_opts = DataOptions()
         self._model_opts = ModelOptions()
         self._train_opts = TrainingOptions()
@@ -715,6 +717,7 @@ class PRISMO:
 
         self._train_opts.device = self._setup_device(self._train_opts.device)
 
+    def _postprocess_options(self, data: dict[dict[ad.AnnData]]):
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= self.n_samples_total):
             self._train_opts.batch_size = self.n_samples_total
 

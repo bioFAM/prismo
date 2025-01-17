@@ -286,7 +286,10 @@ class Generative(PyroModule):
         view_name = kwargs["view_name"]
         mean = kwargs["sample_means"][kwargs["group_name"]][kwargs["view_name"]]
         dispersion = self.sample_dict[f"dispersion_{view_name}"]
-        rate = self.pos_transform(loc) * mean.view(1, -1)
+        mean[torch.isnan(mean)] = (
+            0  # if a sample is missing from a view, all features will be nan, and the mean of that sample will also be nan. This sample will be masked anyway
+        )
+        rate = self.pos_transform(loc) * mean[None, ...]
         return dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
 
     def _dist_obs_bernoulli(self, loc, **kwargs):

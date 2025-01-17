@@ -243,7 +243,7 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     return data
 
 
-def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
+def get_data_mean(data: dict, how="feature") -> dict:
     """Compute the mean of each feature across all observations in a group.
 
     This function calculates the mean of each feature for all observations within a group.
@@ -251,7 +251,6 @@ def get_data_mean(data: dict, likelihoods: dict, how="feature") -> dict:
     Args:
         data: Nested dictionary of AnnData objects with group names as keys
             and view names as subkeys.
-        likelihoods: Dictionary with view names as keys and likelihoods as values.
         how: Specifies whether to compute the mean across features or samples.
 
     Returns:

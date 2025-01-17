@@ -101,33 +101,18 @@ class Generative(PyroModule):
         subsample = kwargs.get("subsample", None)
 
         for group_name in self.group_names:
-            if subsample is not None and subsample[group_name] is not None:
-                csubsample = subsample[group_name]
-            else:
-                csubsample = torch.arange(
-                    self.n_samples[group_name]
-                )  # FIXME: workaround for https://github.com/pyro-ppl/pyro/pull/3405
             plates[f"samples_{group_name}"] = pyro.plate(
-                "plate_samples_" + group_name, self.n_samples[group_name], dim=-1, subsample=csubsample
+                "plate_samples_" + group_name, self.n_samples[group_name], dim=-1, subsample=subsample[group_name]
             )
 
-        gp_subsample = None
-        offset = 0
-        if subsample is not None and any(subsample[g] is not None for g in self.gp_group_names):
+        if len(self.gp_group_names):
+            offset = 0
             gp_subsample = []
             for g in self.gp_group_names:
-                s = subsample[g]
-                if s is None:
-                    gp_subsample.append(torch.arange(self.n_samples[g]) + offset)
-                else:
-                    gp_subsample.append(s + offset)
+                gp_subsample.append(subsample[g] + offset)
                 offset += self.n_samples[g]
             gp_subsample = torch.cat(gp_subsample)
-        elif len(self.gp_group_names):
-            offset = sum(self.n_samples[g] for g in self.gp_group_names)
-            gp_subsample = torch.arange(offset)  # FIXME: workaround for https://github.com/pyro-ppl/pyro/pull/3405
 
-        if len(self.gp_group_names):
             plates["gp_samples"] = pyro.plate("plate_gp_samples", offset, dim=-1, subsample=gp_subsample)
 
             # needs to be at dim=-2 to work with GPyTorch
@@ -310,8 +295,9 @@ class Generative(PyroModule):
     def forward(self, data):
         current_gp_groups = {g: self.get_gp_group_idx(g) for g in self.gp_group_names if g in data}
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
+        subsample = {group_name: group["sample_idx"] for group_name, group in data.items()}
 
-        plates = self._get_plates()
+        plates = self._get_plates(subsample=subsample)
 
         sample_means = {}
         for group_name in data.keys():
@@ -961,10 +947,7 @@ class Variational(PyroModule):
         }
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
 
-        subsample = {group_name: None for group_name in data.keys()}
-        for group_name in data.keys():
-            if "sample_idx" in data[group_name].keys():
-                subsample[group_name] = data[group_name]["sample_idx"]
+        subsample = {group_name: group["sample_idx"] for group_name, group in data.items()}
 
         plates = self.generative._get_plates(subsample=subsample)
 

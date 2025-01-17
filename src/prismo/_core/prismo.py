@@ -742,8 +742,8 @@ class PRISMO:
         )  # names for MOFA output
 
         # compute feature means for intercept terms
-        feature_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="feature")
-        sample_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="sample")
+        feature_means = preprocessing.get_data_mean(data, how="feature")
+        sample_means = preprocessing.get_data_mean(data, how="sample")
 
         return data, feature_means, sample_means
 
@@ -766,7 +766,7 @@ class PRISMO:
         # convert AnnData to torch.Tensor objects
         tensor_dict = {}
         for group_name, group_dict in data.items():
-            tensor_dict[group_name] = {}
+            tensor_dict[group_name] = {"sample_idx": torch.arange(self.n_samples[group_name])}
             if self._covariates is not None and group_name in self._covariates:
                 if self._covariates[group_name] is not None:
                     tensor_dict[group_name]["covariates"] = torch.as_tensor(self._covariates[group_name])
@@ -785,7 +785,6 @@ class PRISMO:
                     {key: tensor_dict[group_name][key] for key in tensor_dict[group_name].keys()},
                     batch_size=[self.n_samples[group_name]],
                 )
-                tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
 
                 data_loaders.append(
                     DataLoader(

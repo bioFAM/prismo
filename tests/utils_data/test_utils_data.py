@@ -111,9 +111,7 @@ def test_get_data_mean():
         },
     }
 
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
-
-    feature_mean = preprocessing.get_data_mean(data, likelihoods, how="feature")
+    feature_mean = preprocessing.get_data_mean(data, how="feature")
 
     assert isclose(feature_mean["group1"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
     assert isclose(feature_mean["group2"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
@@ -182,12 +180,10 @@ def test_align_obs_var():
     g1_v1_obs_names = ["b", "c", "d", "e"]
     g1_v2_obs_names = ["d", "e", "f"]
     g1_v3_obs_names = ["a", "b", "c", "d"]
-    g1_v4_obs_names = ["c", "d"]
 
     g2_v1_obs_names = ["h", "i", "j", "k"]
     g2_v2_obs_names = ["j", "k", "l"]
     g2_v3_obs_names = ["k", "l", "m"]
-    g2_v4_obs_names = ["h", "i"]
 
     g1_v1_var_names = ["g1", "g2"]
     g2_v1_var_names = ["g1", "g2", "g3"]
@@ -197,9 +193,6 @@ def test_align_obs_var():
 
     g1_v3_var_names = ["g5", "g6"]
     g2_v3_var_names = ["g6", "g7", "g8"]
-
-    g1_v4_var_names = ["g7_a", "g8_a", "g7_b", "g8_b"]
-    g2_v4_var_names = ["g7_a", "g7_b", "g8_a", "g8_b", "g9_a", "g9_b"]
 
     data = {
         "group1": {
@@ -237,8 +230,6 @@ def test_align_obs_var():
             ),
         },
     }
-
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
     data_c = preprocessing.align_obs(data, use_obs="union")
     data_c = preprocessing.align_var(data_c, use_var="union")

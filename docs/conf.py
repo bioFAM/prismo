@@ -88,6 +88,7 @@ intersphinx_mapping = {
     "pandas": ("https://pandas.pydata.org/docs/", None),
     "plotnine": ("https://plotnine.org/", None),
     "pytorch": ("https://pytorch.org/docs/stable/", None),
+    "muon-tutorials": ("https://muon-tutorials.readthedocs.io/en/latest", None),
 }
 
 # List of patterns, relative to source directory, that match files and

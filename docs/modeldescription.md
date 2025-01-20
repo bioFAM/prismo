@@ -1,3 +1,4 @@
+(modeldescription)=
 # The PRISMO model
 
 PRISMO aims to be a general framework for factor analysis of multi-omics data.

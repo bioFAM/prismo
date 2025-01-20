@@ -449,7 +449,7 @@ class PRISMO:
             n_dense_factors = self._model_opts.n_factors
             factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
-        prior_masks = None
+        prior_masks = {}
 
         if annotations is not None:
             # TODO: annotations need to be processed if not aligned or full

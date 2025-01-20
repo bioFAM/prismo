@@ -40,6 +40,8 @@ def plot_factors_scatter(
     group: str | None = None,
     color: str | None = None,
     shape: str | None = None,
+    size: float = 2,
+    alpha: float = 1,
     figsize: tuple[float, float] = (6, 6),
 ) -> p9.ggplot:
     """Plot two factors against each other and color by covariates.
@@ -51,6 +53,8 @@ def plot_factors_scatter(
         group: The name of the group. If None, we use the first group.
         color: The covariate name to color by.
         shape: The covariate name to shape by.
+        size: Size of the data points.
+        alpha: Transparency of the data points.
         figsize: Figure size in inches.
     """
     if group is None:
@@ -79,7 +83,7 @@ def plot_factors_scatter(
         p9.ggplot(df_factors, p9.aes(x=f"Factor {x}", y=f"Factor {y}", **aes_kwargs))
         + p9.geom_hline(yintercept=0, linetype="dashed", color="black")
         + p9.geom_vline(xintercept=0, linetype="dashed", color="black")
-        + p9.geom_point()
+        + p9.geom_point(size=size, alpha=alpha, stroke=0)
         + p9.theme(figure_size=figsize)
     )
 

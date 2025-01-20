@@ -645,8 +645,8 @@ def _prepare_weights_df(
     if factors is None:
         factors = np.arange(model.n_factors)
     else:
-        if not isinstance(factors, list):
-            factors = [factors]
+        if not isinstance(factors, Sequence) or isinstance(factors, str):
+            factors = (factors,)
         if all(isinstance(factor, str) for factor in factors):
             factors = np.where(np.isin(model.factor_names, factors))[0] + 1
         factors = np.asarray(factors) - 1

@@ -803,7 +803,7 @@ def plot_weights(
         + p9.theme(figure_size=figsize)
         + p9.geom_text(
             data=labeled_data,
-            mapping=p9.aes(x="x_text_pos", y="y_text_pos", label="feature", color="inferred", ha="ha"),
+            mapping=p9.aes(x="x_text_pos", y="y_text_pos", label="feature", ha="ha"),
             size=10,
             va="center",
             show_legend=False,

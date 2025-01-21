@@ -1351,7 +1351,10 @@ class PRISMO:
             map_location: Specify how to remap storage locations for PyTorch tensors. See the `torch.load`
                 documentation for details.
         """
-        state, pickle = load_model(path)
+        state, pickle = load_model(path, map_location)
+
+        if map_location is not None:
+            state["train_opts"]["device"] = map_location
 
         model = cls.__new__(cls)
         model._weights = MeanStd(**state["weights"])

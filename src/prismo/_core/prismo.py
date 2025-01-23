@@ -242,22 +242,23 @@ class PRISMO:
     """
 
     def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
-        self._process_options(*args)
+        self._preprocess_options(*args)
         data = preprocessing.cast_data(data, group_by=self._data_opts.group_by)
         
         self._view_names = list(data[next(iter(data.keys()))].keys())
         self._group_names = list(data.keys())
-        self._sample_names = {k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()}
-        
         self._adjust_options(data)
         
         data, feature_means, sample_means = self._preprocess_data(data)
-        
+        self._sample_names = {
+            k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()
+        }  # this must be after _preprocess_data
         self._metadata = preprocessing.extract_obs(data)
         self._feature_names = {
             k: next(iter(data.values()))[k].var_names.tolist() for k in self.view_names
         }  # this must be after _preprocess_data
 
+        self._postprocess_options(data)
         self._setup_annotations(data)
 
         if self._data_opts.plot_data_overview:
@@ -451,7 +452,7 @@ class PRISMO:
             n_dense_factors = self._model_opts.n_factors
             factor_names += [f"Factor {k + 1}" for k in range(n_dense_factors)]
 
-        prior_masks = None
+        prior_masks = {}
 
         if annotations is not None:
             # TODO: annotations need to be processed if not aligned or full
@@ -674,7 +675,7 @@ class PRISMO:
 
         return init_tensor
 
-    def _process_options(self, *args: _Options):
+    def _preprocess_options(self, *args: _Options):
         self._data_opts = DataOptions()
         self._model_opts = ModelOptions()
         self._train_opts = TrainingOptions()
@@ -719,6 +720,7 @@ class PRISMO:
 
         self._train_opts.device = self._setup_device(self._train_opts.device)
 
+    def _postprocess_options(self, data: dict[dict[ad.AnnData]]):
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= self.n_samples_total):
             self._train_opts.batch_size = self.n_samples_total
 
@@ -751,8 +753,8 @@ class PRISMO:
         )  # names for MOFA output
         
         # compute feature means for intercept terms
-        feature_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="feature")
-        sample_means = preprocessing.get_data_mean(data, self._model_opts.likelihoods, how="sample")
+        feature_means = preprocessing.get_data_mean(data, how="feature")
+        sample_means = preprocessing.get_data_mean(data, how="sample")
 
         return data, feature_means, sample_means
 
@@ -775,7 +777,7 @@ class PRISMO:
         # convert AnnData to torch.Tensor objects
         tensor_dict = {}
         for group_name, group_dict in data.items():
-            tensor_dict[group_name] = {}
+            tensor_dict[group_name] = {"sample_idx": torch.arange(self.n_samples[group_name])}
             if self._covariates is not None and group_name in self._covariates:
                 if self._covariates[group_name] is not None:
                     tensor_dict[group_name]["covariates"] = torch.as_tensor(self._covariates[group_name])
@@ -794,7 +796,6 @@ class PRISMO:
                     {key: tensor_dict[group_name][key] for key in tensor_dict[group_name].keys()},
                     batch_size=[self.n_samples[group_name]],
                 )
-                tensor_dict[group_name]["sample_idx"] = torch.arange(self.n_samples[group_name])
 
                 data_loaders.append(
                     DataLoader(
@@ -1358,7 +1359,10 @@ class PRISMO:
             map_location: Specify how to remap storage locations for PyTorch tensors. See the `torch.load`
                 documentation for details.
         """
-        state, pickle = load_model(path)
+        state, pickle = load_model(path, map_location)
+
+        if map_location is not None:
+            state["train_opts"]["device"] = map_location
 
         model = cls.__new__(cls)
         model._weights = MeanStd(**state["weights"])

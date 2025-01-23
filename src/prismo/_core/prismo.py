@@ -106,7 +106,7 @@ class DataOptions(_Options):
     plot_data_overview: bool = True
     """Plot data overview."""
 
-    remove_constant_features: bool = False
+    remove_constant_features: bool = True
     """Remove constant features from the data."""
 
 

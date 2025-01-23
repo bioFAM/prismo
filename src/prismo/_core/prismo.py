@@ -105,7 +105,7 @@ class DataOptions(_Options):
 
     plot_data_overview: bool = True
     """Plot data overview."""
-    
+
     remove_constant_features: bool = False
     """Remove constant features from the data."""
 
@@ -244,11 +244,11 @@ class PRISMO:
     def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
         self._preprocess_options(*args)
         data = preprocessing.cast_data(data, group_by=self._data_opts.group_by)
-        
+
         self._view_names = list(data[next(iter(data.keys()))].keys())
         self._group_names = list(data.keys())
         self._adjust_options(data)
-        
+
         data, feature_means, sample_means = self._preprocess_data(data)
         self._sample_names = {
             k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()
@@ -263,7 +263,7 @@ class PRISMO:
 
         if self._data_opts.plot_data_overview:
             plot_overview(data).show()
-            
+
         self._fit(data, feature_means, sample_means)
 
     @property
@@ -726,12 +726,12 @@ class PRISMO:
 
     def _preprocess_data(self, data):
         data = preprocessing.anndata_to_dense(data)
-        
+
         self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
-        
+
         if self._data_opts.remove_constant_features:
             data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
-        
+
         data = preprocessing.scale_data(data, self._model_opts.likelihoods, self._data_opts.scale_per_group)
 
         data = preprocessing.center_data(
@@ -740,18 +740,18 @@ class PRISMO:
             self._model_opts.nonnegative_weights,
             self._model_opts.nonnegative_factors,
         )
-        
+
         # align observations across views and variables across groups
         if self._data_opts.use_obs is not None:
             data = preprocessing.align_obs(data, self._data_opts.use_obs)
         if self._data_opts.use_var is not None:
             data = preprocessing.align_var(data, self._data_opts.use_var)
-            
+
         # obtain observations DataFrame and covariates
         self._covariates, self._covariates_names = preprocessing.extract_covariate(
             data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key
         )  # names for MOFA output
-        
+
         # compute feature means for intercept terms
         feature_means = preprocessing.get_data_mean(data, how="feature")
         sample_means = preprocessing.get_data_mean(data, how="sample")

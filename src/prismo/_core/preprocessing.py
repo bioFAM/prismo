@@ -233,12 +233,13 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
         n_removed_features = np.sum(~mask_keep_var[view_name])
         logger.debug(f"Removing {n_removed_features} constant features from view {view_name}")
 
-        for group_name, group_dict in data.items():
-            if view_name in group_dict.keys():
-                new_vars = np.intersect1d(
-                    adata_view.var_names[mask_keep_var[view_name]], group_dict[view_name].var_names
-                )
-                data[group_name][view_name] = group_dict[view_name][:, new_vars].copy()
+        if n_removed_features > 0:
+            for group_name, group_dict in data.items():
+                if view_name in group_dict.keys():
+                    new_vars = np.intersect1d(
+                        adata_view.var_names[mask_keep_var[view_name]], group_dict[view_name].var_names
+                    )
+                    data[group_name][view_name] = group_dict[view_name][:, new_vars].copy()
 
     return data
 

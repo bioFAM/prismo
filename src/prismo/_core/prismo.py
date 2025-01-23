@@ -106,6 +106,9 @@ class DataOptions(_Options):
     plot_data_overview: bool = True
     """Plot data overview."""
 
+    remove_constant_features: bool = True
+    """Remove constant features from the data."""
+
 
 @dataclass(kw_only=True)
 class ModelOptions(_Options):
@@ -244,8 +247,8 @@ class PRISMO:
 
         self._view_names = list(data[next(iter(data.keys()))].keys())
         self._group_names = list(data.keys())
-
         self._adjust_options(data)
+
         data, feature_means, sample_means = self._preprocess_data(data)
         self._sample_names = {
             k: next(iter(adatas.values())).obs_names.tolist() for k, adatas in data.items()
@@ -723,9 +726,14 @@ class PRISMO:
 
     def _preprocess_data(self, data):
         data = preprocessing.anndata_to_dense(data)
+
         self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
-        data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
+
+        if self._data_opts.remove_constant_features:
+            data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
+
         data = preprocessing.scale_data(data, self._model_opts.likelihoods, self._data_opts.scale_per_group)
+
         data = preprocessing.center_data(
             data,
             self._model_opts.likelihoods,

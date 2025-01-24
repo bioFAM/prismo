@@ -25,7 +25,7 @@ dependencies = [
     "pyro-ppl",
     "torch",
     "numpy",
-    "scipy",
+    "scipy>=1.8",
     "pandas",
     "statsmodels",
     "tensordict",

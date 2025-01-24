@@ -295,12 +295,11 @@ class Generative(PyroModule):
     def _dist_obs_bernoulli(self, loc, **kwargs):
         return dist.Bernoulli(logits=loc)
 
-    def forward(self, data):
+    def forward(self, data, sample_idx, covariates):
         current_gp_groups = {g: self.get_gp_group_idx(g) for g in self.gp_group_names if g in data}
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
-        subsample = {group_name: group["sample_idx"] for group_name, group in data.items()}
 
-        plates = self._get_plates(subsample=subsample)
+        plates = self._get_plates(subsample=sample_idx)
 
         sample_means = {}
         for group_name in data.keys():
@@ -321,24 +320,20 @@ class Generative(PyroModule):
         # sample non-GP factors
         for group_name in current_group_names:
             self.sample_dict[f"z_{group_name}"] = self.sample_factors[group_name](
-                group_name, plates, covariates=data[group_name].get("covariates", None)
+                group_name, plates, covariates=covariates.get(group_name, None)
             )
 
         # sample GP factors
         if len(current_gp_groups):
             factors = self._sample_factors_gp(
                 plates,
-                covariates=torch.cat(tuple(data[g]["covariates"] for g in current_gp_groups.keys()), dim=0),
+                covariates=torch.cat(tuple(covariates[g] for g in current_gp_groups.keys()), dim=0),
                 group_idx=torch.cat(
-                    tuple(
-                        torch.as_tensor(i).expand(data[g]["covariates"].shape[0]) for g, i in current_gp_groups.items()
-                    ),
+                    tuple(torch.as_tensor(i).expand(covariates[g].shape[0]) for g, i in current_gp_groups.items()),
                     dim=0,
                 ),
             )
-            factors = torch.split(
-                factors, tuple(data[g]["covariates"].shape[0] for g in current_gp_groups.keys()), dim=-1
-            )
+            factors = torch.split(factors, tuple(covariates[g].shape[0] for g in current_gp_groups.keys()), dim=-1)
             for group_name, factor in zip(current_gp_groups.keys(), factors, strict=True):
                 self.sample_dict[f"z_{group_name}"] = factor
 
@@ -944,35 +939,29 @@ class Variational(PyroModule):
         with plates[f"features_{view_name}"]:
             return pyro.sample(f"dispersion_{view_name}", dist.LogNormal(dispersion_loc, dispersion_scale))
 
-    def forward(self, data):
+    def forward(self, data, sample_idx, covariates):
         current_gp_groups = {
             g: self.generative.get_gp_group_idx(g) for g in self.generative.gp_group_names if g in data
         }
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
 
-        subsample = {group_name: group["sample_idx"] for group_name, group in data.items()}
-
-        plates = self.generative._get_plates(subsample=subsample)
+        plates = self.generative._get_plates(subsample=sample_idx)
 
         for group_name in current_group_names:
             self.sample_dict[f"z_{group_name}"] = self.sample_factors[group_name](
-                group_name, plates, covariates=data[group_name].get("covariates", None)
+                group_name, plates, covariates=covariates.get(group_name, None)
             )
 
         if len(current_gp_groups):
             factors = self._sample_factors_gp(
                 plates,
-                covariates=torch.cat(tuple(data[g]["covariates"] for g in current_gp_groups.keys()), dim=0),
+                covariates=torch.cat(tuple(covariates[g] for g in current_gp_groups.keys()), dim=0),
                 group_idx=torch.cat(
-                    tuple(
-                        torch.as_tensor(i).expand(data[g]["covariates"].shape[0]) for g, i in current_gp_groups.items()
-                    ),
+                    tuple(torch.as_tensor(i).expand(covariates[g].shape[0]) for g, i in current_gp_groups.items()),
                     dim=0,
                 ),
             )
-            factors = torch.split(
-                factors, tuple(data[g]["covariates"].shape[0] for g in current_gp_groups.keys()), dim=-1
-            )
+            factors = torch.split(factors, tuple(covariates[g].shape[0] for g in current_gp_groups.keys()), dim=-1)
             for group_name, factor in zip(current_gp_groups.keys(), factors, strict=True):
                 self.sample_dict[f"z_{group_name}"] = factor
 

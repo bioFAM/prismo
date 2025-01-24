@@ -9,9 +9,100 @@ import pandas as pd
 import torch
 from anndata import AnnData
 from mudata import MuData
+from numpy.typing import NDArray
+from scipy.sparse import issparse
 from scipy.sparse._csr import csr_matrix
 
-logger = logging.getLogger(__name__)
+from .datasets import Preprocessor
+from .utils import Likelihood, ViewStatistics
+
+_logger = logging.getLogger(__name__)
+
+
+class PrismoPreprocessor(Preprocessor):
+    def __init__(
+        self,
+        likelihoods: dict[str, Likelihood],
+        nonnegative_weights: dict[str, bool],
+        nonnegative_factors: dict[str, bool],
+        scale_per_group: bool = True,
+        constant_feature_var_threshold: float = 1e-16,
+    ):
+        super().__init__()
+
+        self._scale_per_group = scale_per_group
+        self._constant_feature_var_threshold = constant_feature_var_threshold
+        self._views_to_scale = {view_name for view_name, likelihood in likelihoods.items() if likelihood == "Normal"}
+        self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
+        self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
+
+    def _initialize(self):
+        self._nonconstantfeatures = {}
+        for view_name, viewstats in self._viewstats.items():
+            # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
+            # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
+            nonconst = viewstats.var > self._constant_feature_var_threshold
+            _logger.debug(f"Removing {viewstats.var.size - nonconst.sum()} features from view {view_name}.")
+            self._nonconstantfeatures[view_name] = nonconst
+
+            self._viewstats[view_name] = ViewStatistics(*(stat[nonconst] for stat in viewstats))
+            for view in self._viewstats_per_group.values():
+                view[view_name] = ViewStatistics(*(stat[nonconst] for stat in view[view_name]))
+
+    @property
+    def feature_means(self) -> dict[str, dict[str, float]]:
+        return {
+            group_name: {view_name: stats.mean for view_name, stats in group.items()}
+            for group_name, group in self._viewstats_per_group.items()
+        }
+
+    @property
+    def sample_means(self) -> dict[str, dict[str, float]]:
+        return {
+            group_name: {view_name: stats.mean for view_name, stats in group.items()}
+            for group_name, group in self._samplestats.items()
+        }
+
+    def __call__(self, arr: NDArray, group: str, view: str):
+        # remove constant features
+        arr = arr[..., self._nonconstantfeatures[view]]
+
+        if view in self._views_to_scale:
+            viewstats = self._viewstats[view]
+
+            # scale to unit variance
+            arr /= np.sqrt(self._viewstats_per_group[group][view].var if self._scale_per_group else viewstats.var)
+
+            # center
+            if view in self._nonnegative_weights and group in self._nonnegative_factors:
+                arr -= viewstats.min
+            else:
+                arr -= viewstats.mean
+        return arr
+
+
+def infer_likelihood(view: AnnData, *args) -> Likelihood:
+    """Infer the likelihood for a view based on the data distribution."""
+    data = view.X.data if issparse(view.X) else view.X
+    if np.all(np.isclose(data, 0) | np.isclose(data, 1)):  # TODO: set correct atol value
+        return "Bernoulli"
+    elif np.allclose(data, np.round(data)) and data.min() >= 0:
+        return "GammaPoisson"
+    else:
+        return "Normal"
+
+
+def validate_likelihood(view: AnnData, group_name: str, view_name: str, likelihood: Likelihood) -> str | None:
+    """Validate the likelihood for a view based on the data distribution."""
+    data = view.X.data if issparse(view.X) else view.X
+    if likelihood == "Bernoulli" and not np.all(
+        np.isclose(data, 0) | np.isclose(data, 1)
+    ):  # TODO: set correct atol value
+        raise ValueError(f"Bernoulli likelihood in view {view_name} must be used with binary data.")
+    elif likelihood == "GammaPoisson" and not np.allclose(data, np.round(data)) and data.min() >= 0:
+        raise ValueError(
+            f"GammaPoisson likelihood in view {view_name} must be used with count (non-negative integer) data."
+        )
 
 
 def cast_data(
@@ -231,7 +322,7 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
         variances = np.nanvar(adata_view.X, axis=0)
         mask_keep_var[view_name] = variances > 1e-16
         n_removed_features = np.sum(~mask_keep_var[view_name])
-        logger.debug(f"Removing {n_removed_features} constant features from view {view_name}")
+        _logger.debug(f"Removing {n_removed_features} constant features from view {view_name}")
 
         if n_removed_features > 0:
             for group_name, group_dict in data.items():
@@ -298,11 +389,11 @@ def center_data(data: dict, likelihoods: dict, nonnegative_weights: dict, nonneg
             if likelihoods[k_views] == "Normal":
                 # only if both weights and factors are non-negative, data may not be negative
                 if nonnegative_weights[k_views] and nonnegative_factors[k_groups]:
-                    logger.debug(f"- Anchoring {k_groups}/{k_views}...")
+                    _logger.debug(f"- Anchoring {k_groups}/{k_views}...")
                     min_values = np.nanmin(v_views.X, axis=0)
                     v_views.X -= min_values
                 else:
-                    logger.debug(f"- Centering {k_groups}/{k_views}...")
+                    _logger.debug(f"- Centering {k_groups}/{k_views}...")
                     mean_values = np.nanmean(v_views.X, axis=0)
                     v_views.X -= mean_values
 

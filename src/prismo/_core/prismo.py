@@ -217,7 +217,10 @@ class SmoothOptions(_Options):
 
     def __post_init__(self):
         super().__post_init__()
-        self.warp_groups = list(self.warp_groups)  # in case the user passed a tuple here, we need a list for saving
+        if isinstance(self.warp_groups, str):
+            self.warp_groups = [self.warp_groups]
+        else:
+            self.warp_groups = list(self.warp_groups)  # in case the user passed a tuple here, we need a list for saving
 
 
 def _to_device(data, device):

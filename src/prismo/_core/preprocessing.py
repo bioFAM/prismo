@@ -46,9 +46,8 @@ def cast_data(
             data = {"group_1": data.mod}
         else:
             data = {
-                name: {modname: mod.copy()}
+                name: {modname: mod.copy() for modname, mod in data[idx].mod.items()}
                 for name, idx in data.obs.groupby(group_by).indices.items()
-                for modname, mod in data[idx].mod.items()
             }
 
     elif isinstance(data, dict) and all(isinstance(v, AnnData) for v in data.values()):

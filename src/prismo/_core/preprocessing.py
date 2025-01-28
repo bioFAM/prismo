@@ -217,16 +217,17 @@ def remove_constant_features(data: dict, likelihoods: dict) -> dict:
     Returns:
         dict: Nested dictionary of AnnData objects with group names as keys and
             view names as subkeys, with constant features removed.
+
+    TODO: Raise error if all features are constant across all groups and views.
     """
     mask_keep_var = {}
     for view_name in likelihoods.keys():
-        adata_view = []
-        for group_dict in data.values():
-            if view_name in group_dict.keys():
-                adata_view.append(group_dict[view_name])
-            else:
-                continue
-        adata_view = ad.concat(adata_view, join="outer", fill_value=0.0)
+        adata_view = ad.concat(
+            [group_dict[view_name] for group_dict in data.values() if view_name in group_dict],
+            join="outer",
+            fill_value=0.0,
+        )
+
         variances = np.nanvar(adata_view.X, axis=0)
         mask_keep_var[view_name] = variances > 1e-16
         n_removed_features = np.sum(~mask_keep_var[view_name])

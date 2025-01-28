@@ -87,7 +87,8 @@ class DataOptions(_Options):
     - Dict of strings or dict of lists of strings. This is only valid if a dict of AnnData objects
       is given as `data`, in which case each AnnData object will be grouped by the `.obs` columns
       in the corresponding `group_by` element.
-"""
+    """
+
     scale_per_group: bool = True
     """Scale Normal likelihood data per group, otherwise across all groups."""
 
@@ -596,6 +597,7 @@ class PRISMO:
         if not self._train_opts.save_path.endswith(".h5"):
             self._train_opts.save_path += ".h5"
         _logger.info("Saving results...")
+        Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
         self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
     def _initialize_factors(self, data, impute_missings=True):

@@ -702,6 +702,8 @@ def plot_top_weights(
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
     figsize: tuple[int, int] = (5, 5),
+    nrows: int | None = None,
+    ncols: int | None = None,
 ) -> p9.ggplot:
     """Plot the top weights for a given factor and view.
 
@@ -711,6 +713,8 @@ def plot_top_weights(
         views: The views to consider in the ranking. If `None`, plot all views.
         factors: The factors to plot. If `None`, plot all factors.
         figsize: Figure size in inches.
+        nrows: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncols: Number of columns in the faceted plot. If None, plotnine will determine automatically.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     df = (
@@ -728,7 +732,8 @@ def plot_top_weights(
     aes_kwargs = {}
     if have_annot:
         aes_kwargs["color"] = "inferred"
-    plt = (
+
+    plot = (
         p9.ggplot(df, p9.aes("weightabs", "feature", xend=0, yend="feature", shape="weightsgn", **aes_kwargs))
         + p9.geom_segment()
         + p9.geom_point(size=5, stroke=0)
@@ -736,10 +741,18 @@ def plot_top_weights(
         + _weights_inferred_color_scale
         + p9.scale_x_continuous(expand=(0, 0, 0.05, 0))
         + p9.labs(x="| Weight |", y="", color="")
-        + p9.facet_wrap("factor", scales="free")
         + p9.theme(figure_size=figsize)
     )
-    return plt
+
+    facet_kwargs = {"scales": "free"}
+    if nrows is not None:
+        facet_kwargs["nrow"] = nrows
+    if ncols is not None:
+        facet_kwargs["ncol"] = ncols
+
+    plot += p9.facet_wrap("factor", **facet_kwargs)
+
+    return plot
 
 
 def plot_weights(
@@ -749,6 +762,8 @@ def plot_weights(
     factors: int | str | Sequence[int] | Sequence[str] | None = None,
     pointsize: float = 2,
     figsize: tuple[int, int] | None = None,
+    nrows: int | None = None,
+    ncols: int | None = None,
 ) -> p9.ggplot:
     """Plot the weights for a given factor and view.
 
@@ -760,6 +775,8 @@ def plot_weights(
         pointsize: Point size for the annotated features. Points for unannotated features will be
             of size `0.25 * pointsize`.
         figsize: Figure size in inches.
+        nrows: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncols: Number of columns in the faceted plot. If None, plotnine will determine automatically.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
@@ -797,13 +814,12 @@ def plot_weights(
 
     labeled_data["x_text_pos"] = df["rank"].max() / 2
 
-    return (
+    plot = (
         p9.ggplot(df, p9.aes("rank", "weight", label="feature", **aes_kwargs))
         + p9.geom_point(p9.aes(size="annotate"), stroke=0)
         + p9.scale_size_manual(breaks=(True, False), values=(pointsize, 0.25 * pointsize), guide=None)
         + _weights_inferred_color_scale
         + p9.labs(x="Rank", y="Weight", color="")
-        + p9.facet_grid("view", "factor", scales="free_y")
         + p9.theme(figure_size=figsize)
         + p9.geom_text(
             data=labeled_data,
@@ -816,3 +832,19 @@ def plot_weights(
             data=labeled_data, mapping=p9.aes(x="rank", y="weight", xend="x_text_pos", yend="y_text_pos"), color="gray"
         )
     )
+
+    if nrows is not None or ncols is not None:
+        df["facet"] = df["view"] + " - " + df["factor"].astype(str)
+        labeled_data["facet"] = labeled_data["view"] + " - " + labeled_data["factor"].astype(str)
+
+        facet_kwargs = {"scales": "free_y"}
+        if nrows is not None:
+            facet_kwargs["nrow"] = nrows
+        if ncols is not None:
+            facet_kwargs["ncol"] = ncols
+
+        plot += p9.facet_wrap("facet", **facet_kwargs)
+    else:
+        plot += p9.facet_grid("view", "factor", scales="free_y")
+
+    return plot

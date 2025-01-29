@@ -96,13 +96,31 @@ class FeatureSets:
         feature_sets (frozenset): The collection of feature sets.
         name (str): The name of the feature set collection.
         remove_empty (bool): Whether to remove empty feature sets.
+        shorten_names (bool): Whether to remove underscores from feature set names or abbreviate database names.
     """
 
-    def __init__(self, feature_sets: Collection[FeatureSet], name: str = "UNL", remove_empty: bool = True):
+    def __init__(
+        self,
+        feature_sets: Collection[FeatureSet],
+        name: str = "UNL",
+        remove_empty: bool = True,
+        shorten_names: bool = True,
+    ):
         self.name = name
 
         if remove_empty:
             feature_sets = {feature_set for feature_set in feature_sets if not feature_set.empty}
+
+        if shorten_names:
+            # Create new feature sets with underscores removed from names
+            feature_sets = {
+                FeatureSet(
+                    fs.features,
+                    name=fs.name.replace("REACTOME_", "[R] ").replace("HALLMARK_", "[H] ").replace("_", " "),
+                    description=fs.description,
+                )
+                for fs in feature_sets
+            }
 
         redundant_feature_sets = None
 
@@ -480,34 +498,44 @@ class FeatureSets:
         return {fs.name: fs.features for fs in self.feature_sets}
 
     @classmethod
-    def from_gmt(cls, path: str | Path, name: str | None = None, remove_empty: bool = True) -> FeatureSets:
+    def from_gmt(
+        cls, path: str | Path, name: str | None = None, remove_empty: bool = True, shorten_names: bool = False
+    ) -> FeatureSets:
         """Create a FeatureSets object from a GMT file.
 
         Args:
             path: Path to the GMT file.
             name: Name of the collection. Defaults to the file name.
             remove_empty: Whether to remove empty feature sets.
+            shorten_names: Whether to remove underscores from feature set names.
         """
         feature_sets = set()
         with open(path) as f:
             for line in f:
                 fs_name, description, *features = line.strip().split("\t")
                 feature_sets.add(FeatureSet(features, name=fs_name, description=description))
-        return cls(feature_sets, name=name or Path(path).name, remove_empty=remove_empty)
+        return cls(feature_sets, name=name or Path(path).name, remove_empty=remove_empty, shorten_names=shorten_names)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Iterable[str]], name: str | None = None, remove_empty: bool = True) -> FeatureSets:
+    def from_dict(
+        cls,
+        d: dict[str, Iterable[str]],
+        name: str | None = None,
+        remove_empty: bool = True,
+        shorten_names: bool = False,
+    ) -> FeatureSets:
         """Create a FeatureSets object from a dictionary.
 
         Args:
             d: Dictionary of feature sets.
             name: Name of the collection.
             remove_empty: Whether to remove empty feature sets.
+            shorten_names: Whether to remove underscores from feature set names.
         """
         feature_sets = set()
         for fs_name, features in d.items():
             feature_sets.add(FeatureSet(features, name=fs_name))
-        return cls(feature_sets, name=name, remove_empty=remove_empty)
+        return cls(feature_sets, name=name, remove_empty=remove_empty, shorten_names=shorten_names)
 
     @classmethod
     def from_dataframe(
@@ -518,6 +546,7 @@ class FeatureSets:
         features_col: str = "features",
         desc_col: str | None = None,
         remove_empty: bool = True,
+        shorten_names: bool = False,
     ) -> FeatureSets:
         """Create a FeatureSets object from a DataFrame.
 
@@ -528,10 +557,11 @@ class FeatureSets:
             features_col: Name of the column containing feature set features.
             desc_col: Name of the column containing feature set descriptions.
             remove_empty: Whether to remove empty feature sets.
+            shorten_names: Whether to remove underscores from feature set names.
         """
         feature_sets = set()
         for _, row in df.iterrows():
             feature_sets.add(
                 FeatureSet(row[features_col], name=row[name_col], description=desc_col is not None and row[desc_col])
             )
-        return cls(feature_sets, name=name, remove_empty=remove_empty)
+        return cls(feature_sets, name=name, remove_empty=remove_empty, shorten_names=shorten_names)

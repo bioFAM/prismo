@@ -10,6 +10,24 @@ from gpytorch.priors import Prior
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
 
+class BasicKernel(Kernel):
+    """A kernel that does not model group correlations.
+    
+    This kernel should be used when covariates are not aligned across groups."""
+
+    def __init__(
+        self,
+        base_kernel: Kernel | None,
+    ):
+        super().__init__()
+
+        self.base_kernel = base_kernel
+
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor, diag=False, last_dim_is_batch=False, **params):
+        x1_, x2_ = x1[..., 1:], x2[..., 1:]
+        return self.base_kernel(x1_, x2_, diag, last_dim_is_batch, **params)
+    
+
 class MefistoKernel(Kernel):
     """A kernel that combines a base kernel with group-specific correlations.
 
@@ -87,6 +105,7 @@ class GP(ApproximateGP):
         n_groups: int,
         kernel: str = "RBF",
         rank: int = 1,
+        use_mefisto_kernel: bool = True,
         **kwargs,
     ):
         covariates = tuple(covariates)
@@ -125,7 +144,10 @@ class GP(ApproximateGP):
         base_kernel.outputscale = torch.sigmoid(torch.randn(batch_shape, device=device)).clamp(1e-3, 1 - 1e-3)
         base_kernel.base_kernel.lengthscale = max_dist * torch.rand(batch_shape).to(device=device).clamp(0.1)
 
-        self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
+        if use_mefisto_kernel:
+            self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
+        else:
+            self.covar_module = BasicKernel(base_kernel)
 
     @property
     def outputscale(self):

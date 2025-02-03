@@ -10,8 +10,6 @@ from numpy.typing import NDArray
 from scipy import sparse
 from torch.utils.data import Dataset, RandomSampler, Sampler
 
-from . import utils
-
 T = TypeVar("T")
 ApplyCallable: TypeAlias = Callable[Concatenate[AnnData, str, str, ...], T]
 
@@ -19,20 +17,6 @@ _logger = logging.getLogger(__name__)
 
 
 class Preprocessor:
-    def set_statistics(
-        self,
-        viewstats_per_group: dict[str, dict[str, utils.ViewStatistics]],
-        viewstats: dict[str, utils.ViewStatistics],
-        samplestats: dict[str, dict[str, utils.ViewStatistics]],
-    ):
-        self._viewstats_per_group = viewstats_per_group
-        self._viewstats = viewstats
-        self._samplestats = samplestats
-        self._initialize()
-
-    def _initialize(self):
-        pass
-
     def __call__(self, arr: NDArray, group: str, view: str):
         return arr
 
@@ -74,13 +58,14 @@ class MuDataDataset(Dataset):
         super().__init__()
         self._data = mudata
         self._groups = mudata.obs.groupby(group_by if group_by is not None else lambda x: "group_1").groups
-        self._viewstats = self._viewstats_per_group = self._samplestats = None
+        self._viewstats = self._viewstats_per_group = self._viewstats_total = self._viewstats_total_per_group = (
+            self._samplestats
+        ) = None
 
         if preprocessor is not None:
             self.preprocessor = preprocessor
         else:
-            # don't calculate statistics if we don't have to
-            self._preprocessor = Preprocessor()
+            self.preprocessor = Preprocessor()
 
         self._cast_to = cast_to
 
@@ -90,30 +75,7 @@ class MuDataDataset(Dataset):
 
     @preprocessor.setter
     def preprocessor(self, preproc: Preprocessor):
-        if self._viewstats is None:
-            self._viewstats = {}
-
-            getstats = lambda mod, group_name, view_name: utils.ViewStatistics(
-                utils.mean(mod.X, axis=0), utils.var(mod.X, axis=0), utils.min(mod.X, axis=0), utils.max(mod.X, axis=0)
-            )
-            for modname, mod in self._data.mod.items():
-                self._viewstats[modname] = getstats(mod, None, modname)
-        if self._viewstats_per_group is None:
-            self._viewstats_per_group = self.apply(getstats)
-        if self._samplestats is None:
-            self._samplestats = self.apply(
-                lambda mod, group_name, view_name: utils.ViewStatistics(
-                    self._align_array_to_samples(utils.mean(mod.X, axis=1), view_name, group_name=group_name),
-                    self._align_array_to_samples(utils.var(mod.X, axis=1), view_name, group_name=group_name),
-                    self._align_array_to_samples(utils.min(mod.X, axis=1), view_name, group_name=group_name),
-                    self._align_array_to_samples(utils.max(mod.X, axis=1), view_name, group_name=group_name),
-                )
-            )
-
-        preproc.set_statistics(self._viewstats_per_group, self._viewstats, self._samplestats)
         self._preprocessor = preproc
-
-        return list(self._groups.keys())
 
     @property
     def cast_to(self) -> np.ScalarType:
@@ -186,6 +148,9 @@ class MuDataDataset(Dataset):
         out[nnz] = arr[viewidx[nnz] - 1]
         return out
 
+    def align_array_to_samples(self, arr: NDArray, view_name: str, group_name: str, fill_value: np.ScalarType = np.nan):
+        return self._align_array_to_samples(arr, view_name, group_name=group_name, fill_value=fill_value)
+
     def get_obs(self) -> dict[str, pd.DataFrame]:
         # We don't want to duplicate MuData's push_obs logic, but at the same time
         # we don't want to modify the data object. So we create a temporary fake
@@ -194,7 +159,11 @@ class MuDataDataset(Dataset):
             modname: AnnData(X=sparse.csr_array(mod.X.shape), obs=mod.obs, var=mod.var)
             for modname, mod in self._data.mod.items()
         }
+
+        # need to pass obs in the constructor to make shape validation for obsmap work
         fakemudata = MuData(fakeadatas, obs=self._data.obs, obsmap=self._data.obsmap)
+        # need to replace obs since the constructor runs update(), which breaks push_obs()
+        fakemudata.obs = self._data.obs
         fakemudata.push_obs()
         return {
             group_name: {
@@ -235,11 +204,13 @@ class MuDataDataset(Dataset):
         if covariates_obsm_key is None:
             covariates_obsm_key = {}
         for group_name, group_idx in self._groups.items():
+            obskey = covariates_obs_key.get(group_name, None)
+            obsmkey = covariates_obsm_key.get(group_name, None)
             if (
                 group_name not in covariates_obs_key
                 and group_name not in covariates_obsm_key
-                or (obskey := covariates_obs_key[group_name]) is None
-                and (obsmkey := covariates_obsm_key[group_name]) is None
+                or obskey is None
+                and obsmkey is None
             ):
                 continue
             if obskey and obsmkey:
@@ -258,7 +229,7 @@ class MuDataDataset(Dataset):
                         ccov = subdata.obs[obskey].to_numpy()
 
                     if ccov is not None:
-                        ccovs[modname] = self._align_array_to_samples(ccov, modname, subdata)
+                        ccovs[modname] = self._align_array_to_samples(ccov, modname, subdata)[:, None]
 
                 if len(ccovs):
                     covariates_names[group_name] = obskey
@@ -314,37 +285,59 @@ class MuDataDataset(Dataset):
     def apply(
         self,
         func: ApplyCallable[T],
+        by_group: bool = True,
+        by_view: bool = True,
         view_kwargs: dict[str, dict[str, Any]] | None = None,
         group_kwargs: dict[str, dict[str, Any]] | None = None,
         group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
         **kwargs,
     ) -> dict[str, dict[str, T]]:
+        if not by_view:
+            raise NotImplementedError("by_view must be True.")
+
         if view_kwargs is None:
             view_kwargs = {}
+
         if group_kwargs is None:
             group_kwargs = {}
+        elif not by_group:
+            raise ValueError("You cannot specify group_kwargs with by_group=False.")
+
         if group_view_kwargs is None:
             group_view_kwargs = {}
+        elif not by_group:
+            raise ValueError("You cannot specify group_view_kwargs with by_group=False.")
 
         ret = {}
-        for group_name, group_idx in self._groups.items():
-            cgroup_kwargs = {
-                argname: kwargs[group_name] for argname, kwargs in group_kwargs.items() if group_name in kwargs
-            }
-            cgroup_view_kwargs = {
-                argname: kwargs[group_name] for argname, kwargs in group_view_kwargs.items() if group_name in kwargs
-            }
+        if by_group:
+            for group_name, group_idx in self._groups.items():
+                cgroup_kwargs = {
+                    argname: kwargs[group_name] for argname, kwargs in group_kwargs.items() if group_name in kwargs
+                }
+                cgroup_view_kwargs = {
+                    argname: kwargs[group_name] for argname, kwargs in group_view_kwargs.items() if group_name in kwargs
+                }
 
-            cret = {}
-            for modname, mod in self._data[group_idx, :].mod.items():
+                cret = {}
+                for modname, mod in self._data[group_idx, :].mod.items():
+                    cview_kwargs = {
+                        argname: kwargs[modname] for argname, kwargs in view_kwargs.items() if modname in kwargs
+                    }
+                    cview_kwargs.update(
+                        {
+                            argname: kwargs[modname]
+                            for argname, kwargs in cgroup_view_kwargs.items()
+                            if modname in kwargs
+                        }
+                    )
+                    cret[modname] = func(mod, group_name, modname, **kwargs, **cgroup_kwargs, **cview_kwargs)
+                ret[group_name] = cret
+        else:
+            for modname, mod in self._data.mod.items():
                 cview_kwargs = {
                     argname: kwargs[modname] for argname, kwargs in view_kwargs.items() if modname in kwargs
                 }
-                cview_kwargs.update(
-                    {argname: kwargs[modname] for argname, kwargs in cgroup_view_kwargs.items() if modname in kwargs}
-                )
-                cret[modname] = func(mod, group_name, modname, **kwargs, **cgroup_kwargs, **cview_kwargs)
-            ret[group_name] = cret
+                ret[modname] = func(mod, None, modname, **kwargs, **cview_kwargs)
         return ret
 
 
@@ -359,7 +352,7 @@ class CovariatesDataset(Dataset):
 
         self.covariates, self.covariates_names = data.get_covariates(covariates_obs_key, covariates_obsm_key)
         self.covariates = {
-            group_name: np.nanmean(np.stack(group_covars.values(), axis=0))
+            group_name: np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
             for group_name, group_covars in self.covariates.items()
         }
         self._n_samples = max(data.n_samples.values())

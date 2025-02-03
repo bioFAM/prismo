@@ -14,32 +14,38 @@ MeanStd = namedtuple("MeanStd", ["mean", "std"])
 ViewStatistics = namedtuple("ViewStatistics", ["mean", "var", "min", "max"])
 
 
-def mean(arr: PossiblySparseArray, axis: int = 0):
-    mean = arr.mean(axis=axis)
-    if isinstance(mean, np.matrix):
-        mean = np.asarray(mean).squeeze(axis)
+def mean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
+    if sparse.issparse(arr):
+        mean = np.asarray(arr.mean(axis=axis))
+        if not keepdims and axis is not None:
+            mean = mean.squeeze(axis)
+        elif keepdims and axis is None:
+            mean = np.expand_dims(mean, tuple(range(arr.ndim)))
+    else:
+        mean = arr.mean(axis=axis, keepdims=keepdims)
     return mean
 
 
-def var(arr: PossiblySparseArray, axis: int = 0):
+def var(arr: PossiblySparseArray, axis: int | None = None):
     if sparse.issparse(arr):
-        _mean = mean(arr, axis=axis)
-        mean2 = mean(arr.power(2), axis=axis)
-        var = mean2 - _mean**2
+        _mean = mean(arr, axis=axis, keepdims=True)
+        var = (np.asarray(arr - _mean) ** 2).sum(axis=axis) / (
+            arr.shape[axis] if axis is not None else np.prod(arr.shape)
+        )
     else:
         var = np.var(arr, axis=axis)
     return var
 
 
-def min(arr: PossiblySparseArray, axis: int = 0):
+def min(arr: PossiblySparseArray, axis: int | None = None):
     return _minmax(arr, method="min", axis=axis)
 
 
-def max(arr: PossiblySparseArray, axis: int = 0):
+def max(arr: PossiblySparseArray, axis: int | None = None):
     return _minmax(arr, method="max", axis=axis)
 
 
-def _minmax(arr: PossiblySparseArray, method: Literal["min", "max"], axis: int = 0):
+def _minmax(arr: PossiblySparseArray, method: Literal["min", "max"], axis: int | None = None):
     res = getattr(arr, method)(axis=axis)
     if sparse.issparse(res):
         res = res.todense()

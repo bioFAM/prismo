@@ -255,6 +255,7 @@ class PRISMO:
         self._setup_annotations(data)
 
         preprocessor = preprocessing.PrismoPreprocessor(
+            data,
             self._model_opts.likelihoods,
             self._model_opts.nonnegative_weights,
             self._model_opts.nonnegative_factors,
@@ -761,7 +762,7 @@ class PRISMO:
 
         covariates = CovariatesDataset(data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key)
         svi, variational, gp_warp_groups_order = self._setup_svi(
-            prior_scales, init_tensor, covariates, preprocessor.feature_means, preprocessor.sample_means
+            prior_scales, init_tensor, covariates.covariates, preprocessor.feature_means, preprocessor.sample_means
         )
 
         _logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
@@ -783,7 +784,7 @@ class PRISMO:
             sampler=PrismoSampler(data.n_samples),
             num_workers=self._train_opts.num_workers,
             pin_memory=self._train_opts.pin_memory,
-            persistent_workers=True,
+            persistent_workers=self._train_opts.num_workers > 0,
         )
 
         train_loss_elbo = []

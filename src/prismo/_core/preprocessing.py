@@ -13,8 +13,8 @@ from numpy.typing import NDArray
 from scipy.sparse import issparse
 from scipy.sparse._csr import csr_matrix
 
-from .datasets import Preprocessor
-from .utils import Likelihood, ViewStatistics
+from . import utils
+from .datasets import MuDataDataset, Preprocessor
 
 _logger = logging.getLogger(__name__)
 
@@ -22,7 +22,8 @@ _logger = logging.getLogger(__name__)
 class PrismoPreprocessor(Preprocessor):
     def __init__(
         self,
-        likelihoods: dict[str, Likelihood],
+        dataset: MuDataDataset,
+        likelihoods: dict[str, utils.Likelihood],
         nonnegative_weights: dict[str, bool],
         nonnegative_factors: dict[str, bool],
         scale_per_group: bool = True,
@@ -36,7 +37,29 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
-    def _initialize(self):
+        getstats = lambda mod, group_name, view_name, axis=0: utils.ViewStatistics(
+            utils.mean(mod.X, axis=axis),
+            utils.var(mod.X, axis=axis),
+            utils.min(mod.X, axis=axis),
+            utils.max(mod.X, axis=axis),
+        )
+        self._feature_means = {
+            group_name: {view_name: stats.mean for view_name, stats in group.items()}
+            for group_name, group in dataset.apply(getstats).items()
+        }
+        self._sample_means = {
+            group_name: {view_name: stats.mean for view_name, stats in group.items()}
+            for group_name, group in dataset.apply(
+                lambda mod, group_name, view_name: utils.ViewStatistics(
+                    dataset.align_array_to_samples(utils.mean(mod.X, axis=1), view_name, group_name=group_name),
+                    dataset.align_array_to_samples(utils.var(mod.X, axis=1), view_name, group_name=group_name),
+                    dataset.align_array_to_samples(utils.min(mod.X, axis=1), view_name, group_name=group_name),
+                    dataset.align_array_to_samples(utils.max(mod.X, axis=1), view_name, group_name=group_name),
+                )
+            ).items()
+        }
+
+        self._viewstats = dataset.apply(getstats, by_group=False)
         self._nonconstantfeatures = {}
         for view_name, viewstats in self._viewstats.items():
             # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
@@ -45,25 +68,21 @@ class PrismoPreprocessor(Preprocessor):
             _logger.debug(f"Removing {viewstats.var.size - nonconst.sum()} features from view {view_name}.")
             self._nonconstantfeatures[view_name] = nonconst
 
-            self._viewstats[view_name] = ViewStatistics(*(stat[nonconst] for stat in viewstats))
-            for view in self._viewstats_per_group.values():
-                view[view_name] = ViewStatistics(*(stat[nonconst] for stat in view[view_name]))
+            self._viewstats[view_name] = utils.ViewStatistics(*(stat[nonconst] for stat in viewstats))
+
+        self._scale = dataset.apply(
+            lambda mod, *args, **kwargs: np.sqrt(utils.var(mod.X, axis=None)), by_group=self._scale_per_group
+        )
 
     @property
     def feature_means(self) -> dict[str, dict[str, float]]:
-        return {
-            group_name: {view_name: stats.mean for view_name, stats in group.items()}
-            for group_name, group in self._viewstats_per_group.items()
-        }
+        return self._feature_means
 
     @property
     def sample_means(self) -> dict[str, dict[str, float]]:
-        return {
-            group_name: {view_name: stats.mean for view_name, stats in group.items()}
-            for group_name, group in self._samplestats.items()
-        }
+        return self._sample_means
 
-    def __call__(self, arr: NDArray, group: str, view: str):
+    def __call__(self, arr: NDArray, group: str, view: str) -> NDArray:
         # remove constant features
         arr = arr[..., self._nonconstantfeatures[view]]
 
@@ -71,7 +90,7 @@ class PrismoPreprocessor(Preprocessor):
             viewstats = self._viewstats[view]
 
             # scale to unit variance
-            arr /= np.sqrt(self._viewstats_per_group[group][view].var if self._scale_per_group else viewstats.var)
+            arr /= self._scale[group][view] if self._scale_per_group else self._scale[view]
 
             # center
             if view in self._nonnegative_weights and group in self._nonnegative_factors:
@@ -81,7 +100,7 @@ class PrismoPreprocessor(Preprocessor):
         return arr
 
 
-def infer_likelihood(view: AnnData, *args) -> Likelihood:
+def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:
     """Infer the likelihood for a view based on the data distribution."""
     data = view.X.data if issparse(view.X) else view.X
     if np.all(np.isclose(data, 0) | np.isclose(data, 1)):  # TODO: set correct atol value
@@ -92,7 +111,7 @@ def infer_likelihood(view: AnnData, *args) -> Likelihood:
         return "Normal"
 
 
-def validate_likelihood(view: AnnData, group_name: str, view_name: str, likelihood: Likelihood) -> str | None:
+def validate_likelihood(view: AnnData, group_name: str, view_name: str, likelihood: utils.Likelihood):
     """Validate the likelihood for a view based on the data distribution."""
     data = view.X.data if issparse(view.X) else view.X
     if likelihood == "Bernoulli" and not np.all(

@@ -904,12 +904,17 @@ class PRISMO:
                 sample_idx = np.random.choice(view.n_obs, subsample, replace=False)
             else:
                 sample_idx = slice(None)
-            data = view.X[sample_idx, :]
-            if issparse(data):
-                data = data.todense()
+            cdata = view.X[sample_idx, :]
+            if issparse(cdata):
+                cdata = cdata.todense()
 
             try:
-                return self._r2(data, factors[group_name][:, sample_idx], weights[view_name], view_name)
+                return self._r2(
+                    cdata,
+                    data.align_array_to_data(factors[group_name], view_name, group_name, axis=1)[:, sample_idx],
+                    weights[view_name],
+                    view_name,
+                )
             except NotImplementedError:
                 _logger.warning(
                     f"R2 calculation for {self._model_opts.likelihoods[view_name]} likelihood has not yet been implemented. Skipping view {view_name} for group {group_name}."

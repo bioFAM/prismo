@@ -132,6 +132,7 @@ class MuDataDataset(Dataset):
         view_name: str,
         subdata: MuData | None = None,
         group_name: str | None = None,
+        axis: int = 0,
         fill_value: np.ScalarType = np.nan,
     ):
         if subdata is None:
@@ -140,16 +141,26 @@ class MuDataDataset(Dataset):
             subdata = self._data[self._groups[group_name], :]
 
         outshape = list(arr.shape)
-        outshape[0] = subdata.n_obs
+        outshape[axis] = subdata.n_obs
         out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype)
 
         viewidx = subdata.obsmap[view_name]
-        nnz = viewidx > 0
-        out[nnz] = arr[viewidx[nnz] - 1]
+        nnz = np.nonzero(viewidx > 0)[0]
+        nnz_shape = [1] * arr.ndim
+        nnz_shape[axis] = nnz.size
+        np.put_along_axis(out, nnz.reshape(nnz_shape), np.take(arr, viewidx[nnz] - 1, axis=axis), axis)
         return out
 
-    def align_array_to_samples(self, arr: NDArray, view_name: str, group_name: str, fill_value: np.ScalarType = np.nan):
-        return self._align_array_to_samples(arr, view_name, group_name=group_name, fill_value=fill_value)
+    def align_array_to_samples(
+        self, arr: NDArray, view_name: str, group_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
+    ):
+        return self._align_array_to_samples(arr, view_name, group_name=group_name, axis=axis, fill_value=fill_value)
+
+    def align_array_to_data(self, arr: NDArray, view_name: str, group_name: str, axis: int = 0):
+        subdata = self._data[self._groups[group_name], :]
+        idx = subdata.obsmap[view_name]
+        nnz = idx > 0
+        return np.take(arr, np.argsort(idx[nnz]), axis=axis)
 
     def get_obs(self) -> dict[str, pd.DataFrame]:
         # We don't want to duplicate MuData's push_obs logic, but at the same time

@@ -19,7 +19,7 @@ urls.Documentation = "https://prismo.readthedocs.io/"
 urls.Source = "https://github.com/bioFAM/prismo"
 urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
-    "anndata",
+    "anndata>=0.11",
     "mudata",
     "h5py",
     "pyro-ppl",

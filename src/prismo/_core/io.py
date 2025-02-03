@@ -51,9 +51,10 @@ def save_model(
         logger.warning(f"{path} already exists, overwriting")
     with h5py.File(path, "w") as f:
         prismogrp = f.create_group("prismo")
-        ad.io.write_elem(
-            prismogrp, "state", model_state
-        )  # turn on compression when https://github.com/h5py/h5py/issues/2525 is fixed
+        with ad.settings.override(allow_write_nullable_strings=True):
+            ad.io.write_elem(
+                prismogrp, "state", model_state
+            )  # turn on compression when https://github.com/h5py/h5py/issues/2525 is fixed
 
         pkl = BytesIO()
         torch.save(model_topickle, pkl)

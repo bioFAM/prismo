@@ -178,7 +178,10 @@ class MuDataDataset(Dataset):
         fakemudata.push_obs()
         return {
             group_name: {
-                modname: mod.obs.reindex(self._data[group_idx, :].obs_names) for modname, mod in fakemudata.mod.items()
+                modname: mod.obs.reindex(self._data[group_idx, :].obs_names, fill_value=pd.NA).apply(
+                    lambda x: x.astype("string") if x.dtype == "O" else x, axis=1
+                )
+                for modname, mod in fakemudata.mod.items()
             }
             for group_name, group_idx in self._groups.items()
         }

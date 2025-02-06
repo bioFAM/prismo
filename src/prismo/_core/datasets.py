@@ -157,15 +157,11 @@ class MuDataDataset(Dataset):
         if arr.shape[axis] == subdata.n_obs and np.all(np.diff(viewidx[nnz]) == 1):
             return arr
 
-        outshape = list(arr.shape)
-        outshape[axis] = subdata.n_obs
+        outshape = [subdata.n_obs] + list(arr.shape[:axis]) + list(arr.shape[axis + 1 :])
 
-        nnz_shape = [1] * arr.ndim
-        nnz_shape[axis] = nnz.size
-
-        out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype)
-        np.put_along_axis(out, nnz.reshape(nnz_shape), np.take(arr, viewidx[nnz] - 1, axis=axis), axis)
-        return out
+        out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype, order="C")
+        out[nnz, ...] = np.moveaxis(arr, axis, 0)[viewidx[nnz] - 1, ...]
+        return np.moveaxis(out, 0, axis)
 
     def align_array_to_samples(
         self, arr: NDArray, view_name: str, group_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan

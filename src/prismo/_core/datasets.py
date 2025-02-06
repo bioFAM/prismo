@@ -8,7 +8,7 @@ from anndata import AnnData
 from mudata import MuData
 from numpy.typing import NDArray
 from scipy import sparse
-from torch.utils.data import Dataset, RandomSampler, Sampler
+from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
 
 T = TypeVar("T")
 ApplyCallable: TypeAlias = Callable[Concatenate[AnnData, str, str, ...], T]
@@ -21,7 +21,7 @@ class Preprocessor:
         return arr
 
 
-class PrismoSampler(Sampler[dict[str, int]]):
+class PrismoBatchSampler(Sampler[dict[str, list[int]]]):
     """A sampler for dicts.
 
     Given a dict with arbitrary keys and values indicating the number of data points in
@@ -30,16 +30,23 @@ class PrismoSampler(Sampler[dict[str, int]]):
     are concatenated to yield the length of the largest dataset.
     """
 
-    def __init__(self, n_samples: dict[str, int]):
+    def __init__(self, n_samples: dict[str, int], batch_size: int, drop_last: bool = False):
         super().__init__()
         self._n_samples = n_samples
         self._largestgroup = max(n_samples.values())
+        self._batch_size = batch_size
+        self._drop_last = drop_last
         self._samplers = {
-            k: RandomSampler(range(nsamples), num_samples=self._largestgroup) for k, nsamples in self._n_samples.items()
+            k: BatchSampler(RandomSampler(range(nsamples), num_samples=self._largestgroup), batch_size, drop_last)
+            for k, nsamples in self._n_samples.items()
         }
 
     def __len__(self):
-        return self._largestgroup
+        return (
+            self._largestgroup // self._batch_size
+            if self._drop_last
+            else (self._largestgroup + self._batch_size - 1) // self._batch_size
+        )
 
     def __iter__(self):
         iterators = {k: iter(smplr) for k, smplr in self._samplers.items()}
@@ -112,19 +119,23 @@ class MuDataDataset(Dataset):
     def __len__(self):
         return max(self.n_samples.values())
 
-    def __getitem__(self, idx: dict[str, int]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+    def __getitem__(self, idx: dict[str, int | list[int]]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
         ret = {}
         for group_name, group_idx in idx.items():
             group = {}
             glabel = self._groups[group_name][group_idx]
-            for modname, mod in self._data[glabel, :].mod.items():
+            subdata = self._data[glabel, :]
+            for modname, mod in subdata.mod.items():
                 arr = mod.X
-                if arr.shape[0] == 0:
-                    arr = np.full((1, arr.shape[1]), np.nan, dtype=arr.dtype)
-                elif sparse.issparse(arr):
-                    arr = arr.todense()
-                group[modname] = self._preprocessor(arr, group_name, modname).astype(self._cast_to)
+                arr = self._preprocessor(arr, group_name, modname).astype(self._cast_to)
+                if sparse.issparse(arr):
+                    arr = arr.toarray()
+                group[modname] = self._align_array_to_samples(arr, modname, subdata=subdata)
+            ret[group_name] = group
+            idx[group_name] = np.asarray(group_idx)
         return {"data": ret, "sample_idx": idx}
+
+    __getitems__ = __getitem__
 
     def _align_array_to_samples(
         self,
@@ -140,14 +151,19 @@ class MuDataDataset(Dataset):
                 raise ValueError("Need either subdata or group_name, but both are None.")
             subdata = self._data[self._groups[group_name], :]
 
-        outshape = list(arr.shape)
-        outshape[axis] = subdata.n_obs
-        out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype)
-
         viewidx = subdata.obsmap[view_name]
         nnz = np.nonzero(viewidx > 0)[0]
+
+        if arr.shape[axis] == subdata.n_obs and np.all(np.diff(viewidx[nnz]) == 1):
+            return arr
+
+        outshape = list(arr.shape)
+        outshape[axis] = subdata.n_obs
+
         nnz_shape = [1] * arr.ndim
         nnz_shape[axis] = nnz.size
+
+        out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype)
         np.put_along_axis(out, nnz.reshape(nnz_shape), np.take(arr, viewidx[nnz] - 1, axis=axis), axis)
         return out
 
@@ -375,9 +391,29 @@ class CovariatesDataset(Dataset):
     def __len__(self):
         return self._n_samples
 
-    def __getitem__(self, idx: dict[str, int]) -> dict[str, NDArray]:
+    def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, NDArray]:
         return {
             group_name: self.covariates[group_name][group_idx, :].astype(self._cast_to)
             for group_name, group_idx in idx.items()
             if group_name in self.covariates
         }
+
+    __getitems__ = __getitem__
+
+
+class StackDataset(StackDataset):
+    def __getitems__(self, idx: list | dict):
+        if isinstance(idx, list):
+            return super().__getitems__(idx)
+
+        if isinstance(self.datasets, dict):
+            return {k: self._get_items_from_dset(dataset, idx) for k, dataset in self.datasets.items()}
+        else:
+            return [self._get_items_from_dset(dataset, idx) for dataset in self.datasets]
+
+    @staticmethod
+    def _get_items_from_dset(dataset: Dataset, idx: dict) -> dict:
+        if not callable(getattr(dataset, "__getitems__", None)):
+            raise ValueError("Expected nested dataset to have a `__getitems__` method.")
+
+        return dataset.__getitems__(idx)

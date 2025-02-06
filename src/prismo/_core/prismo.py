@@ -20,11 +20,11 @@ from pyro.optim import ClippedAdam
 from scipy.sparse import issparse
 from scipy.special import expit
 from sklearn.decomposition import NMF, PCA
-from torch.utils.data import DataLoader, StackDataset
+from torch.utils.data import DataLoader, default_convert
 
 from ..pl import plot_overview
 from . import gp, preprocessing
-from .datasets import CovariatesDataset, MuDataDataset, PrismoSampler
+from .datasets import CovariatesDataset, MuDataDataset, PrismoBatchSampler, StackDataset
 from .io import load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
@@ -780,8 +780,8 @@ class PRISMO:
         # Train
         loader = DataLoader(
             StackDataset(data=data, covariates=covariates),
-            batch_size=self._train_opts.batch_size,
-            sampler=PrismoSampler(data.n_samples),
+            batch_sampler=PrismoBatchSampler(data.n_samples, self._train_opts.batch_size, False),
+            collate_fn=default_convert,
             num_workers=self._train_opts.num_workers,
             pin_memory=self._train_opts.pin_memory,
             persistent_workers=self._train_opts.num_workers > 0,

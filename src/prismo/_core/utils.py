@@ -11,7 +11,6 @@ Likelihood: TypeAlias = Literal["Normal", "GammaPoisson", "Bernoulli"]
 PossiblySparseArray: TypeAlias = NDArray | sparse.spmatrix | sparse.sparray
 
 MeanStd = namedtuple("MeanStd", ["mean", "std"])
-ViewStatistics = namedtuple("ViewStatistics", ["mean", "var", "min", "max"])
 
 
 def mean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):

@@ -1,6 +1,6 @@
 import logging
 import warnings
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from functools import reduce
 
 import anndata as ad
@@ -14,15 +14,18 @@ from scipy.sparse import issparse
 from scipy.sparse._csr import csr_matrix
 
 from . import utils
-from .datasets import MuDataDataset, Preprocessor
+from .datasets import Preprocessor, PrismoDataset
 
 _logger = logging.getLogger(__name__)
+
+
+ViewStatistics = namedtuple("ViewStatistics", ["mean", "var", "min"])
 
 
 class PrismoPreprocessor(Preprocessor):
     def __init__(
         self,
-        dataset: MuDataDataset,
+        dataset: PrismoDataset,
         likelihoods: dict[str, utils.Likelihood],
         nonnegative_weights: dict[str, bool],
         nonnegative_factors: dict[str, bool],
@@ -37,27 +40,18 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
-        getstats = lambda mod, group_name, view_name, axis=0: utils.ViewStatistics(
-            utils.mean(mod.X, axis=axis),
-            utils.var(mod.X, axis=axis),
-            utils.min(mod.X, axis=axis),
-            utils.max(mod.X, axis=axis),
+        getstats = lambda mod, group_name, view_name, axis=0: ViewStatistics(
+            utils.mean(mod.X, axis=axis), utils.var(mod.X, axis=axis), utils.min(mod.X, axis=axis)
         )
         self._feature_means = {
             group_name: {view_name: stats.mean for view_name, stats in group.items()}
             for group_name, group in dataset.apply(getstats).items()
         }
-        self._sample_means = {
-            group_name: {view_name: stats.mean for view_name, stats in group.items()}
-            for group_name, group in dataset.apply(
-                lambda mod, group_name, view_name: utils.ViewStatistics(
-                    dataset.align_array_to_samples(utils.mean(mod.X, axis=1), view_name, group_name=group_name),
-                    dataset.align_array_to_samples(utils.var(mod.X, axis=1), view_name, group_name=group_name),
-                    dataset.align_array_to_samples(utils.min(mod.X, axis=1), view_name, group_name=group_name),
-                    dataset.align_array_to_samples(utils.max(mod.X, axis=1), view_name, group_name=group_name),
-                )
-            ).items()
-        }
+        self._sample_means = dataset.apply(
+            lambda mod, group_name, view_name: dataset.align_array_to_samples(
+                utils.mean(mod.X, axis=1), view_name, group_name=group_name
+            )
+        )
 
         self._viewstats = dataset.apply(getstats, by_group=False)
         self._nonconstantfeatures = {}
@@ -68,7 +62,7 @@ class PrismoPreprocessor(Preprocessor):
             _logger.debug(f"Removing {viewstats.var.size - nonconst.sum()} features from view {view_name}.")
             self._nonconstantfeatures[view_name] = nonconst
 
-            self._viewstats[view_name] = utils.ViewStatistics(*(stat[nonconst] for stat in viewstats))
+            self._viewstats[view_name] = ViewStatistics(*(stat[nonconst] for stat in viewstats))
 
         self._scale = dataset.apply(
             lambda mod, *args, **kwargs: np.sqrt(utils.var(mod.X, axis=None)), by_group=self._scale_per_group

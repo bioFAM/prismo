@@ -13,7 +13,7 @@ from mizani.palettes import brewer_pal
 from mudata import MuData
 
 if TYPE_CHECKING:
-    from .._core import PRISMO, MuDataDataset
+    from .._core import PRISMO, PrismoDataset
 
 
 def _rescale_zerosymmetric(x, to: tuple[float, float] = (0, 1), _from: tuple[float, float] | None = None):
@@ -234,7 +234,7 @@ def plot_factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)
 
 
 def plot_overview(
-    data: dict[str, dict[str, AnnData]] | MuData | MuDataDataset,
+    data: dict[str, dict[str, AnnData]] | MuData | PrismoDataset,
     group_by: str | list[str] | None = None,
     missingcolor: str = "#214D83",
     nonmissingcolor: str = "#8AB6D4",

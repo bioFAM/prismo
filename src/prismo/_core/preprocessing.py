@@ -49,7 +49,7 @@ class PrismoPreprocessor(Preprocessor):
         }
         self._sample_means = dataset.apply(
             lambda mod, group_name, view_name: dataset.align_array_to_samples(
-                utils.mean(mod.X, axis=1), view_name, group_name=group_name
+                utils.mean(mod.X, axis=1), group_name=group_name, view_name=view_name
             )
         )
 

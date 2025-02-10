@@ -98,11 +98,11 @@ class MuDataDataset(PrismoDataset):
         return np.moveaxis(out, 0, axis)
 
     def align_array_to_samples(
-        self, arr: NDArray, view_name: str, group_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
+        self, arr: NDArray, group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
     ):
         return self._align_array_to_samples(arr, view_name, group_name=group_name, axis=axis, fill_value=fill_value)
 
-    def align_array_to_data(self, arr: NDArray, view_name: str, group_name: str, axis: int = 0):
+    def align_array_to_data(self, arr: NDArray, group_name: str, view_name: str, axis: int = 0):
         subdata = self._data[self._groups[group_name], :]
         idx = subdata.obsmap[view_name]
         nnz = idx > 0
@@ -272,22 +272,24 @@ class MuDataDataset(PrismoDataset):
         if by_group:
             for group_name, group_idx in self._groups.items():
                 cgroup_kwargs = {
-                    argname: kwargs[group_name] for argname, kwargs in group_kwargs.items() if group_name in kwargs
+                    argname: kwargs[group_name] if group_name in kwargs else None
+                    for argname, kwargs in group_kwargs.items()
                 }
                 cgroup_view_kwargs = {
-                    argname: kwargs[group_name] for argname, kwargs in group_view_kwargs.items() if group_name in kwargs
+                    argname: kwargs[group_name] if group_name in kwargs else None
+                    for argname, kwargs in group_view_kwargs.items()
                 }
 
                 cret = {}
                 for modname, mod in self._data[group_idx, :].mod.items():
                     cview_kwargs = {
-                        argname: kwargs[modname] for argname, kwargs in view_kwargs.items() if modname in kwargs
+                        argname: kwargs[modname] if modname in kwargs else None
+                        for argname, kwargs in view_kwargs.items()
                     }
                     cview_kwargs.update(
                         {
-                            argname: kwargs[modname]
+                            argname: kwargs[modname] if kwargs is not None and modname in kwargs else None
                             for argname, kwargs in cgroup_view_kwargs.items()
-                            if modname in kwargs
                         }
                     )
                     cret[modname] = func(mod, group_name, modname, **kwargs, **cgroup_kwargs, **cview_kwargs)
@@ -295,7 +297,7 @@ class MuDataDataset(PrismoDataset):
         else:
             for modname, mod in self._data.mod.items():
                 cview_kwargs = {
-                    argname: kwargs[modname] for argname, kwargs in view_kwargs.items() if modname in kwargs
+                    argname: kwargs[modname] if modname in kwargs else None for argname, kwargs in view_kwargs.items()
                 }
                 ret[modname] = func(mod, None, modname, **kwargs, **cview_kwargs)
         return ret

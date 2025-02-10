@@ -712,40 +712,6 @@ class PRISMO:
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= data.n_samples_total):
             self._train_opts.batch_size = data.n_samples_total
 
-    def _preprocess_data(self, data):
-        data = preprocessing.anndata_to_dense(data)
-
-        self._model_opts.likelihoods = self._setup_likelihoods(data, self._model_opts.likelihoods)
-
-        if self._data_opts.remove_constant_features:
-            data = preprocessing.remove_constant_features(data, self._model_opts.likelihoods)
-
-        data = preprocessing.scale_data(data, self._model_opts.likelihoods, self._data_opts.scale_per_group)
-
-        data = preprocessing.center_data(
-            data,
-            self._model_opts.likelihoods,
-            self._model_opts.nonnegative_weights,
-            self._model_opts.nonnegative_factors,
-        )
-
-        # align observations across views and variables across groups
-        if self._data_opts.use_obs is not None:
-            data = preprocessing.align_obs(data, self._data_opts.use_obs)
-        if self._data_opts.use_var is not None:
-            data = preprocessing.align_var(data, self._data_opts.use_var)
-
-        # obtain observations DataFrame and covariates
-        self._covariates, self._covariates_names = preprocessing.extract_covariate(
-            data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key
-        )  # names for MOFA output
-
-        # compute feature means for intercept terms
-        feature_means = preprocessing.get_data_mean(data, how="feature")
-        sample_means = preprocessing.get_data_mean(data, how="sample")
-
-        return data, feature_means, sample_means
-
     def _fit(self, data, preprocessor):
         init_tensor = self._initialize_factors(data)
 

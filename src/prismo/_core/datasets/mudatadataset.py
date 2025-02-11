@@ -53,7 +53,7 @@ class MuDataDataset(PrismoDataset):
     def feature_names(self) -> dict[str, list[str]]:
         return {viewname: mod.var_names.to_list() for viewname, mod in self._data.mod.items()}
 
-    def __getitem__(self, idx: dict[str, int | list[int]]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+    def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
         ret = {}
         for group_name, group_idx in idx.items():
             group = {}
@@ -61,7 +61,7 @@ class MuDataDataset(PrismoDataset):
             subdata = self._data[glabel, :]
             for modname, mod in subdata.mod.items():
                 arr = mod.X
-                arr = self._preprocessor(arr, group_name, modname).astype(self._cast_to)
+                arr = self.preprocessor(arr, group_name, modname).astype(self._cast_to)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
                 group[modname] = self._align_array_to_samples(arr, modname, subdata=subdata)
@@ -73,20 +73,20 @@ class MuDataDataset(PrismoDataset):
 
     def _align_array_to_samples(
         self,
-        arr: NDArray,
+        arr: NDArray[T],
         view_name: str,
         subdata: MuData | None = None,
         group_name: str | None = None,
         axis: int = 0,
         fill_value: np.ScalarType = np.nan,
-    ):
+    ) -> NDArray[T]:
         if subdata is None:
             if group_name is None:
                 raise ValueError("Need either subdata or group_name, but both are None.")
             subdata = self._data[self._groups[group_name], :]
 
         viewidx = subdata.obsmap[view_name]
-        nnz = np.nonzero(viewidx > 0)[0]
+        nnz = viewidx > 0
 
         if arr.shape[axis] == subdata.n_obs and np.all(np.diff(viewidx[nnz]) == 1):
             return arr
@@ -98,15 +98,14 @@ class MuDataDataset(PrismoDataset):
         return np.moveaxis(out, 0, axis)
 
     def align_array_to_samples(
-        self, arr: NDArray, group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
-    ):
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
+    ) -> NDArray[T]:
         return self._align_array_to_samples(arr, view_name, group_name=group_name, axis=axis, fill_value=fill_value)
 
-    def align_array_to_data(self, arr: NDArray, group_name: str, view_name: str, axis: int = 0):
+    def align_array_to_data(self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0) -> NDArray[T]:
         subdata = self._data[self._groups[group_name], :]
         idx = subdata.obsmap[view_name]
-        nnz = idx > 0
-        return np.take(arr, np.argsort(idx[nnz]), axis=axis)
+        return np.take(arr, np.argsort(idx)[(idx == 0).sum() :], axis=axis)
 
     def get_obs(self) -> dict[str, pd.DataFrame]:
         # We don't want to duplicate MuData's push_obs logic, but at the same time
@@ -138,12 +137,9 @@ class MuDataDataset(PrismoDataset):
             subdata = self._data[group_idx, :]
             for modname, mod in subdata.mod.items():
                 if sparse.issparse(mod.X):
-                    modmissing = (
-                        sparse.csr_array((np.isnan(mod.X.data), mod.X.indices, mod.X.indptr), shape=mod.X.shape).sum(
-                            axis=1
-                        )
-                        > 0
-                    )
+                    modmissing = mod.X.copy()
+                    modmissing.data = np.isnan(modmissing.data)
+                    modmissing = np.asarray(modmissing.sum(axis=1)).squeeze() > 0
                 else:
                     modmissing = np.isnan(mod.X).any(axis=1)
                 modmissing = self._align_array_to_samples(modmissing, modname, subdata, fill_value=1)
@@ -166,12 +162,7 @@ class MuDataDataset(PrismoDataset):
         for group_name, group_idx in self._groups.items():
             obskey = covariates_obs_key.get(group_name, None)
             obsmkey = covariates_obsm_key.get(group_name, None)
-            if (
-                group_name not in covariates_obs_key
-                and group_name not in covariates_obsm_key
-                or obskey is None
-                and obsmkey is None
-            ):
+            if obskey is None and obsmkey is None:
                 continue
             if obskey and obsmkey:
                 raise ValueError(
@@ -230,7 +221,12 @@ class MuDataDataset(PrismoDataset):
         if varm_key is not None:
             for modname, key in varm_key.items():
                 if key in self._data[modname].varm:
-                    annotations[modname] = self._data[modname].varm[key]
+                    annot = self._data[modname].varm[key]
+                    if isinstance(annot, pd.DataFrame):
+                        annotations_names[modname] = annot.columns.to_list()
+                        annotations[modname] = annot.to_numpy().T
+                    else:
+                        annotations[modname] = annot.T
                 elif key in self._data.varm:
                     annot = self._data.varm[key]
                     varidx = self._data.varmap[modname]

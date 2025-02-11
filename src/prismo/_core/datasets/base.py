@@ -78,10 +78,9 @@ class PrismoDataset(Dataset, ABC):
         pass
 
     @property
-    @abstractmethod
     def n_samples_total(self) -> int:
         """Total number of samples."""
-        pass
+        return sum(self.n_samples.values())
 
     @property
     @abstractmethod
@@ -112,30 +111,36 @@ class PrismoDataset(Dataset, ABC):
         return max(self.n_samples.values())
 
     @abstractmethod
-    def __getitem__(self, idx: dict[str, int]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+    def __getitem__(self, idx: dict[str, int]) -> dict[str, dict]:
         """Get one sample for each group.
+
+        The data is returned preprocessed using the set `Preprocessor`.
 
         Args:
             idx: Sample indices for each group.
 
         Returns:
-            A tuple. The first element is a nested dict with group names and view names as keys and observations
-            as values, the second element is the sample index (the `idx` argument passed through). If the requested
-            sample is missing in the respective view, the return array will consist of nans.
+            A dict with two entries: `"data"` is a nested dict with group names keys, view names as subkeys and
+            a Numppy array of observations as values. `"sample_idx"` is the sample index (the `idx` argument
+            passed through). If the requested sample is missing in the respective view, the return array will
+            consist of nans.
         """
         pass
 
     @abstractmethod
-    def __getitems__(self, idx: dict[str, list[int]]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+    def __getitems__(self, idx: dict[str, list[int]]) -> dict[str, dict]:
         """Get one minibatch for each group.
+
+        The data is returned preprocessed using the set `Preprocessor`.
 
         Args:
             idx: Sample indices for each group.
 
         Returns:
-            A tuple. The first element is a nested dict with group names and view names as keys and observations
-            as values, the second element is the sample index (the `idx` argument passed through). If the requested
-            sample is missing in the respective view, the return array will contain nans in the corresponding rows..
+            A dict with two entries: `"data"` is a nested dict with group names keys, view names as subkeys and
+            a Numppy array of observations as values. `"sample_idx"` is the sample index (the `idx` argument
+            passed through). If the requested sample is missing in the respective view, the return array will
+            consist of nans.
         """
         pass
 
@@ -151,6 +156,18 @@ class PrismoDataset(Dataset, ABC):
             view_name: View name.
             axis: The axis to align along.
             fill_value: The value to insert for missing samples.
+        """
+        pass
+
+    @abstractmethod
+    def align_array_to_data(self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0) -> NDArray[T]:
+        """Align an array corresponding to global samples to a view by omitting samples not present in that view.
+
+        Args:
+            arr: The array to align.
+            group_name: Group name.
+            view_name: View name.
+            axis: The axis to align along.
         """
         pass
 

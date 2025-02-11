@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader, default_convert
 
 from ..pl import plot_overview
 from . import gp, preprocessing
-from .datasets import CovariatesDataset, MuDataDataset, PrismoBatchSampler, StackDataset
+from .datasets import AnnDataDictDataset, CovariatesDataset, PrismoBatchSampler, StackDataset
 from .io import load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
@@ -249,7 +249,7 @@ class PRISMO:
 
     def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
         self._preprocess_options(*args)
-        data = MuDataDataset(data, self._data_opts.group_by)
+        data = AnnDataDictDataset(data, self._data_opts.group_by)
         self._adjust_options(data)
         self._setup_likelihoods(data)
         self._setup_annotations(data)
@@ -407,7 +407,7 @@ class PRISMO:
 
         if self._model_opts.likelihoods is None:
             _logger.info("No likelihoods provided. Inferring likelihoods from data.")
-            self._model_opts.likelihoods = data.apply(preprocessing.infer_likelihood)
+            self._model_opts.likelihoods = data.apply(preprocessing.infer_likelihood, by_group=False)
         else:
             if isinstance(self._model_opts.likelihoods, str):
                 _logger.info("Using provided likelihood for all views.")
@@ -417,13 +417,22 @@ class PRISMO:
 
             if isinstance(self._model_opts.likelihoods, dict):
                 _logger.info("Checking compatibility of provided likelihoods with data.")
-                data.apply(preprocessing.validate_likelihood, view_kwargs={"likelihood": self._model_opts.likelihoods})
+                data.apply(
+                    preprocessing.validate_likelihood,
+                    view_kwargs={"likelihood": self._model_opts.likelihoods},
+                    by_group=False,
+                )
 
         for view_name, likelihood in self._model_opts.likelihoods.items():
             _logger.info(f"{view_name}: {likelihood}")
 
     def _setup_annotations(self, data):
         annotations = self._model_opts.annotations
+        if annotations is not None:
+            annotations_names = {}
+            for view_name, annot in annotations.items():
+                if isinstance(annot, pd.DataFrame):
+                    annotations_names[view_name] = annot.columns.to_list()
         if annotations is None and self._model_opts.annotations_varm_key is not None:
             annotations, annotations_names = data.get_annotations(self._model_opts.annotations_varm_key)
 
@@ -506,7 +515,7 @@ class PRISMO:
                                 f"Warping can only be performed with 1D covariates, but the covariate for group {g} has {ccov.ndim} dimensions."
                             )
                         gp_warp_groups_order[g] = ccov.argsort()
-                    self._orig_covariates = {g: c.clone() for g, c in covariates.items()}
+                    self._orig_covariates = {g: c.copy() for g, c in covariates.items()}
 
                     if self._gp_opts.warp_reference_group is None:
                         self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
@@ -765,7 +774,12 @@ class PRISMO:
                 with self._train_opts.device:
                     epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
             train_loss_elbo.append(epoch_loss)
-            if self._gp is not None and len(self._gp_opts.warp_groups) and not i % self._gp_opts.warp_interval:
+            if (
+                self._gp is not None
+                and len(self._gp_opts.warp_groups)
+                and i > 0
+                and not i % self._gp_opts.warp_interval
+            ):
                 self._warp_covariates(covariates, variational, gp_warp_groups_order)
 
             if i % self._train_opts.print_every == 0:
@@ -791,7 +805,7 @@ class PRISMO:
                 open_end=self._gp_opts.warp_open_end,
                 step_pattern="asymmetric",
             )
-            covariates.covariates[g] = self._orig_covariates[g].clone()
+            covariates.covariates[g] = self._orig_covariates[g].copy()
             covariates.covariates[g][idx[alignment.index2], 0] = self._orig_covariates[refgroup][
                 refidx[alignment.index1], 0
             ]

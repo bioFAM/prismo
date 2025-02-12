@@ -76,6 +76,10 @@ class PrismoPreprocessor(Preprocessor):
     def sample_means(self) -> dict[str, dict[str, float]]:
         return self._sample_means
 
+    @property
+    def used_features(self) -> dict[str, NDArray[np.bool]]:
+        return self._nonconstantfeatures
+
     def __call__(self, arr: NDArray, group: str, view: str) -> NDArray:
         # remove constant features
         arr = arr[..., self._nonconstantfeatures[view]]

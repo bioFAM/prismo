@@ -270,7 +270,10 @@ class PRISMO:
         self._view_names = data.view_names
         self._group_names = data.group_names
         self._sample_names = data.sample_names
-        self._feature_names = data.feature_names
+        self._feature_names = {
+            view_name: viewfeatures[preprocessor.used_features[view_name]]
+            for view_name, viewfeatures in data.feature_names.items()
+        }
 
         self._fit(data, preprocessor)
 

@@ -18,12 +18,18 @@ class MuDataDataset(PrismoDataset):
     def __init__(
         self,
         mudata: MuData,
+        *,
         group_by: str | list[str] | None = None,
         preprocessor: Preprocessor | None = None,
         cast_to: np.ScalarType = np.float32,
+        **kwargs,
     ):
-        super().__init__(mudata, preprocessor, cast_to)
+        super().__init__(mudata, preprocessor=preprocessor, cast_to=cast_to)
         self._groups = mudata.obs.groupby(group_by if group_by is not None else lambda x: "group_1").groups
+
+    @staticmethod
+    def _accepts_input(data):
+        return isinstance(data, MuData)
 
     @property
     def n_features(self) -> dict[str, int]:

@@ -257,10 +257,11 @@ def plot_overview(
         max_plot_x_labels: The maximum number of x-axis labels to show. If the number of observations is greater than this value in any group,
             the x-axis labels are not shown.
     """
-    if isinstance(data, MuData):
-        from .._core import MuDataDataset
+    from .._core import PrismoDataset
 
-        data = MuDataDataset(data, group_by)
+    if not isinstance(data, PrismoDataset):
+        data = PrismoDataset(data, group_by=group_by)
+
     missings = data.get_missing_obs()
     n_obs_groups = max(data.n_samples.values())
 

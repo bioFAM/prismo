@@ -33,13 +33,20 @@ class Preprocessor:
 class PrismoDataset(Dataset, ABC):
     """Base class for PRISMO datasets, compatible with the PyTorch dataloader interface.
 
+    The constructor of subclasses must additionally take a **kwargs argument which is ignored. This ensures that
+    users can simply call `PrismoDatset(data, args)`, where args may be a union of arguments suitable for different
+    data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
+    constructor arguments except for the first (which should be the data) to be keyword arguments.
+
     Args:
         data: The data.
         preprocessor: A preprocessor. If None, will use the default preprocessor that does not apply any preprocessing.
         cast_to: Data type to cast the data to.
     """
 
-    def __init__(self, data, preprocessor: Preprocessor | None = None, cast_to: np.ScalarType = np.float32):
+    _subclasses = set()
+
+    def __init__(self, data, *, preprocessor: Preprocessor | None = None, cast_to: np.ScalarType = np.float32):
         super().__init__()
 
         self._data = data
@@ -50,6 +57,29 @@ class PrismoDataset(Dataset, ABC):
             self.preprocessor = Preprocessor()
 
         self._cast_to = cast_to
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        __class__._subclasses.add(cls)
+
+    def __new__(cls, data, *args, **kwargs):
+        if cls != __class__:
+            return super().__new__(cls)
+        for subcls in __class__._subclasses:
+            if subcls._accepts_input(data):
+                return subcls(data, *args, **kwargs)
+        raise NotImplementedError("Input data type not recognized.")
+
+    @staticmethod
+    @abstractmethod
+    def _accepts_input(data) -> bool:
+        """Determines if `data` can be handled by the given Dataset.
+
+        Returns:
+            `True` if the Dataset accepts this particular input.`False` otherwise, e.g. if the type of `data` cannot
+            be processed by the Dataset.
+        """
+        pass
 
     @property
     def preprocessor(self) -> Preprocessor:

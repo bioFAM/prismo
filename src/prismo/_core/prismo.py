@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader, default_convert
 
 from ..pl import plot_overview
 from . import gp, preprocessing
-from .datasets import AnnDataDictDataset, CovariatesDataset, PrismoBatchSampler, StackDataset
+from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
 from .io import load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
@@ -95,10 +95,10 @@ class DataOptions(_Options):
     """Key of .obsm attribute of each AnnData object that contains covariate values."""
 
     use_obs: Literal["union", "intersection"] | None = "union"
-    """How to align observations across views."""
+    """How to align observations across views. Ignored if the data is not a nested dict of AnnData objects."""
 
     use_var: Literal["union", "intersection"] | None = "union"
-    """How to align variables across groups."""
+    """How to align variables across groups. Ignored if the data is not a nested dict of AnnData objects"""
 
     plot_data_overview: bool = True
     """Plot data overview."""
@@ -249,7 +249,9 @@ class PRISMO:
 
     def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
         self._preprocess_options(*args)
-        data = AnnDataDictDataset(data, self._data_opts.group_by)
+        data = PrismoDataset(
+            data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
+        )
         self._adjust_options(data)
         self._setup_likelihoods(data)
         self._setup_annotations(data)

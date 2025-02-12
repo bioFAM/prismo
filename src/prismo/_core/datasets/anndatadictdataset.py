@@ -18,12 +18,14 @@ class AnnDataDictDataset(PrismoDataset):
     def __init__(
         self,
         data: dict[str, dict[str, AnnData]],
+        *,
         use_obs: Literal["union", "intersection"] = "union",
         use_var: Literal["union", "intersection"] = "union",
         preprocessor: Preprocessor | None = None,
         cast_to: np.ScalarType = np.float32,
+        **kwargs,
     ):
-        super().__init__(data, preprocessor, cast_to)
+        super().__init__(data, preprocessor=preprocessor, cast_to=cast_to)
 
         self._aligned_obs = {}
         self._aligned_var = {}
@@ -47,6 +49,13 @@ class AnnDataDictDataset(PrismoDataset):
                 view_name: self._aligned_var[view_name].get_indexer(view.var_names) for view_name, view in group.items()
             }
             self._aligned_obs[group_name] = aligned_obs
+
+    @staticmethod
+    def _accepts_input(data):
+        return isinstance(data, dict) and all(
+            isinstance(group, dict) and all(isinstance(view, AnnData) for view in group.values())
+            for group in data.values()
+        )
 
     @property
     def n_features(self) -> dict[str, int]:

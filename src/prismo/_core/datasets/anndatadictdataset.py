@@ -57,20 +57,20 @@ class AnnDataDictDataset(PrismoDataset):
         return {group_name: obs.size for group_name, obs in self._aligned_obs.items()}
 
     @property
-    def view_names(self) -> list[str]:
-        return list(reduce(lambda x, y: x | y, (group.keys() for group in self._data.values())))
+    def view_names(self) -> NDArray[str]:
+        return np.asarray(tuple(reduce(lambda x, y: x | y, (group.keys() for group in self._data.values()))))
 
     @property
-    def group_names(self) -> list[str]:
-        return list(self._data.keys())
+    def group_names(self) -> NDArray[str]:
+        return np.asarray(tuple(self._data.keys()))
 
     @property
-    def sample_names(self) -> dict[str, list[str]]:
-        return {group_name: obs.to_list() for group_name, obs in self._aligned_obs.items()}
+    def sample_names(self) -> dict[str, NDArray[str]]:
+        return {group_name: obs.to_numpy() for group_name, obs in self._aligned_obs.items()}
 
     @property
-    def feature_names(self) -> dict[str, list[str]]:
-        return {view_name: var.to_list() for view_name, var in self._aligned_var.items()}
+    def feature_names(self) -> dict[str, NDArray[str]]:
+        return {view_name: var.to_numpy() for view_name, var in self._aligned_var.items()}
 
     def __getitem__(self, idx: dict[str, int]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
         ret = {}

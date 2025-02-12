@@ -275,7 +275,7 @@ class PRISMO:
         self._fit(data, preprocessor)
 
     @property
-    def group_names(self) -> list[str]:
+    def group_names(self) -> npt.NDArray[str]:
         """Group names."""
         return self._group_names
 
@@ -285,7 +285,7 @@ class PRISMO:
         return len(self.group_names)
 
     @property
-    def view_names(self) -> list[str]:
+    def view_names(self) -> npt.NDArray[str]:
         """View names."""
         return self._view_names
 
@@ -295,7 +295,7 @@ class PRISMO:
         return len(self.view_names)
 
     @property
-    def feature_names(self) -> dict[str, list[str]]:
+    def feature_names(self) -> dict[str, npt.NDArray[str]]:
         """Feature names for each view."""
         return self._feature_names
 
@@ -310,7 +310,7 @@ class PRISMO:
         return sum(self.n_features.values())
 
     @property
-    def sample_names(self) -> dict[str, list[str]]:
+    def sample_names(self) -> dict[str, npt.NDArray[str]]:
         """Sample names for each group."""
         return self._sample_names
 
@@ -1321,8 +1321,8 @@ class PRISMO:
         if "gp_group_names" in state:
             model._gp_group_names = state["gp_group_names"]
         model._view_names = state["view_names"]
-        model._feature_names = {v: n.tolist() for v, n in state["feature_names"].items()}
-        model._sample_names = {v: n.tolist() for v, n in state["sample_names"].items()}
+        model._feature_names = state["feature_names"]
+        model._sample_names = state["sample_names"]
         model._annotations = state.get("annotations")
         model._metadata = state["metadata"]
         model._data_opts = DataOptions(**state["data_opts"])

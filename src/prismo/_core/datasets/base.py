@@ -84,25 +84,25 @@ class PrismoDataset(Dataset, ABC):
 
     @property
     @abstractmethod
-    def view_names(self) -> list[str]:
+    def view_names(self) -> NDArray[str]:
         """View names."""
         pass
 
     @property
     @abstractmethod
-    def group_names(self) -> list[str]:
+    def group_names(self) -> NDArray[str]:
         """Group names."""
         pass
 
     @property
     @abstractmethod
-    def sample_names(self) -> dict[str, list[str]]:
+    def sample_names(self) -> dict[str, NDArray[str]]:
         """Sample names for each group."""
         pass
 
     @property
     @abstractmethod
-    def feature_names(self) -> dict[str, list[str]]:
+    def feature_names(self) -> dict[str, NDArray[str]]:
         """Feature names for each view."""
         pass
 

@@ -38,20 +38,20 @@ class MuDataDataset(PrismoDataset):
         return self._data.n_obs
 
     @property
-    def view_names(self) -> list[str]:
-        return list(self._data.mod.keys())
+    def view_names(self) -> NDArray[str]:
+        return np.asarray(tuple(self._data.mod.keys()))
 
     @property
-    def group_names(self) -> list[str]:
-        return list(self._groups.keys())
+    def group_names(self) -> NDArray[str]:
+        return np.asarray(tuple(self._groups.keys()))
 
     @property
-    def sample_names(self) -> dict[str, list[str]]:
-        return {groupname: self._data[groupidx, :].obs_names.to_list() for groupname, groupidx in self._groups.items()}
+    def sample_names(self) -> dict[str, NDArray[str]]:
+        return {groupname: self._data[groupidx, :].obs_names.to_numpy() for groupname, groupidx in self._groups.items()}
 
     @property
-    def feature_names(self) -> dict[str, list[str]]:
-        return {viewname: mod.var_names.to_list() for viewname, mod in self._data.mod.items()}
+    def feature_names(self) -> dict[str, NDArray[str]]:
+        return {viewname: mod.var_names.to_numpy() for viewname, mod in self._data.mod.items()}
 
     def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
         ret = {}

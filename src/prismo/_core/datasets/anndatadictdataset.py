@@ -87,15 +87,16 @@ class AnnDataDictDataset(PrismoDataset):
             group = {}
             gobsmap = self._obsmap[group_name]
             for view_name, view in self._data[group_name].items():
-                obsidx = gobsmap[view_name][group_idx]
-                obsidx = obsidx[obsidx >= 0]
+                obsmap = gobsmap[view_name][group_idx]
+                obsidx = obsmap >= 0
 
-                arr = view.X
+                arr = view.X[obsmap[obsidx], :]
+                obsmap[obsidx] = np.arange(arr.shape[0])
                 # have to align before preprocessing because preprocessor may depend (and probably does)
                 # on var order
                 if sparse.issparse(arr):
                     arr = arr.toarray()
-                arr = self._align_array_to_samples(arr, group_name, view_name, axis=(0, 1))[obsidx, :]
+                arr = self._align_array_to_samples(arr, group_name, view_name, axis=(0, 1), obsmap=obsmap)
                 group[view_name] = self.preprocessor(arr, group_name, view_name).astype(self.cast_to)
                 ret[group_name] = group
                 idx[group_name] = np.asarray(group_idx)
@@ -172,6 +173,8 @@ class AnnDataDictDataset(PrismoDataset):
         axis: int | tuple[int, int] = 0,
         align_to: Literal["obs", "var"] = "obs",
         fill_value: np.ScalarType = np.nan,
+        obsmap: NDArray[int] | None = None,
+        varmap: NDArray[int] | None = None,
     ) -> NDArray[T]:
         """Align an array corresponding to a view with potentially missing observations to global samples by inserting filler values for missing samples.
 
@@ -183,41 +186,48 @@ class AnnDataDictDataset(PrismoDataset):
                 to observations and the second to features.
             align_to: What to align to. Only relevant if `axis` is a single integer.
             fill_value: The value to insert for missing samples.
+            obsmap: Array mapping global observations to local observations, with -1 indicating missing observations. If `None`, will use the
+                global obsmap in `self._obsmap[group_name][view_name]`. This is useful for aligning a subsetted array.
+            varmap: Array mapping global features to local features, with -1 indicating missing features. If `None`, will use the
+                global varmap in `self._varmap[group_name][view_name]`. This is useful for aligning a subsetted array.
         """
         if isinstance(axis, int):
             axis = [axis]
             align_to_both = False
         else:
             align_to_both = True
-        obsidx = self._obsmap[group_name][view_name]
-        varidx = self._varmap[group_name][view_name]
+
+        if obsmap is None:
+            obsmap = self._obsmap[group_name][view_name]
+        if varmap is None:
+            varmap = self._varmap[group_name][view_name]
 
         if (
             not align_to_both
             and (
                 align_to == "obs"
-                and arr.shape[axis[0]] == obsidx.size
-                and np.all(np.diff(obsidx) == 1)
+                and arr.shape[axis[0]] == obsmap.size
+                and np.all(np.diff(obsmap) == 1)
                 or align_to == "var"
-                and arr.shape[axis[0]] == varidx.size
-                and np.all(np.diff(varidx) == 1)
+                and arr.shape[axis[0]] == varmap.size
+                and np.all(np.diff(varmap) == 1)
             )
             or align_to_both
-            and arr.shape[axis[0]] == obsidx.size
-            and arr.shape[axis[1]] == varidx.size
-            and np.all(np.diff(obsidx) == 1)
-            and np.all(np.diff(varidx) == 1)
+            and arr.shape[axis[0]] == obsmap.size
+            and arr.shape[axis[1]] == varmap.size
+            and np.all(np.diff(obsmap) == 1)
+            and np.all(np.diff(varmap) == 1)
         ):
             return arr
 
         if align_to_both:
-            outshape = [obsidx.size, varidx.size]
+            outshape = [obsmap.size, varmap.size]
         elif align_to == "obs":
-            outshape = [obsidx.size]
-            idxtouse = obsidx
+            outshape = [obsmap.size]
+            idxtouse = obsmap
         else:
-            outshape = [varidx.size]
-            idxtouse = varidx
+            outshape = [varmap.size]
+            idxtouse = varmap
         ax1, ax2 = min(axis), max(axis)
         outshape.extend(arr.shape[:ax1])
         if align_to_both:
@@ -226,10 +236,10 @@ class AnnDataDictDataset(PrismoDataset):
         else:
             outshape.extend(arr.shape[ax1 + 1 :])
         if align_to_both:
-            obsnnz = obsidx >= 0
-            varnnz = varidx >= 0
+            obsnnz = obsmap >= 0
+            varnnz = varmap >= 0
             outidx = [obsnnz, varnnz]
-            inidx = [obsidx[obsnnz], varidx[varnnz]]
+            inidx = [obsmap[obsnnz], varmap[varnnz]]
             arr = np.moveaxis(arr, axis[0], 0)
             arr = np.moveaxis(arr, axis[1], 1)
         else:

@@ -261,8 +261,16 @@ class AnnDataDictDataset(PrismoDataset):
     ) -> NDArray[T]:
         return self._align_array_to_samples(arr, group_name, view_name, axis=axis, fill_value=fill_value)
 
-    def align_array_to_data(self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0) -> NDArray[T]:
+    def align_array_to_data_samples(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0
+    ) -> NDArray[T]:
         idx = self._obsmap[group_name][view_name]
+        return np.take(arr, np.argsort(idx)[(idx < 0).sum() :], axis=axis)
+
+    def align_array_to_data_features(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1
+    ) -> NDArray[T]:
+        idx = self._varmap[group_name][view_name]
         return np.take(arr, np.argsort(idx)[(idx < 0).sum() :], axis=axis)
 
     def _get_attr(self, attr: Literal["obs", "var"]) -> dict[str, pd.DataFrame]:

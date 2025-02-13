@@ -896,8 +896,8 @@ class PRISMO:
             try:
                 return self._r2(
                     cdata,
-                    data.align_array_to_data(factors[group_name], group_name, view_name, axis=1)[:, sample_idx],
-                    weights[view_name],
+                    data.align_array_to_data_samples(factors[group_name], group_name, view_name, axis=1)[:, sample_idx],
+                    data.align_array_to_data_features(weights[view_name], group_name, view_name, axis=1),
                     view_name,
                 )
             except NotImplementedError:

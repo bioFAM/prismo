@@ -190,8 +190,24 @@ class PrismoDataset(Dataset, ABC):
         pass
 
     @abstractmethod
-    def align_array_to_data(self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0) -> NDArray[T]:
+    def align_array_to_data_samples(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0
+    ) -> NDArray[T]:
         """Align an array corresponding to global samples to a view by omitting samples not present in that view.
+
+        Args:
+            arr: The array to align.
+            group_name: Group name.
+            view_name: View name.
+            axis: The axis to align along.
+        """
+        pass
+
+    @abstractmethod
+    def align_array_to_data_features(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1
+    ) -> NDArray[T]:
+        """Align an array corresponding to global features to a view by omitting features not present in that view.
 
         Args:
             arr: The array to align.

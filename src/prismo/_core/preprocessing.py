@@ -4,7 +4,7 @@ from collections import namedtuple
 import numpy as np
 from anndata import AnnData
 from numpy.typing import NDArray
-from scipy.sparse import issparse
+from scipy.sparse import issparse, sparray, spmatrix
 
 from . import utils
 from .datasets import Preprocessor, PrismoDataset
@@ -73,9 +73,9 @@ class PrismoPreprocessor(Preprocessor):
     def used_features(self) -> dict[str, NDArray[np.bool]]:
         return self._nonconstantfeatures
 
-    def __call__(self, arr: NDArray, group: str, view: str) -> NDArray:
+    def __call__(self, arr: NDArray | sparray | spmatrix, group: str, view: str) -> NDArray | sparray | spmatrix:
         # remove constant features
-        arr = arr[..., self._nonconstantfeatures[view]]
+        arr = arr[..., self.align_array_to_data_features(self._nonconstantfeatures[view], group, view, axis=0)]
 
         if view in self._views_to_scale:
             viewstats = self._viewstats[view]
@@ -85,9 +85,9 @@ class PrismoPreprocessor(Preprocessor):
 
             # center
             if view in self._nonnegative_weights and group in self._nonnegative_factors:
-                arr -= viewstats.min
+                arr -= self.align_array_to_data_features(viewstats.min, group, view, axis=0)
             else:
-                arr -= viewstats.mean
+                arr -= self.align_array_to_data_features(viewstats.mean, group, view, axis=0)
         return arr
 
 

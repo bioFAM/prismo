@@ -228,8 +228,10 @@ def _to_device(data, device):
     for k, v in data.items():
         if isinstance(v, dict):
             tensor_dict[k] = _to_device(v, device)
-        else:
+        elif isinstance(v, torch.Tensor):
             tensor_dict[k] = v.to(device, non_blocking=True)
+        else:
+            tensor_dict[k] = v
 
     return tensor_dict
 

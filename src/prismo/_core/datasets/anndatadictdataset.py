@@ -42,12 +42,18 @@ class AnnDataDictDataset(PrismoDataset):
 
         for group_name, group in self._data.items():
             aligned_obs = reduce(obsfunc, (view.obs_names for view in group.values()))
-            self._obsmap[group_name] = {
-                view_name: aligned_obs.get_indexer(view.obs_names) for view_name, view in group.items()
-            }
-            self._varmap[group_name] = {
-                view_name: self._aligned_var[view_name].get_indexer(view.var_names) for view_name, view in group.items()
-            }
+            gobsmap = {}
+            gvarmap = {}
+            for view_name, view in group.items():
+                obsmap = aligned_obs.get_indexer(view.obs_names)
+                varmap = self._aligned_var[view_name].get_indexer(view.var_names)
+
+                if np.sum(obsmap < 0) > 0 or np.any(np.diff(obsmap) != 1):
+                    gobsmap[view_name] = obsmap
+                if np.sum(varmap < 0) > 0 or np.any(np.diff(varmap) != 1):
+                    gvarmap[view_name] = varmap
+            self._obsmap[group_name] = gobsmap
+            self._varmap[group_name] = varmap
             self._aligned_obs[group_name] = aligned_obs
 
     @staticmethod
@@ -81,28 +87,63 @@ class AnnDataDictDataset(PrismoDataset):
     def feature_names(self) -> dict[str, NDArray[str]]:
         return {view_name: var.to_numpy() for view_name, var in self._aligned_var.items()}
 
-    def __getitem__(self, idx: dict[str, int]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
-        ret = {}
+    def _get_minibatch(
+        self, idx: dict[str, int], return_nonmissing: bool = True
+    ) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+        data = {}
+        if return_nonmissing:
+            nonmissing_obs = {}
+            nonmissing_var = {}
         for group_name, group_idx in idx.items():
             group = {}
             gobsmap = self._obsmap[group_name]
+            gvarmap = self._varmap[group_name]
+            if return_nonmissing:
+                gnonmissing_obs = {}
+                gnonmissing_var = {}
             for view_name, view in self._data[group_name].items():
-                obsmap = gobsmap[view_name][group_idx]
-                obsidx = obsmap >= 0
+                if view_name in gobsmap:
+                    obsmap = gobsmap[view_name][group_idx]
+                    obsidx = obsmap >= 0
+                    arr = view.X[obsmap[obsidx], :]
+                    if return_nonmissing:
+                        gnonmissing_obs[view_name] = np.nonzero(obsidx)[0]
+                else:
+                    arr = view.X[group_idx, :]
+                    if return_nonmissing:
+                        gnonmissing_obs[view_name] = slice(None)
+                    else:
+                        obsmap = None
 
-                arr = view.X[obsmap[obsidx], :]
-                obsmap[obsidx] = np.arange(arr.shape[0])
-                # have to align before preprocessing because preprocessor may depend (and probably does)
-                # on var order
+                if return_nonmissing:
+                    if view_name in gvarmap:
+                        gnonmissing_var[view_name] = np.nonzero(gvarmap[view_name] >= 0)[0]
+                    else:
+                        gnonmissing_var[view_name] = slice(None)
+
+                arr = self.preprocessor(arr, group_name, view_name).astype(self.cast_to)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
-                arr = self._align_array_to_samples(arr, group_name, view_name, axis=(0, 1), obsmap=obsmap)
-                group[view_name] = self.preprocessor(arr, group_name, view_name).astype(self.cast_to)
-                ret[group_name] = group
-                idx[group_name] = np.asarray(group_idx)
-        return {"data": ret, "sample_idx": idx}
+                if not return_nonmissing:
+                    arr = self._align_array_to_samples(arr, group_name, view_name, axis=(0, 1), obsmap=obsmap)
+                group[view_name] = arr
+            data[group_name] = group
+            idx[group_name] = np.asarray(group_idx)
+            if return_nonmissing:
+                nonmissing_obs[group_name] = gnonmissing_obs
+                nonmissing_var[group_name] = gnonmissing_var
 
-    __getitems__ = __getitem__
+        ret = {"data": data, "sample_idx": idx}
+        if return_nonmissing:
+            ret["nonmissing_samples"] = nonmissing_obs
+            ret["nonmissing_features"] = nonmissing_var
+        return ret
+
+    def __getitem__(self, idx: dict[str, int]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+        return self._get_minibatch(idx, return_nonmissing=False)
+
+    def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
+        return self._get_minibatch(idx)
 
     def _align_sparse_array_to_var(
         self, arr: sparse.sparray | sparse.spmatrix, group_name: str, view_name: str, fill_value: np.ScalarType = np.nan
@@ -192,33 +233,42 @@ class AnnDataDictDataset(PrismoDataset):
                 global varmap in `self._varmap[group_name][view_name]`. This is useful for aligning a subsetted array.
         """
         if isinstance(axis, int):
-            axis = [axis]
+            axis = (axis,)
             align_to_both = False
         else:
             align_to_both = True
 
         if obsmap is None:
-            obsmap = self._obsmap[group_name][view_name]
+            need_obs_align = view_name in self._obsmap[group_name]
+            if need_obs_align:
+                obsmap = self._obsmap[group_name][view_name]
+        else:
+            need_obs_align = True
+
         if varmap is None:
-            varmap = self._varmap[group_name][view_name]
+            need_var_align = view_name in self._varmap[group_name]
+            if need_var_align:
+                varmap = self._varmap[group_name][view_name]
+        else:
+            need_var_align = True
 
         if (
             not align_to_both
-            and (
-                align_to == "obs"
-                and arr.shape[axis[0]] == obsmap.size
-                and np.all(np.diff(obsmap) == 1)
-                or align_to == "var"
-                and arr.shape[axis[0]] == varmap.size
-                and np.all(np.diff(varmap) == 1)
-            )
+            and (align_to == "obs" and not need_obs_align or align_to == "var" and not need_var_align)
             or align_to_both
-            and arr.shape[axis[0]] == obsmap.size
-            and arr.shape[axis[1]] == varmap.size
-            and np.all(np.diff(obsmap) == 1)
-            and np.all(np.diff(varmap) == 1)
+            and not need_obs_align
+            and not need_var_align
         ):
             return arr
+        elif align_to_both:
+            if not need_obs_align:
+                align_to_both = False
+                align_to = "var"
+                axis = (axis[1],)
+            elif not need_var_align:
+                align_to_both = False
+                align_to = "obs"
+                axis = (axis[0],)
 
         if align_to_both:
             outshape = [obsmap.size, varmap.size]
@@ -259,17 +309,30 @@ class AnnDataDictDataset(PrismoDataset):
     def align_array_to_samples(
         self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
     ) -> NDArray[T]:
-        return self._align_array_to_samples(arr, group_name, view_name, axis=axis, fill_value=fill_value)
+        return self._align_array_to_samples(
+            arr, group_name, view_name, axis=axis, align_to="obs", fill_value=fill_value
+        )
+
+    def align_array_to_features(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1, fill_value: np.ScalarType = np.nan
+    ) -> NDArray[T]:
+        return self._align_array_to_samples(
+            arr, group_name, view_name, axis=axis, align_to="var", fill_value=fill_value
+        )
 
     def align_array_to_data_samples(
         self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0
     ) -> NDArray[T]:
+        if view_name not in self._obsmap[group_name]:
+            return arr
         idx = self._obsmap[group_name][view_name]
         return np.take(arr, np.argsort(idx)[(idx < 0).sum() :], axis=axis)
 
     def align_array_to_data_features(
         self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1
     ) -> NDArray[T]:
+        if view_name not in self._varmap[group_name]:
+            return arr
         idx = self._varmap[group_name][view_name]
         return np.take(arr, np.argsort(idx)[(idx < 0).sum() :], axis=axis)
 

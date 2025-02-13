@@ -25,7 +25,14 @@ class MuDataDataset(PrismoDataset):
         **kwargs,
     ):
         super().__init__(mudata, preprocessor=preprocessor, cast_to=cast_to)
-        self._groups = mudata.obs.groupby(group_by if group_by is not None else lambda x: "group_1").groups
+        self._groups = self._data.obs.groupby(group_by if group_by is not None else lambda x: "group_1").indices
+        self._needs_alignment = {}
+        for group_name, group_idx in self._groups.items():
+            gneeds_align = {}
+            for view_name, obsmap in self._data.obsmap.items():
+                obsmap = obsmap[group_idx]
+                gneeds_align[view_name] = np.any(obsmap == 0) or not np.any(np.diff(obsmap) != 1)
+            self._needs_alignment[group_name] = gneeds_align
 
     @staticmethod
     def _accepts_input(data):
@@ -59,23 +66,49 @@ class MuDataDataset(PrismoDataset):
     def feature_names(self) -> dict[str, NDArray[str]]:
         return {viewname: mod.var_names.to_numpy() for viewname, mod in self._data.mod.items()}
 
-    def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
-        ret = {}
+    def _get_minibatch(self, idx: dict[str, int | list[int]], return_nonmissing: bool = True) -> dict[str, dict]:
+        data = {}
+        if return_nonmissing:
+            nonmissing_obs = {}
+            nonmissing_var = {}
         for group_name, group_idx in idx.items():
             group = {}
+            if return_nonmissing:
+                gnonmissing_obs = {}
+                gnonmissing_var = {}
             glabel = self._groups[group_name][group_idx]
             subdata = self._data[glabel, :]
             for modname, mod in subdata.mod.items():
+                gnonmissing_var[modname] = slice(None)
                 arr = mod.X
                 arr = self.preprocessor(arr, group_name, modname).astype(self._cast_to)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
-                group[modname] = self._align_array_to_samples(arr, modname, subdata=subdata)
-            ret[group_name] = group
+                if return_nonmissing:
+                    group[modname] = arr
+                    gnonmissing_obs[modname] = (
+                        np.nonzero(subdata.obsmap[modname] > 0)[0]
+                        if self._needs_alignment[group_name][modname]
+                        else slice(None)
+                    )
+                else:
+                    group[modname] = self._align_array_to_samples(arr, modname, subdata=subdata)
+            data[group_name] = group
             idx[group_name] = np.asarray(group_idx)
-        return {"data": ret, "sample_idx": idx}
+            if return_nonmissing:
+                nonmissing_obs[group_name] = gnonmissing_obs
+                nonmissing_var[group_name] = gnonmissing_var
+        ret = {"data": data, "sample_idx": idx}
+        if return_nonmissing:
+            ret["nonmissing_samples"] = nonmissing_obs
+            ret["nonmissing_features"] = nonmissing_var
+        return ret
 
-    __getitems__ = __getitem__
+    def __getitem__(self, idx: dict[str, int]) -> dict[str, dict]:
+        return self._get_minibatch(idx, return_nonmissing=False)
+
+    def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
+        return self._get_minibatch(idx)
 
     def _align_array_to_samples(
         self,
@@ -89,13 +122,12 @@ class MuDataDataset(PrismoDataset):
         if subdata is None:
             if group_name is None:
                 raise ValueError("Need either subdata or group_name, but both are None.")
+            if not self._needs_alignment[group_name][view_name]:
+                return arr
             subdata = self._data[self._groups[group_name], :]
 
         viewidx = subdata.obsmap[view_name]
         nnz = viewidx > 0
-
-        if arr.shape[axis] == subdata.n_obs and np.all(np.diff(viewidx[nnz]) == 1):
-            return arr
 
         outshape = [subdata.n_obs] + list(arr.shape[:axis]) + list(arr.shape[axis + 1 :])
 
@@ -107,6 +139,11 @@ class MuDataDataset(PrismoDataset):
         self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
     ) -> NDArray[T]:
         return self._align_array_to_samples(arr, view_name, group_name=group_name, axis=axis, fill_value=fill_value)
+
+    def align_array_to_features(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
+    ) -> NDArray[T]:
+        return arr
 
     def align_array_to_data_samples(
         self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0

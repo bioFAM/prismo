@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from types import FunctionType
 from typing import Any, Concatenate, TypeAlias, TypeVar
 
 import numpy as np
@@ -37,6 +38,11 @@ class PrismoDataset(Dataset, ABC):
     users can simply call `PrismoDatset(data, args)`, where args may be a union of arguments suitable for different
     data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
     constructor arguments except for the first (which should be the data) to be keyword arguments.
+
+    The preprocessor must be able to process an entire minibatch. If it is a function, it will have two functions
+    injected into its global namespace: `align_array_to_features` and `align_array_to_data_features`. These are
+    methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
+    an instance of a class, these two functions will be added to its instance attributes.
 
     Args:
         data: The data.
@@ -89,6 +95,12 @@ class PrismoDataset(Dataset, ABC):
     @preprocessor.setter
     def preprocessor(self, preproc: Preprocessor):
         self._preprocessor = preproc
+        if isinstance(self._preprocessor, FunctionType):
+            self._preprocessor.__globals__["align_array_to_features"] = self.align_array_to_features
+            self._preprocessor.__globals__["align_array_to_data_features"] = self.align_array_to_data_features
+        else:
+            self._preprocessor.align_array_to_features = self.align_array_to_features
+            self._preprocessor.align_array_to_data_features = self.align_array_to_data_features
 
     @property
     def cast_to(self) -> np.ScalarType:
@@ -151,7 +163,7 @@ class PrismoDataset(Dataset, ABC):
 
         Returns:
             A dict with two entries: `"data"` is a nested dict with group names keys, view names as subkeys and
-            a Numppy array of observations as values. `"sample_idx"` is the sample index (the `idx` argument
+            Numppy arrays of observations as values. `"sample_idx"` is the sample index (the `idx` argument
             passed through). If the requested sample is missing in the respective view, the return array will
             consist of nans.
         """
@@ -167,10 +179,12 @@ class PrismoDataset(Dataset, ABC):
             idx: Sample indices for each group.
 
         Returns:
-            A dict with two entries: `"data"` is a nested dict with group names keys, view names as subkeys and
-            a Numppy array of observations as values. `"sample_idx"` is the sample index (the `idx` argument
-            passed through). If the requested sample is missing in the respective view, the return array will
-            consist of nans.
+            A dict with four entries: `"data"` is a nested dict with group names keys, view names as subkeys and
+            Numppy arrays of observations as values. `"sample_idx"` is the sample index (the `idx` argument
+            passed through). `"nonmissing_samples"` is a nested dict with group names as keys, view names as subkeys
+            and Numpy index arrays indicating which samples **in the current minibatch** are not missing as values.
+            If there are no missing samples, the value may be `slice(None)`. Similarly, `"nonmissing_features"`
+            indicates which features are not missing.
         """
         pass
 
@@ -179,6 +193,21 @@ class PrismoDataset(Dataset, ABC):
         self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
     ) -> NDArray[T]:
         """Align an array corresponding to a view with potentially missing samples to global samples by inserting filler values for missing samples.
+
+        Args:
+            arr: The array to align.
+            group_name: Group name.
+            view_name: View name.
+            axis: The axis to align along.
+            fill_value: The value to insert for missing samples.
+        """
+        pass
+
+    @abstractmethod
+    def align_array_to_features(
+        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1, fill_value: np.ScalarType = np.nan
+    ) -> NDArray[T]:
+        """Align an array corresponding to a view with potentially missing features to global features by inserting filler values for missing features.
 
         Args:
             arr: The array to align.

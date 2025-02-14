@@ -324,9 +324,7 @@ class Generative(PyroModule):
             feature_means[group_name] = {}
             for view_name in self.view_names:
                 if self.likelihoods[view_name] in ["GammaPoisson"]:
-                    feature_means[group_name][view_name] = torch.tensor(
-                        self.feature_means[group_name][view_name][nonmissing_features[group_name][view_name]]
-                    )
+                    feature_means[group_name][view_name] = torch.tensor(self.feature_means[group_name][view_name])
 
         # sample non-GP factors
         for group_name in current_group_names:

@@ -442,7 +442,7 @@ class AnnDataDictDataset(PrismoDataset):
                         break
         return annotations, annotations_names
 
-    def apply(
+    def _apply(
         self,
         func: ApplyCallable[T],
         by_group: bool = True,
@@ -455,22 +455,8 @@ class AnnDataDictDataset(PrismoDataset):
         if not by_view:
             raise NotImplementedError("by_view must be True.")
 
-        if view_kwargs is None:
-            view_kwargs = {}
-
-        if group_kwargs is None:
-            group_kwargs = {}
-        elif not by_group:
-            raise ValueError("You cannot specify group_kwargs with by_group=False.")
-
-        if group_view_kwargs is None:
-            group_view_kwargs = {}
-        elif not by_group:
-            raise ValueError("You cannot specify group_view_kwargs with by_group=False.")
-
         ret = {}
         if by_group:
-            newvar = self._get_attr("var")
             for group_name, group in self._data.items():
                 cgroup_kwargs = {
                     argname: kwargs[group_name] if group_name in kwargs else None
@@ -494,14 +480,7 @@ class AnnDataDictDataset(PrismoDataset):
                         }
                     )
 
-                    if sparse.issparse(view.X):
-                        cX = self._align_sparse_array_to_var(view.X, group_name, view_name)
-                    else:
-                        cX = self._align_array_to_samples(view.X, group_name, view_name, axis=1, align_to="var")
-
-                    adata = AnnData(X=cX, obs=view.obs, var=newvar[group_name][view_name])
-
-                    cret[view_name] = func(adata, group_name, view_name, **kwargs, **cgroup_kwargs, **cview_kwargs)
+                    cret[view_name] = func(view, group_name, view_name, **kwargs, **cgroup_kwargs, **cview_kwargs)
                 ret[group_name] = cret
         else:
             for view_name in self.view_names:

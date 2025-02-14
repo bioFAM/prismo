@@ -94,13 +94,7 @@ class PrismoDataset(Dataset, ABC):
 
     @preprocessor.setter
     def preprocessor(self, preproc: Preprocessor):
-        self._preprocessor = preproc
-        if isinstance(self._preprocessor, FunctionType):
-            self._preprocessor.__globals__["align_array_to_features"] = self.align_array_to_features
-            self._preprocessor.__globals__["align_array_to_data_features"] = self.align_array_to_data_features
-        else:
-            self._preprocessor.align_array_to_features = self.align_array_to_features
-            self._preprocessor.align_array_to_data_features = self.align_array_to_data_features
+        self._preprocessor = self._inject_alignment_functions(preproc)
 
     @property
     def cast_to(self) -> np.ScalarType:
@@ -289,7 +283,6 @@ class PrismoDataset(Dataset, ABC):
         """
         pass
 
-    @abstractmethod
     def apply(
         self,
         func: ApplyCallable[T],
@@ -301,6 +294,13 @@ class PrismoDataset(Dataset, ABC):
         **kwargs,
     ) -> dict[str, dict[str, T]]:
         """Apply a function to each group and/or view.
+
+        If `func` is a function, it will have two functions injected into its global namespace: `align_array_to_features`
+        and `align_array_to_data_features`. These are methods of the given PrismoDataset instance, see their documentation
+        for how to use them. If `func` is an instance of a class, these two functions will be added to its instance attributes.
+
+        If `by_group == True`, the `AnnData` object passed to `func` will **not** have its features aligned to the global features.
+        It is up to `func` to align when necessary using the provided functions.
 
         Args:
             func: The function to apply. The function will be passed an `AnnData` object, the group name, and the view name as the first
@@ -321,4 +321,47 @@ class PrismoDataset(Dataset, ABC):
 
         Returns: Nested dict with the return value of `func` for each group and view.
         """
+        if view_kwargs is None:
+            view_kwargs = {}
+
+        if group_kwargs is None:
+            group_kwargs = {}
+        elif not by_group:
+            raise ValueError("You cannot specify group_kwargs with by_group=False.")
+
+        if group_view_kwargs is None:
+            group_view_kwargs = {}
+        elif not by_group:
+            raise ValueError("You cannot specify group_view_kwargs with by_group=False.")
+
+        return self._apply(
+            self._inject_alignment_functions(func),
+            by_group,
+            by_view,
+            view_kwargs,
+            group_kwargs,
+            group_view_kwargs,
+            **kwargs,
+        )
+
+    @abstractmethod
+    def _apply(
+        self,
+        func: ApplyCallable[T],
+        by_group: bool = True,
+        by_view: bool = True,
+        view_kwargs: dict[str, dict[str, Any]] | None = None,
+        group_kwargs: dict[str, dict[str, Any]] | None = None,
+        group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
+        **kwargs,
+    ) -> dict[str, dict[str, T]]:
         pass
+
+    def _inject_alignment_functions(self, func: Callable):
+        if isinstance(func, FunctionType):
+            func.__globals__["align_array_to_features"] = self.align_array_to_features
+            func.__globals__["align_array_to_data_features"] = self.align_array_to_data_features
+        else:
+            func.align_array_to_features = self.align_array_to_features
+            func.align_array_to_data_features = self.align_array_to_data_features
+        return func

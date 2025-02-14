@@ -33,20 +33,18 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
-        getstats = lambda mod, group_name, view_name, axis=0: ViewStatistics(
+        meanfunc = lambda mod, group_name, view_name, axis: ViewStatistics(
             utils.mean(mod.X, axis=axis), utils.var(mod.X, axis=axis), utils.min(mod.X, axis=axis)
         )
-        self._feature_means = {
-            group_name: {view_name: stats.mean for view_name, stats in group.items()}
-            for group_name, group in dataset.apply(getstats).items()
-        }
-        self._sample_means = dataset.apply(
-            lambda mod, group_name, view_name: dataset.align_array_to_samples(
-                utils.mean(mod.X, axis=1), group_name=group_name, view_name=view_name
-            )
-        )
+        self._feature_means = dataset.apply(meanfunc, axis=0)
+        self._sample_means = dataset.apply(meanfunc, axis=1)
 
-        self._viewstats = dataset.apply(getstats, by_group=False)
+        self._viewstats = dataset.apply(
+            lambda mod, group_name, view_name: ViewStatistics(
+                utils.mean(mod.X, axis=0), utils.var(mod.X, axis=0), utils.min(mod.X, axis=0)
+            ),
+            by_group=False,
+        )
         self._nonconstantfeatures = {}
         for view_name, viewstats in self._viewstats.items():
             # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while

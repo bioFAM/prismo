@@ -288,7 +288,7 @@ class MuDataDataset(PrismoDataset):
                         annotations[modname] = annot[varidx].T
         return annotations, annotations_names
 
-    def apply(
+    def _apply(
         self,
         func: ApplyCallable[T],
         by_group: bool = True,
@@ -300,19 +300,6 @@ class MuDataDataset(PrismoDataset):
     ) -> dict[str, dict[str, T]]:
         if not by_view:
             raise NotImplementedError("by_view must be True.")
-
-        if view_kwargs is None:
-            view_kwargs = {}
-
-        if group_kwargs is None:
-            group_kwargs = {}
-        elif not by_group:
-            raise ValueError("You cannot specify group_kwargs with by_group=False.")
-
-        if group_view_kwargs is None:
-            group_view_kwargs = {}
-        elif not by_group:
-            raise ValueError("You cannot specify group_view_kwargs with by_group=False.")
 
         ret = {}
         if by_group:

@@ -21,6 +21,7 @@ from scipy.sparse import issparse
 from scipy.special import expit
 from sklearn.decomposition import NMF, PCA
 from torch.utils.data import DataLoader, default_convert
+from torch.utils.data._utils.collate import collate  # this is documented, so presumably part of the public API
 
 from ..pl import plot_overview
 from . import gp, preprocessing
@@ -221,19 +222,6 @@ class SmoothOptions(_Options):
             self.warp_groups = [self.warp_groups]
         else:
             self.warp_groups = list(self.warp_groups)  # in case the user passed a tuple here, we need a list for saving
-
-
-def _to_device(data, device):
-    tensor_dict = {}
-    for k, v in data.items():
-        if isinstance(v, dict):
-            tensor_dict[k] = _to_device(v, device)
-        elif isinstance(v, torch.Tensor):
-            tensor_dict[k] = v.to(device, non_blocking=True)
-        else:
-            tensor_dict[k] = v
-
-    return tensor_dict
 
 
 class PRISMO:
@@ -777,7 +765,13 @@ class PRISMO:
         for i in range(self._train_opts.max_epochs):
             epoch_loss = 0
             for batch in loader:
-                batch = _to_device(batch, self._train_opts.device)
+                batch = collate(
+                    (batch,),
+                    collate_fn_map={
+                        torch.Tensor: lambda x, **kwargs: x[0].to(self._train_opts.device, non_blocking=True),
+                        slice: lambda x, **kwargs: x[0],
+                    },
+                )
                 with self._train_opts.device:
                     epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
             train_loss_elbo.append(epoch_loss)

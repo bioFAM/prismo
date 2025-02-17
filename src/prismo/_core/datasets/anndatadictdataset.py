@@ -2,13 +2,14 @@ import logging
 from functools import reduce
 from typing import Any, Literal, TypeVar
 
+import anndata as ad
 import numpy as np
 import pandas as pd
-from anndata import AnnData
 from numpy.typing import NDArray
 from scipy import sparse
 
 from .base import ApplyCallable, Preprocessor, PrismoDataset
+from .utils import anndata_to_dask, apply_to_nested, from_dask, have_dask
 
 T = TypeVar("T")
 _logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ _logger = logging.getLogger(__name__)
 class AnnDataDictDataset(PrismoDataset):
     def __init__(
         self,
-        data: dict[str, dict[str, AnnData]],
+        data: dict[str, dict[str, ad.AnnData]],
         *,
         use_obs: Literal["union", "intersection"] = "union",
         use_var: Literal["union", "intersection"] = "union",
@@ -31,6 +32,8 @@ class AnnDataDictDataset(PrismoDataset):
         self._aligned_var = {}
         self._obsmap = {}
         self._varmap = {}
+        self._use_obs = use_obs
+        self._use_var = use_var
 
         obsfunc = (lambda x, y: x.intersection(y)) if use_obs == "intersection" else lambda x, y: x.union(y)
         varfunc = (lambda x, y: x.intersection(y)) if use_var == "intersection" else lambda x, y: x.union(y)
@@ -59,7 +62,7 @@ class AnnDataDictDataset(PrismoDataset):
     @staticmethod
     def _accepts_input(data):
         return isinstance(data, dict) and all(
-            isinstance(group, dict) and all(isinstance(view, AnnData) for view in group.values())
+            isinstance(group, dict) and all(isinstance(view, ad.AnnData) for view in group.values())
             for group in data.values()
         )
 
@@ -148,6 +151,8 @@ class AnnDataDictDataset(PrismoDataset):
     def _align_sparse_array_to_var(
         self, arr: sparse.sparray | sparse.spmatrix, group_name: str, view_name: str, fill_value: np.ScalarType = np.nan
     ):
+        if view_name not in self._varmap[group_name]:
+            return arr
         varmap = self._varmap[group_name][view_name]
         n_newcols = self._aligned_var[view_name].size - arr.shape[1]
         n_new_elems = arr.shape[0] * n_newcols
@@ -455,6 +460,8 @@ class AnnDataDictDataset(PrismoDataset):
         if not by_view:
             raise NotImplementedError("by_view must be True.")
 
+        havedask = have_dask()
+
         ret = {}
         if by_group:
             for group_name, group in self._data.items():
@@ -489,38 +496,23 @@ class AnnDataDictDataset(PrismoDataset):
                     for argname, kwargs in view_kwargs.items()
                 }
 
-                new_obs = []
-                newX = []
-                var = pd.DataFrame(index=self._aligned_var[view_name])
+                if not havedask:
+                    _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+
+                data = {}
                 for group_name, group in self._data.items():
-                    if view_name in group:
-                        view = group[view_name]
-                        if sparse.issparse(view.X):
-                            cX = self._align_sparse_array_to_var(view.X, group_name, view_name)
-                        else:
-                            cX = self._align_array_to_samples(view.X, group_name, view_name, axis=1, align_to="var")
-                        newX.append(cX)
-                        new_obs.append(view.obs)
-                        var = var.join(view.var.drop(columns=view.var.columns, errors="ignore"), how="left", sort=False)
+                    data[group_name] = anndata_to_dask(group[view_name]) if havedask else group[view_name]
+                data = ad.concat(
+                    data,
+                    join="inner" if self._use_var == "intersection" else "outer",
+                    label="group",
+                    merge="unique",
+                    uns_merge=None,
+                )
+                if (data.var_names != self._aligned_var[view_name]).any():
+                    data = data[:, self._aligned_var[view_name]]
 
-                if all(sparse.issparse(X) for X in newX):
-                    newX = sparse.vstack(newX)
-                elif all(not sparse.issparse(X) for X in newX):
-                    newX = np.concatenate(newX, axis=0)
-                else:
-                    nelem_dense = sum([np.prod(X.shape) for X in newX])
-
-                    nelem_sparse = sum(
-                        [2 * (np.prod(X.shape) if not sparse.issparse(X) else X.nnz) + X.shape[0] + 1 for X in newX]
-                    )  # assume CSR
-                    if nelem_dense <= nelem_sparse:
-                        newX = [np.asarray(X) for X in newX]
-                        newX = np.concatenate(newX, axis=0)
-                    else:
-                        newX = [sparse.csr_array(X) if not np.issparse(X) else X for X in newX]
-
-                new_obs = pd.concat(new_obs, axis=0)
-                adata = AnnData(X=newX, obs=new_obs, var=var)
-                ret[view_name] = func(adata, group_name, view_name, **kwargs, **cview_kwargs)
+                cret = func(data, group_name, view_name, **kwargs, **cview_kwargs)
+                ret[view_name] = apply_to_nested(cret, from_dask)
 
         return ret

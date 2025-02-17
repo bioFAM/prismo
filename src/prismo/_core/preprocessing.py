@@ -3,6 +3,7 @@ from collections import namedtuple
 
 import numpy as np
 from anndata import AnnData
+from array_api_compat import array_namespace
 from numpy.typing import NDArray
 from scipy.sparse import issparse, sparray, spmatrix
 
@@ -92,9 +93,10 @@ class PrismoPreprocessor(Preprocessor):
 def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:
     """Infer the likelihood for a view based on the data distribution."""
     data = view.X.data if issparse(view.X) else view.X
-    if np.all(np.isclose(data, 0) | np.isclose(data, 1)):  # TODO: set correct atol value
+    xp = array_namespace(data)
+    if xp.all(xp.isclose(data, 0) | xp.isclose(data, 1)):  # TODO: set correct atol value
         return "Bernoulli"
-    elif np.allclose(data, np.round(data)) and data.min() >= 0:
+    elif xp.allclose(data, xp.round(data)) and data.min() >= 0:
         return "GammaPoisson"
     else:
         return "Normal"
@@ -103,11 +105,12 @@ def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:
 def validate_likelihood(view: AnnData, group_name: str, view_name: str, likelihood: utils.Likelihood):
     """Validate the likelihood for a view based on the data distribution."""
     data = view.X.data if issparse(view.X) else view.X
-    if likelihood == "Bernoulli" and not np.all(
-        np.isclose(data, 0) | np.isclose(data, 1)
+    xp = array_namespace(data)
+    if likelihood == "Bernoulli" and not xp.all(
+        xp.isclose(data, 0) | xp.isclose(data, 1)
     ):  # TODO: set correct atol value
         raise ValueError(f"Bernoulli likelihood in view {view_name} must be used with binary data.")
-    elif likelihood == "GammaPoisson" and not np.allclose(data, np.round(data)) and data.min() >= 0:
+    elif likelihood == "GammaPoisson" and not xp.allclose(data, xp.round(data)) and data.min() >= 0:
         raise ValueError(
             f"GammaPoisson likelihood in view {view_name} must be used with count (non-negative integer) data."
         )

@@ -39,6 +39,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+lazy = [
+    "dask[array,dataframe]",
+    "sparse"
+]
 dev = [
     "pre-commit",
     "coverage",

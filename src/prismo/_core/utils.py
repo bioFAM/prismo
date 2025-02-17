@@ -32,7 +32,7 @@ def var(arr: PossiblySparseArray, axis: int | None = None):
             arr.shape[axis] if axis is not None else np.prod(arr.shape)
         )
     else:
-        var = np.var(arr, axis=axis)
+        var = arr.var(axis=axis)
     return var
 
 

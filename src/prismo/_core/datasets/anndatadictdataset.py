@@ -148,69 +148,6 @@ class AnnDataDictDataset(PrismoDataset):
     def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
         return self._get_minibatch(idx)
 
-    def _align_sparse_array_to_var(
-        self, arr: sparse.sparray | sparse.spmatrix, group_name: str, view_name: str, fill_value: np.ScalarType = np.nan
-    ):
-        if view_name not in self._varmap[group_name]:
-            return arr
-        varmap = self._varmap[group_name][view_name]
-        n_newcols = self._aligned_var[view_name].size - arr.shape[1]
-        n_new_elems = arr.shape[0] * n_newcols
-        if isinstance(arr.csr_matrix | sparse.csr_array):
-            newnnzsize = arr.data.size + n_new_elems
-
-            newcolidx = np.nonzero(varmap < 0)[0]
-            oldcolidx = np.argsort(varmap)[newcolidx.size :]
-            newindptr = arr.indptr.copy()
-            newindptr[1:] += np.cumsum(np.repeat(n_newcols, arr.shape[0]))
-            newindices = np.empty(newnnzsize, dtype=arr.indices.dtype)
-            newdata = np.full(newnnzsize, fill_value=fill_value, dtype=arr.data.dtype)
-            for row in range(arr.shape[0]):  # TODO: use numba for this
-                cindices = oldcolidx[arr.indices[arr.indptr[row] : arr.indptr[row + 1]]]
-                newindices[newindptr[row] : newindptr[row] + cindices.size] = cindices
-                newindices[newindptr[row] + cindices.size : newindptr[row + 1]] = newcolidx
-                newdata[newindptr[row] : newindptr[row] + arr.indptr[row + 1] - arr.indptr[row]] = arr.data[
-                    arr.indptr[row] : arr.indptr[row + 1]
-                ]
-
-            ret = sparse.csr_array(
-                (newdata, newindices, newindptr), shape=(arr.shape[0], arr.shape[1] + n_newcols)
-            ).sort_indices()
-        elif isinstance(arr.csc_matrix | sparse.csc_array):
-            newnnzsize = arr.data.size + n_new_elems
-
-            newdata = arr.data.resize(newnnzsize)
-            newdata[arr.data.size :] = fill_value
-
-            newindptr = np.empty(arr.indptr.size + n_newcols, dtype=arr.indptr.dtype)
-            newindices = np.empty(newnnzsize, dtype=arr.indices.dtype)
-            newdata = np.emtpy(newnnzsize, dtype=arr.data.dtype)
-            newindptr[0] = 0
-            for newcol, oldcol in enumerate(varmap):  # TODO: use numba for this
-                if oldcol == -1:
-                    newindptr[newcol + 1] = newindptr[newcol] + arr.shape[0]
-                    newindices[newindptr[newcol] : newindptr[newcol + 1]] = np.arange(arr.shape[0])
-                    newdata[newindptr[newcol] : newindptr[newcol] + 1] = fill_value
-                else:
-                    newindptr[newcol + 1] = newindptr[newcol] + arr.indptr[oldcol + 1] - arr.indptr[oldcol]
-                    newindices[newindptr[newcol] : newindptr[newcol + 1]] = arr.indices[
-                        arr.indptr[oldcol] : arr.indptr[oldcol + 1]
-                    ]
-                    newdata[newindptr[newcol] : newindptr[newcol + 1]] = arr.data[
-                        arr.indptr[oldcol] : arr.indptr[oldcol + 1]
-                    ]
-
-            ret = sparse.csc_array((newdata, newindices, newindptr), shape=(arr.shape[0], arr.shape[1] + n_newcols))
-        elif isinstance(arr.coo_matrix | sparse.coo_array):
-            newcolidx = np.nonzero(varmap < 0)[0]
-            newdata = arr.data.resize(arr.data.size + n_new_elems)
-            newdata[arr.data.size :] = fill_value
-            newcoords = tuple(np.concatenate(oldrow, newcolidx) for oldrow in arr.coords)
-            ret = sparse.coo_array((newdata, newcoords), shape=(arr.shape[0], arr.shape[1] + n_newcols))
-        else:
-            raise NotImplementedError("unsupported sparse matrix format")
-        return ret
-
     def _align_array_to_samples(
         self,
         arr: NDArray[T],

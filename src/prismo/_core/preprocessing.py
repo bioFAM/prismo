@@ -74,7 +74,10 @@ class PrismoPreprocessor(Preprocessor):
 
     def __call__(self, arr: NDArray | sparray | spmatrix, group: str, view: str) -> NDArray | sparray | spmatrix:
         # remove constant features
-        arr = arr[..., self.align_array_to_data_features(self._nonconstantfeatures[view], group, view, axis=0)]
+        arr = arr[
+            ...,
+            self.align_global_array_to_local(self._nonconstantfeatures[view], group, view, align_to="features", axis=0),
+        ]
 
         if view in self._views_to_scale:
             viewstats = self._viewstats[view]
@@ -84,9 +87,9 @@ class PrismoPreprocessor(Preprocessor):
 
             # center
             if view in self._nonnegative_weights and group in self._nonnegative_factors:
-                arr -= self.align_array_to_data_features(viewstats.min, group, view, axis=0)
+                arr -= self.align_global_array_to_local(viewstats.min, group, view, align_to="features", axis=0)
             else:
-                arr -= self.align_array_to_data_features(viewstats.mean, group, view, axis=0)
+                arr -= self.align_global_array_to_local(viewstats.mean, group, view, align_to="features", axis=0)
         return arr
 
 

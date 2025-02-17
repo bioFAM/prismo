@@ -248,34 +248,31 @@ class AnnDataDictDataset(PrismoDataset):
             out = np.moveaxis(out, 1, axis[1] + 1 if axis[1] > axis[0] else axis[1])
         return np.moveaxis(out, 0, axis[0])
 
-    def align_array_to_samples(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
-    ) -> NDArray[T]:
+    def align_local_array_to_global(
+        self,
+        arr: NDArray[T],
+        group_name: str,
+        view_name: str,
+        align_to: Literal["samples", "features"],
+        axis: int = 0,
+        fill_value: np.ScalarType = np.nan,
+    ):
         return self._align_array_to_samples(
-            arr, group_name, view_name, axis=axis, align_to="obs", fill_value=fill_value
+            arr,
+            group_name,
+            view_name,
+            axis=axis,
+            align_to="obs" if align_to == "samples" else "var",
+            fill_value=fill_value,
         )
 
-    def align_array_to_features(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1, fill_value: np.ScalarType = np.nan
+    def align_global_array_to_local(
+        self, arr: NDArray[T], group_name: str, view_name: str, align_to: Literal["samples", "features"], axis: int = 0
     ) -> NDArray[T]:
-        return self._align_array_to_samples(
-            arr, group_name, view_name, axis=axis, align_to="var", fill_value=fill_value
-        )
-
-    def align_array_to_data_samples(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0
-    ) -> NDArray[T]:
-        if view_name not in self._obsmap[group_name]:
+        map = self._obsmap if align_to == "samples" else self._varmap
+        if view_name not in map[group_name]:
             return arr
-        idx = self._obsmap[group_name][view_name]
-        return np.take(arr, np.argsort(idx)[(idx < 0).sum() :], axis=axis)
-
-    def align_array_to_data_features(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1
-    ) -> NDArray[T]:
-        if view_name not in self._varmap[group_name]:
-            return arr
-        idx = self._varmap[group_name][view_name]
+        idx = map[group_name][view_name]
         return np.take(arr, np.argsort(idx)[(idx < 0).sum() :], axis=axis)
 
     def _get_attr(self, attr: Literal["obs", "var"]) -> dict[str, pd.DataFrame]:

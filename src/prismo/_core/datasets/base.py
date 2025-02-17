@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from types import FunctionType
-from typing import Any, Concatenate, TypeAlias, TypeVar
+from typing import Any, Concatenate, Literal, TypeAlias, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -39,8 +39,13 @@ class PrismoDataset(Dataset, ABC):
     data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
     constructor arguments except for the first (which should be the data) to be keyword arguments.
 
+    Conceptually, we distinguish between global and local samples/features. Global samples are the union of samples
+    from all groups and views. Local samples correspond to one view in one group. Global samples may be differently
+    ordered than local samples and may contain samples not present in individual views. Subclass must therefore
+    implement methods to align local samples to global samples and vice versa. Similarly for features.
+
     The preprocessor must be able to process an entire minibatch. If it is a function, it will have two functions
-    injected into its global namespace: `align_array_to_features` and `align_array_to_data_features`. These are
+    injected into its global namespace: `align_global_array_to_local` and `align_local_array_to_global`. These are
     methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
     an instance of a class, these two functions will be added to its instance attributes.
 
@@ -183,59 +188,38 @@ class PrismoDataset(Dataset, ABC):
         pass
 
     @abstractmethod
-    def align_array_to_samples(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0, fill_value: np.ScalarType = np.nan
+    def align_local_array_to_global(
+        self,
+        arr: NDArray[T],
+        group_name: str,
+        view_name: str,
+        align_to: Literal["samples", "features"],
+        axis: int = 0,
+        fill_value: np.ScalarType = np.nan,
     ) -> NDArray[T]:
-        """Align an array corresponding to a view with potentially missing samples to global samples by inserting filler values for missing samples.
+        """Align an array corresponding to local samples/features to global samples/features by inserting filler values for missing observations.
 
         Args:
             arr: The array to align.
             group_name: Group name.
             view_name: View name.
+            align_to: What to align to.
             axis: The axis to align along.
             fill_value: The value to insert for missing samples.
         """
         pass
 
     @abstractmethod
-    def align_array_to_features(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1, fill_value: np.ScalarType = np.nan
+    def align_global_array_to_local(
+        self, arr: NDArray[T], group_name: str, view_name: str, align_to: Literal["samples", "features"], axis: int = 0
     ) -> NDArray[T]:
-        """Align an array corresponding to a view with potentially missing features to global features by inserting filler values for missing features.
+        """Align an array corresponding to global samples/features to a local samples/features by omitting observations not present in that view.
 
         Args:
             arr: The array to align.
             group_name: Group name.
             view_name: View name.
-            axis: The axis to align along.
-            fill_value: The value to insert for missing samples.
-        """
-        pass
-
-    @abstractmethod
-    def align_array_to_data_samples(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 0
-    ) -> NDArray[T]:
-        """Align an array corresponding to global samples to a view by omitting samples not present in that view.
-
-        Args:
-            arr: The array to align.
-            group_name: Group name.
-            view_name: View name.
-            axis: The axis to align along.
-        """
-        pass
-
-    @abstractmethod
-    def align_array_to_data_features(
-        self, arr: NDArray[T], group_name: str, view_name: str, axis: int = 1
-    ) -> NDArray[T]:
-        """Align an array corresponding to global features to a view by omitting features not present in that view.
-
-        Args:
-            arr: The array to align.
-            group_name: Group name.
-            view_name: View name.
+            align_to: What to align to.
             axis: The axis to align along.
         """
         pass
@@ -295,8 +279,8 @@ class PrismoDataset(Dataset, ABC):
     ) -> dict[str, dict[str, T]]:
         """Apply a function to each group and/or view.
 
-        If `func` is a function, it will have two functions injected into its global namespace: `align_array_to_features`
-        and `align_array_to_data_features`. These are methods of the given PrismoDataset instance, see their documentation
+        If `func` is a function, it will have two functions injected into its global namespace: `align_global_array_to_local`
+        and `align_local_array_to_global`. These are methods of the given PrismoDataset instance, see their documentation
         for how to use them. If `func` is an instance of a class, these two functions will be added to its instance attributes.
 
         If `by_group == True`, the `AnnData` object passed to `func` will **not** have its features aligned to the global features.
@@ -359,9 +343,9 @@ class PrismoDataset(Dataset, ABC):
 
     def _inject_alignment_functions(self, func: Callable):
         if isinstance(func, FunctionType):
-            func.__globals__["align_array_to_features"] = self.align_array_to_features
-            func.__globals__["align_array_to_data_features"] = self.align_array_to_data_features
+            func.__globals__["align_global_array_to_local"] = self.align_global_array_to_local
+            func.__globals__["align_local_array_to_global"] = self.align_local_array_to_global
         else:
-            func.align_array_to_features = self.align_array_to_features
-            func.align_array_to_data_features = self.align_array_to_data_features
+            func.align_global_array_to_local = self.align_global_array_to_local
+            func.align_local_array_to_global = self.align_local_array_to_global
         return func

@@ -6,17 +6,17 @@ from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Literal, get_args
 
-import anndata as ad
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import pyro
-import scipy.stats as stats
 import torch
+from anndata import AnnData
 from dtw import dtw
 from mudata import MuData
 from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.optim import ClippedAdam
+from scipy import stats
 from scipy.sparse import issparse
 from scipy.special import expit
 from sklearn.decomposition import NMF, PCA
@@ -29,12 +29,12 @@ from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, Stac
 from .io import load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
-from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior
+from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute
 
 _logger = logging.getLogger(__name__)
 
-_ResultsTypeDF = dict[str, pd.DataFrame | ad.AnnData | npt.NDArray[np.float32]]
-_ResultsTypeSeries = dict[str, pd.Series | ad.AnnData | npt.NDArray[np.float32]]
+_ResultsTypeDF = dict[str, pd.DataFrame | AnnData | npt.NDArray[np.float32]]
+_ResultsTypeSeries = dict[str, pd.Series | AnnData | npt.NDArray[np.float32]]
 
 
 @dataclass(kw_only=True)
@@ -237,7 +237,7 @@ class PRISMO:
         *args: Options for training.
     """
 
-    def __init__(self, data: MuData | dict[str, dict[str, ad.AnnData]], *args: _Options):
+    def __init__(self, data: MuData | dict[str, dict[str, AnnData]], *args: _Options):
         self._preprocess_options(*args)
         data = PrismoDataset(
             data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
@@ -696,7 +696,7 @@ class PRISMO:
         if self._train_opts.seed is None:
             self._train_opts.seed = int(time.strftime("%y%m%d%H%M"))
 
-    def _adjust_options(self, data: dict[dict[ad.AnnData]]):
+    def _adjust_options(self, data: dict[dict[AnnData]]):
         # convert input arguments to dictionaries if necessary
         for opt_name, keys in zip(
             ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
@@ -938,7 +938,7 @@ class PRISMO:
             case "torch":
                 return {k: torch.tensor(v.values, dtype=torch.float).clone().detach() for k, v in component.items()}
             case "anndata":
-                return {k: ad.AnnData(v) for k, v in component.items()}
+                return {k: AnnData(v) for k, v in component.items()}
 
     def _get_sparse(self, what, moment, sparse_type):
         ret = {}
@@ -1197,9 +1197,7 @@ class PRISMO:
 
         return device
 
-    def impute_data(
-        self, data: MuData | dict[str, dict[str, ad.AnnData]], missing_only=False
-    ) -> dict[dict[str, ad.AnnData]]:
+    def impute_data(self, data: MuData | dict[str, dict[str, AnnData]], missing_only=False) -> dict[dict[str, AnnData]]:
         """Impute values in the training data using the trained factorization.
 
         Args:
@@ -1207,44 +1205,33 @@ class PRISMO:
 
                 - MuData object
                 - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
-                  (incompatible with :py:class:`TrainingOptions` `.group_by`)
+                  (incompatible with :py:attr:`DataOptions.group_by`)
 
             missing_only: Only impute missing values in the data.
         """
-        imputed_data = preprocessing.cast_data(data, group_by=self._data_opts.group_by, copy=True)
+        data = PrismoDataset(
+            data, group_by=self._data_opts.group_by, sample_names=self.sample_names, feature_names=self.feature_names
+        )
 
         factors = self.get_factors(return_type="numpy")
         weights = self.get_weights(return_type="numpy")
 
-        for k_groups in self.group_names:
-            for k_views in self.view_names:
-                if missing_only and not np.isnan(imputed_data[k_groups][k_views].X).any():
-                    continue
-
-                imputation = factors[k_groups] @ weights[k_views]
-
-                if self._model_opts.likelihoods[k_views] != "Normal":
-                    if self._model_opts.likelihoods[k_views] == "Bernoulli":
-                        imputation = expit(imputation)
-                    else:
-                        raise NotImplementedError(
-                            f"Imputation for {self._model_opts.likelihoods[k_views]} not implemented."
-                        )
-
-                if not missing_only:
-                    imputed_data[k_groups][k_views].X = imputation
-                else:
-                    _logger.debug(f"Imputing missing values for {k_groups} - {k_views}.")
-                    mask = np.isnan(imputed_data[k_groups][k_views].X)
-                    imputed_data[k_groups][k_views].X[mask] = imputation[mask]
-
-        return imputed_data
+        return data.apply(
+            impute,
+            view_kwargs={
+                "weights": weights,
+                "feature_names": self.feature_names,
+                "likelihood": self._model_opts.likelihoods,
+            },
+            group_kwargs={"factors": factors, "sample_names": self.sample_names},
+            missingonly=missing_only,
+        )
 
     def _save(
         self,
         path: str | Path,
         mofa_compat: bool = False,
-        data: dict[str, dict[str, ad.AnnData]] | None = None,
+        data: dict[str, dict[str, AnnData]] | None = None,
         intercepts: dict[str, dict[str, np.ndarray]] | None = None,
     ):
         state = {

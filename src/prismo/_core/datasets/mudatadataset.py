@@ -22,10 +22,34 @@ class MuDataDataset(PrismoDataset):
         group_by: str | list[str] | None = None,
         preprocessor: Preprocessor | None = None,
         cast_to: np.ScalarType = np.float32,
+        sample_names: dict[str, NDArray[str]] | None = None,
+        feature_names: dict[str, NDArray[str]] | None = None,
         **kwargs,
     ):
         super().__init__(mudata, preprocessor=preprocessor, cast_to=cast_to)
         self._groups = self._data.obs.groupby(group_by if group_by is not None else lambda x: "group_1").indices
+        if feature_names is not None:
+            need_update = False
+            for view_name, view_feature_names in feature_names.items():
+                if np.any(view_feature_names != self._data.mod[view_name].var_names):
+                    self._data.mod[view_name] = self._data.mod[view_name][:, view_feature_names]
+                    need_update = True
+            if need_update:
+                self._data.update_var()
+        if sample_names is not None and any(
+            np.any(sample_names[group_name] != self._data.obs_names[group_idx])
+            for group_name, group_idx in self._groups.items()
+        ):
+            obs_idx = np.concatenate(
+                [
+                    self._data.obs_names[group_idx].get_indexer(sample_names[group_name])
+                    for group_name, group_idx in self._groups.items()
+                ]
+            )
+            self._data = self._data[obs_idx, :]
+            if group_by is not None:
+                self._groups = self._data.obs.groupby(group_by).indices
+
         self._needs_alignment = {}
         for group_name, group_idx in self._groups.items():
             gneeds_align = {}
@@ -131,7 +155,7 @@ class MuDataDataset(PrismoDataset):
 
         outshape = [subdata.n_obs] + list(arr.shape[:axis]) + list(arr.shape[axis + 1 :])
 
-        out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype, order="C")
+        out = np.full(outshape, fill_value=fill_value, dtype=np.promote_types(type(fill_value), arr.dtype), order="C")
         out[nnz, ...] = np.moveaxis(arr, axis, 0)[viewidx[nnz] - 1, ...]
         return np.moveaxis(out, 0, axis)
 
@@ -194,7 +218,7 @@ class MuDataDataset(PrismoDataset):
                     modmissing = np.asarray(modmissing.sum(axis=1)).squeeze() > 0
                 else:
                     modmissing = np.isnan(mod.X).any(axis=1)
-                modmissing = self._align_array_to_samples(modmissing, modname, subdata, fill_value=1)
+                modmissing = self._align_array_to_samples(modmissing, modname, subdata, fill_value=True)
                 dfs.append(
                     pd.DataFrame(
                         {"view": modname, "group": group_name, "obs_name": subdata.obs_names, "missing": modmissing}

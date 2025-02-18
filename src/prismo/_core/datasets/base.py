@@ -1,3 +1,4 @@
+import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from types import FunctionType
@@ -35,9 +36,11 @@ class PrismoDataset(Dataset, ABC):
     """Base class for PRISMO datasets, compatible with the PyTorch dataloader interface.
 
     The constructor of subclasses must additionally take a **kwargs argument which is ignored. This ensures that
-    users can simply call `PrismoDatset(data, args)`, where args may be a union of arguments suitable for different
+    users can simply call `PrismoDataset(data, args)`, where args may be a union of arguments suitable for different
     data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
-    constructor arguments except for the first (which should be the data) to be keyword arguments.
+    constructor arguments except for the first (which should be the data) to be keyword arguments. Subclass
+    constructors must also take arguments `sample_names` and `feature_names`, both of which default to `None`.
+    If given, they specify the global sample and feature names, respectively, to align the data to.
 
     Conceptually, we distinguish between global and local samples/features. Global samples are the union of samples
     from all groups and views. Local samples correspond to one view in one group. Global samples may be differently
@@ -50,7 +53,7 @@ class PrismoDataset(Dataset, ABC):
     an instance of a class, these two functions will be added to its instance attributes.
 
     Args:
-        data: The data.
+        data: The data. This will be stored as `self._data` and can be accessed and manipulaed by subclasses.
         preprocessor: A preprocessor. If None, will use the default preprocessor that does not apply any preprocessing.
         cast_to: Data type to cast the data to.
     """
@@ -70,6 +73,11 @@ class PrismoDataset(Dataset, ABC):
         self._cast_to = cast_to
 
     def __init_subclass__(cls, **kwargs):
+        init_sig = inspect.signature(cls.__init__)
+        for arg in ("kwargs", "sample_names", "feature_names"):
+            if arg not in init_sig.parameters:
+                raise TypeError(f"Constructor of class {cls} is missing the {arg} argument.")
+
         super().__init_subclass__(**kwargs)
         __class__._subclasses.add(cls)
 
@@ -272,8 +280,8 @@ class PrismoDataset(Dataset, ABC):
         func: ApplyCallable[T],
         by_group: bool = True,
         by_view: bool = True,
-        view_kwargs: dict[str, dict[str, Any]] | None = None,
         group_kwargs: dict[str, dict[str, Any]] | None = None,
+        view_kwargs: dict[str, dict[str, Any]] | None = None,
         group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
         **kwargs,
     ) -> dict[str, dict[str, T]]:
@@ -294,12 +302,12 @@ class PrismoDataset(Dataset, ABC):
                 three arguments.
             by_group: Whether to apply the function to each group individually or to all groups at once.
             by_view: Whether to apply the function to each view individually or to all views at once.
-            view_kwargs: Additional arguments to pass to `func` for each view. The outer dict contains the argument name as key, the inner
-                dict contains the value of that argument for each view. If the inner dict is missing a view, `None` will be used as the
-                value of that argument for the view.
             group_kwargs: Additional arguments to pass to `func` for each group. The outer dict contains the argument name as key, the inner
                 dict contains the value of that argument for each group. If the inner dict is missing a group, `None` will be used as the
                 value of that argument for the group.
+            view_kwargs: Additional arguments to pass to `func` for each view. The outer dict contains the argument name as key, the inner
+                dict contains the value of that argument for each view. If the inner dict is missing a view, `None` will be used as the
+                value of that argument for the view.
             group_view_kwargs: Additional arguments to pass to `func` for each combination of group and view. The outer dict contains the
                 argument name as key, the first inner dict has groups as keys and the second inner dict has views as keys. If a group is missing
                 from the outer dict or a view is missing from the inner dict, `None` will be used as the value of that argument for all views

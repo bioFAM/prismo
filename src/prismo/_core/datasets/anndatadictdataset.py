@@ -24,31 +24,46 @@ class AnnDataDictDataset(PrismoDataset):
         use_var: Literal["union", "intersection"] = "union",
         preprocessor: Preprocessor | None = None,
         cast_to: np.ScalarType = np.float32,
+        sample_names: dict[str, NDArray[str]] | None = None,
+        feature_names: dict[str, NDArray[str]] | None = None,
         **kwargs,
     ):
         super().__init__(data, preprocessor=preprocessor, cast_to=cast_to)
 
-        self._aligned_obs = {}
-        self._aligned_var = {}
+        if sample_names is not None:
+            self._aligned_obs = {
+                group_name: pd.Index(group_sample_names) for group_name, group_sample_names in sample_names.items()
+            }
+            self._use_obs = "union"
+        else:
+            obsfunc = (lambda x, y: x.intersection(y)) if use_obs == "intersection" else lambda x, y: x.union(y)
+            self._use_obs = use_obs
+            self._aligned_obs = {}
+            for group_name, group in self._data.items():
+                self._aligned_obs[group_name] = reduce(obsfunc, (view.obs_names for view in group.values()))
+
+        if feature_names is not None:
+            self._aligned_var = {
+                view_name: pd.Index(view_feature_names) for view_name, view_feature_names in feature_names.items()
+            }
+            self._use_var = "union"
+        else:
+            varfunc = (lambda x, y: x.intersection(y)) if use_var == "intersection" else lambda x, y: x.union(y)
+            self._aligned_var = {}
+            self._use_var = use_var
+            for view_name in self.view_names:
+                self._aligned_var[view_name] = reduce(
+                    varfunc, (group[view_name].var_names for group in self._data.values() if view_name in group)
+                )
+
         self._obsmap = {}
         self._varmap = {}
-        self._use_obs = use_obs
-        self._use_var = use_var
-
-        obsfunc = (lambda x, y: x.intersection(y)) if use_obs == "intersection" else lambda x, y: x.union(y)
-        varfunc = (lambda x, y: x.intersection(y)) if use_var == "intersection" else lambda x, y: x.union(y)
-
-        for view_name in self.view_names:
-            self._aligned_var[view_name] = reduce(
-                varfunc, (group[view_name].var_names for group in self._data.values() if view_name in group)
-            )
 
         for group_name, group in self._data.items():
-            aligned_obs = reduce(obsfunc, (view.obs_names for view in group.values()))
             gobsmap = {}
             gvarmap = {}
             for view_name, view in group.items():
-                obsmap = aligned_obs.get_indexer(view.obs_names)
+                obsmap = self._aligned_obs[group_name].get_indexer(view.obs_names)
                 varmap = self._aligned_var[view_name].get_indexer(view.var_names)
 
                 if np.sum(obsmap < 0) > 0 or np.any(np.diff(obsmap) != 1):
@@ -57,7 +72,6 @@ class AnnDataDictDataset(PrismoDataset):
                     gvarmap[view_name] = varmap
             self._obsmap[group_name] = gobsmap
             self._varmap[group_name] = varmap
-            self._aligned_obs[group_name] = aligned_obs
 
     @staticmethod
     def _accepts_input(data):
@@ -241,7 +255,7 @@ class AnnDataDictDataset(PrismoDataset):
             arr = np.moveaxis(arr, axis[0], 0)
         outidx.append(...)
         inidx.append(...)
-        out = np.full(outshape, fill_value=fill_value, dtype=arr.dtype, order="C")
+        out = np.full(outshape, fill_value=fill_value, dtype=np.promote_types(type(fill_value), arr.dtype), order="C")
         out[*outidx] = arr[*inidx]
 
         if align_to_both:
@@ -301,7 +315,7 @@ class AnnDataDictDataset(PrismoDataset):
                     viewmissing = np.asarray(viewmissing.sum(axis=1)).squeeze() > 0
                 else:
                     viewmissing = np.isnan(view.X).any(axis=1)
-                viewmissing = self._align_array_to_samples(viewmissing, group_name, view_name, fill_value=1)
+                viewmissing = self._align_array_to_samples(viewmissing, group_name, view_name, fill_value=True)
                 dfs.append(
                     pd.DataFrame(
                         {

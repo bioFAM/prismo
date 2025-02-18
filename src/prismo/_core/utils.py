@@ -2,8 +2,11 @@ from collections import namedtuple
 from typing import Literal, TypeAlias
 
 import numpy as np
+import pandas as pd
+from anndata import AnnData
 from numpy.typing import NDArray
 from scipy import sparse
+from scipy.special import expit
 
 WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
 FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
@@ -51,3 +54,43 @@ def _minmax(arr: PossiblySparseArray, method: Literal["min", "max"], axis: int |
     if isinstance(res, np.matrix):
         res = np.asarray(res).squeeze(axis)
     return res
+
+
+def _imputation_link(imputation: NDArray, likelihood: Likelihood):
+    if likelihood == "Bernoulli":
+        return expit(imputation)
+    elif likelihood != "Normal":
+        raise NotImplementedError(f"Imputation for {likelihood} not implemented.")
+
+
+def impute(
+    data: AnnData, group_name, view_name, factors, weights, sample_names, feature_names, likelihood, missingonly
+):
+    havemissing = data.n_obs < factors.shape[0] or data.n_vars < weights.shape[1]
+    if missingonly and not havemissing:
+        return data
+    else:
+        if not missingonly or not sparse.issparse(data.X):
+            imputation = _imputation_link(factors @ weights, likelihood)
+        else:
+            missing_obs = align_local_array_to_global(  # noqa F821
+                np.broadcast_to(False, (data.n_obs,)), group_name, view_name, fill_value=True, align_to="samples"
+            )
+            missing_var = align_local_array_to_global(  # noqa F821
+                np.broadcast_to(False, (data.n_vars,)), group_name, view_name, fill_value=True, align_to="features"
+            )
+
+            if sparse.issparse(data.X):
+                imputation = sparse.lil_array((factors.shape[0], weights.shape[1]))
+
+            imputation[np.ix_(~missing_obs, ~missing_var)] = data.X
+
+            if sparse.issparse(data.X):
+                for row in np.nonzero(missing_obs)[0]:
+                    imputation[row, :] = _imputation_link(factors[row, :] @ weights, likelihood)
+                imputation = imputation.T  # slow column slicing for lil arrays
+                for col in np.nonzero(missing_var)[0]:
+                    imputation[col, :] = _imputation_link(factors @ weights[:, col], likelihood).T
+                imputation = imputation.tocsr().T
+
+        return AnnData(X=imputation, obs=pd.DataFrame(index=sample_names), var=pd.DataFrame(index=feature_names))

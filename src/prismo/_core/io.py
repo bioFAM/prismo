@@ -129,15 +129,6 @@ def save_model(
                     cgrp = data_grp.require_group(view_name)
                     cgrp.create_dataset(group_name, data=view_data.X, **dset_kwargs)
 
-            imp_grp = f.create_group("imputed_data")
-            imp_data = model.impute_data(data, missing_only=True)
-            for group_name, gimp in imp_data.items():
-                for view_name, imp in gimp.items():
-                    vgrp = imp_grp.require_group(view_name)
-                    ggrp = vgrp.require_group(group_name)
-                    ggrp.create_dataset("mean", data=imp.X, **dset_kwargs)
-                    # TODO: variance
-
             exp_grp = f.create_group("expectations")
             factor_grp = exp_grp.create_group("Z")
             for group_name, factors in model.get_factors(return_type="numpy", ordered=False).items():

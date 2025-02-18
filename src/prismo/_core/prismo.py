@@ -26,7 +26,7 @@ from torch.utils.data._utils.collate import collate  # this is documented, so pr
 from ..pl import plot_overview
 from . import gp, preprocessing
 from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
-from .io import load_model, save_model
+from .io import MOFACompatOption, load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
 from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute
@@ -174,8 +174,9 @@ class TrainingOptions(_Options):
     save_path: str | None = None
     """Path to save model."""
 
-    mofa_compat: bool = False
-    """Save model in MOFA2 compatible format."""
+    mofa_compat: MOFACompatOption = False
+    """Save model in MOFA2 compatible format. If `True` or `"full"`, will include the data in the file. This
+    can result in very large files. `"modelonly"` will save only the trained model."""
 
     seed: int | None = None
     """Seed for the pseudorandom number generator."""
@@ -1230,7 +1231,7 @@ class PRISMO:
     def _save(
         self,
         path: str | Path,
-        mofa_compat: bool = False,
+        mofa_compat: MOFACompatOption = False,
         data: dict[str, dict[str, AnnData]] | None = None,
         intercepts: dict[str, dict[str, np.ndarray]] | None = None,
     ):

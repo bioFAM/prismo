@@ -395,72 +395,38 @@ class AnnDataDictDataset(PrismoDataset):
                         break
         return annotations, annotations_names
 
-    def _apply(
-        self,
-        func: ApplyCallable[T],
-        by_group: bool = True,
-        by_view: bool = True,
-        view_kwargs: dict[str, dict[str, Any]] | None = None,
-        group_kwargs: dict[str, dict[str, Any]] | None = None,
-        group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
-        **kwargs,
+    def _apply_by_group(
+        self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
-        if not by_view:
-            raise NotImplementedError("by_view must be True.")
-
-        havedask = have_dask()
-
         ret = {}
-        if by_group:
+        for group_name, group in self._data.items():
+            cret = {}
+            for view_name, view in group.items():
+                cret[view_name] = func(view, group_name, view_name, **kwargs, **gvkwargs[group_name][view_name])
+            ret[group_name] = cret
+        return ret
+
+    def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, dict[str, T]]:
+        havedask = have_dask()
+        ret = {}
+        for view_name in self.view_names:
+            if not havedask:
+                _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+
+            data = {}
             for group_name, group in self._data.items():
-                cgroup_kwargs = {
-                    argname: kwargs[group_name] if group_name in kwargs else None
-                    for argname, kwargs in group_kwargs.items()
-                }
-                cgroup_view_kwargs = {
-                    argname: kwargs[group_name] if group_name in kwargs else None
-                    for argname, kwargs in group_view_kwargs.items()
-                }
+                data[group_name] = anndata_to_dask(group[view_name]) if havedask else group[view_name]
+            data = ad.concat(
+                data,
+                join="inner" if self._use_var == "intersection" else "outer",
+                label="group",
+                merge="unique",
+                uns_merge=None,
+            )
+            if (data.var_names != self._aligned_var[view_name]).any():
+                data = data[:, self._aligned_var[view_name]]
 
-                cret = {}
-                for view_name, view in group.items():
-                    cview_kwargs = {
-                        argname: kwargs[view_name] if view_name in kwargs else None
-                        for argname, kwargs in view_kwargs.items()
-                    }
-                    cview_kwargs.update(
-                        {
-                            argname: kwargs[view_name] if kwargs is not None and view_name in kwargs else None
-                            for argname, kwargs in cgroup_view_kwargs.items()
-                        }
-                    )
-
-                    cret[view_name] = func(view, group_name, view_name, **kwargs, **cgroup_kwargs, **cview_kwargs)
-                ret[group_name] = cret
-        else:
-            for view_name in self.view_names:
-                cview_kwargs = {
-                    argname: kwargs[view_name] if view_name in kwargs else None
-                    for argname, kwargs in view_kwargs.items()
-                }
-
-                if not havedask:
-                    _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
-
-                data = {}
-                for group_name, group in self._data.items():
-                    data[group_name] = anndata_to_dask(group[view_name]) if havedask else group[view_name]
-                data = ad.concat(
-                    data,
-                    join="inner" if self._use_var == "intersection" else "outer",
-                    label="group",
-                    merge="unique",
-                    uns_merge=None,
-                )
-                if (data.var_names != self._aligned_var[view_name]).any():
-                    data = data[:, self._aligned_var[view_name]]
-
-                cret = func(data, group_name, view_name, **kwargs, **cview_kwargs)
-                ret[view_name] = apply_to_nested(cret, from_dask)
+            cret = func(data, group_name, view_name, **kwargs, **vkwargs[view_name])
+            ret[view_name] = apply_to_nested(cret, from_dask)
 
         return ret

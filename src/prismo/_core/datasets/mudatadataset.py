@@ -314,49 +314,19 @@ class MuDataDataset(PrismoDataset):
                         annotations[modname] = annot[varidx].T
         return annotations, annotations_names
 
-    def _apply(
-        self,
-        func: ApplyCallable[T],
-        by_group: bool = True,
-        by_view: bool = True,
-        view_kwargs: dict[str, dict[str, Any]] | None = None,
-        group_kwargs: dict[str, dict[str, Any]] | None = None,
-        group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
-        **kwargs,
+    def _apply_by_group(
+        self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
-        if not by_view:
-            raise NotImplementedError("by_view must be True.")
-
         ret = {}
-        if by_group:
-            for group_name, group_idx in self._groups.items():
-                cgroup_kwargs = {
-                    argname: kwargs[group_name] if group_name in kwargs else None
-                    for argname, kwargs in group_kwargs.items()
-                }
-                cgroup_view_kwargs = {
-                    argname: kwargs[group_name] if group_name in kwargs else None
-                    for argname, kwargs in group_view_kwargs.items()
-                }
+        for group_name, group_idx in self._groups.items():
+            cret = {}
+            for modname, mod in self._data[group_idx, :].mod.items():
+                cret[modname] = func(mod, group_name, modname, **kwargs, **gvkwargs[group_name][modname])
+            ret[group_name] = cret
+        return ret
 
-                cret = {}
-                for modname, mod in self._data[group_idx, :].mod.items():
-                    cview_kwargs = {
-                        argname: kwargs[modname] if modname in kwargs else None
-                        for argname, kwargs in view_kwargs.items()
-                    }
-                    cview_kwargs.update(
-                        {
-                            argname: kwargs[modname] if kwargs is not None and modname in kwargs else None
-                            for argname, kwargs in cgroup_view_kwargs.items()
-                        }
-                    )
-                    cret[modname] = func(mod, group_name, modname, **kwargs, **cgroup_kwargs, **cview_kwargs)
-                ret[group_name] = cret
-        else:
-            for modname, mod in self._data.mod.items():
-                cview_kwargs = {
-                    argname: kwargs[modname] if modname in kwargs else None for argname, kwargs in view_kwargs.items()
-                }
-                ret[modname] = func(mod, None, modname, **kwargs, **cview_kwargs)
+    def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, dict[str, T]]:
+        ret = {}
+        for modname, mod in self._data.mod.items():
+            ret[modname] = func(mod, None, modname, **kwargs, **vkwargs[modname])
         return ret

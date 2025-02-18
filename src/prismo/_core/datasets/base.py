@@ -1,5 +1,6 @@
 import inspect
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Callable
 from types import FunctionType
 from typing import Any, Concatenate, Literal, TypeAlias, TypeVar
@@ -279,12 +280,11 @@ class PrismoDataset(Dataset, ABC):
         self,
         func: ApplyCallable[T],
         by_group: bool = True,
-        by_view: bool = True,
         group_kwargs: dict[str, dict[str, Any]] | None = None,
         view_kwargs: dict[str, dict[str, Any]] | None = None,
         group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
         **kwargs,
-    ) -> dict[str, dict[str, T]]:
+    ) -> dict[str, dict[str, T]] | dict[str, T]:
         """Apply a function to each group and/or view.
 
         If `func` is a function, it will have two functions injected into its global namespace: `align_global_array_to_local`
@@ -304,14 +304,14 @@ class PrismoDataset(Dataset, ABC):
             by_view: Whether to apply the function to each view individually or to all views at once.
             group_kwargs: Additional arguments to pass to `func` for each group. The outer dict contains the argument name as key, the inner
                 dict contains the value of that argument for each group. If the inner dict is missing a group, `None` will be used as the
-                value of that argument for the group.
+                value of that argument for the group. Ignored if `by_group=False`.
             view_kwargs: Additional arguments to pass to `func` for each view. The outer dict contains the argument name as key, the inner
                 dict contains the value of that argument for each view. If the inner dict is missing a view, `None` will be used as the
                 value of that argument for the view.
             group_view_kwargs: Additional arguments to pass to `func` for each combination of group and view. The outer dict contains the
                 argument name as key, the first inner dict has groups as keys and the second inner dict has views as keys. If a group is missing
                 from the outer dict or a view is missing from the inner dict, `None` will be used as the value of that argument for all views
-                in the group or for the view, respectively.
+                in the group or for the view, respectively. Ignored if `by_group=False`.
             **kwargs: Additional arguments to pass to `func`.
 
         Returns: Nested dict with the return value of `func` for each group and view.
@@ -329,27 +329,42 @@ class PrismoDataset(Dataset, ABC):
         elif not by_group:
             raise ValueError("You cannot specify group_view_kwargs with by_group=False.")
 
-        return self._apply(
-            self._inject_alignment_functions(func),
-            by_group,
-            by_view,
-            view_kwargs,
-            group_kwargs,
-            group_view_kwargs,
-            **kwargs,
-        )
+        func = self._inject_alignment_functions(func)
+        if by_group:
+            ckwargs = defaultdict(lambda: defaultdict(dict))
+
+            for argname, gkwargs in group_kwargs.items():
+                for group_name in self.group_names:
+                    for view_name in self.view_names:
+                        ckwargs[group_name][view_name][argname] = gkwargs.get(group_name, None)
+
+            for argname, vkwargs in view_kwargs.items():
+                for group_name in self.group_names:
+                    for view_name in self.view_names:
+                        ckwargs[group_name][view_name][argname] = vkwargs.get(view_name, None)
+
+            for argname, gvkwargs in group_view_kwargs.items():
+                for group_name in self.group_names:
+                    gkwargs = gvkwargs.get(group_name, {})
+                    for view_name in self.view_names:
+                        ckwargs[group_name][view_name][argname] = gkwargs.get(view_name, None)
+
+            return self._apply_by_group(func, ckwargs, **kwargs)
+        else:
+            ckwargs = defaultdict(dict)
+            for argname, vkwargs in view_kwargs.items():
+                for view_name in self.view_names:
+                    ckwargs[view_name][argname] = vkwargs.get(view_name, None)
+            return self._apply(func, ckwargs, **kwargs)
 
     @abstractmethod
-    def _apply(
-        self,
-        func: ApplyCallable[T],
-        by_group: bool = True,
-        by_view: bool = True,
-        view_kwargs: dict[str, dict[str, Any]] | None = None,
-        group_kwargs: dict[str, dict[str, Any]] | None = None,
-        group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
-        **kwargs,
+    def _apply_by_group(
+        self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
+        pass
+
+    @abstractmethod
+    def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         pass
 
     def _inject_alignment_functions(self, func: Callable):

@@ -21,6 +21,7 @@ urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
     "anndata>=0.11",
     "mudata",
+    "array-api-compat",
     "h5py",
     "pyro-ppl",
     "torch",
@@ -28,7 +29,6 @@ dependencies = [
     "scipy>=1.8",
     "pandas",
     "statsmodels",
-    "tensordict",
     "gpytorch",
     "dtw-python",
     "plotnine",

@@ -181,7 +181,7 @@ class PrismoDataset(Dataset, ABC):
             A dict with four entries: `"data"` is a nested dict with group names keys, view names as subkeys and
             Numppy arrays of observations as values. `"sample_idx"` is the sample index (the `idx` argument
             passed through). `"nonmissing_samples"` is a nested dict with group names as keys, view names as subkeys
-            and Numpy index arrays indicating which samples **in the current minibatch** are not missing as values.
+            and NumPy index arrays indicating which samples **in the current minibatch** are not missing as values.
             If there are no missing samples, the value may be `slice(None)`. Similarly, `"nonmissing_features"`
             indicates which features are not missing.
         """
@@ -285,6 +285,9 @@ class PrismoDataset(Dataset, ABC):
 
         If `by_group == True`, the `AnnData` object passed to `func` will **not** have its features aligned to the global features.
         It is up to `func` to align when necessary using the provided functions.
+
+        The data contained in the passed AnnData object may be of any type that AnnData supports, not necessarily plain NumPy arrays.
+        It is recommended to use the array-api-compat package to properly handle different data types.
 
         Args:
             func: The function to apply. The function will be passed an `AnnData` object, the group name, and the view name as the first

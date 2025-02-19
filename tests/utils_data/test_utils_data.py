@@ -1,12 +1,15 @@
+from collections import Counter, defaultdict
+from functools import reduce
 from math import isclose
 
 import numpy as np
 import pandas as pd
-import torch
+import pytest
 from anndata import AnnData
-from mudata import MuData
 
-from prismo import preprocessing
+from prismo._core import PrismoDataset, preprocessing
+
+from ..utils import preprocess
 
 
 def create_adata(X, var_names=None, obs_names=None):
@@ -17,60 +20,6 @@ def create_adata(X, var_names=None, obs_names=None):
     return AnnData(X, var=pd.DataFrame(index=var_names), obs=pd.DataFrame(index=obs_names))
 
 
-def test_cast_data():
-    datasets = []
-
-    datasets.append(
-        MuData(
-            {
-                "view1": create_adata(np.random.randn(2, 2), var_names=["g1", "g2"]),
-                "view2": create_adata(np.random.randn(2, 2), var_names=["g3", "g4"]),
-            }
-        )
-    )
-
-    datasets.append({"view1": create_adata(np.random.randn(2, 2)), "view2": create_adata(np.random.randn(2, 2))})
-
-    datasets.append({"view1": torch.randn([2, 2]), "view2": torch.randn([2, 2])})
-
-    datasets.append(
-        {
-            "group1": MuData(
-                {
-                    "view1": create_adata(np.random.randn(2, 2), var_names=["g1", "g2"]),
-                    "view2": create_adata(np.random.randn(2, 2), var_names=["g3", "g4"]),
-                }
-            ),
-            "group2": MuData(
-                {
-                    "view1": create_adata(np.random.randn(2, 2), var_names=["g1", "g2"]),
-                    "view2": create_adata(np.random.randn(2, 2), var_names=["g3", "g4"]),
-                }
-            ),
-        }
-    )
-
-    datasets.append(
-        {
-            "group1": {"view1": create_adata(np.random.randn(2, 2)), "view2": create_adata(np.random.randn(2, 2))},
-            "group2": {"view1": create_adata(np.random.randn(2, 2)), "view2": create_adata(np.random.randn(2, 2))},
-        }
-    )
-
-    datasets.append(
-        {
-            "group1": {"view1": torch.randn(5, 3), "view2": torch.randn(10, 4)},
-            "group2": {"view1": torch.randn(6, 2), "view2": torch.randn(11, 4)},
-        }
-    )
-
-    for data in datasets:
-        data_c = preprocessing.cast_data(data, None)
-        assert isinstance(data_c, dict)
-        assert all(isinstance(v, dict) for v in data_c.values())
-        assert all(all(isinstance(vv, AnnData) for vv in v.values()) for v in data_c.values())
-
-
 def test_infer_likelihoods():
     data = {
         "view1": create_adata(np.random.randn(2, 2)),
@@ -78,7 +27,7 @@ def test_infer_likelihoods():
         "view3": create_adata(np.random.randint(0, 100, (2, 2))),
     }
 
-    likelihoods = preprocessing.infer_likelihoods(data)
+    likelihoods = {vn: preprocessing.infer_likelihood(v) for vn, v in data.items()}
 
     assert likelihoods["view1"] == "Normal"
     assert likelihoods["view2"] == "Bernoulli"
@@ -94,9 +43,11 @@ def test_validate_likelihoods():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
-    preprocessing.validate_likelihoods(data, likelihoods)
+    for view_name in data.keys():
+        preprocessing.validate_likelihood(data[view_name], None, view_name, likelihoods[view_name])
 
 
+@pytest.mark.filterwarnings("ignore:Observation names are not unique.+:UserWarning")
 def test_get_data_mean():
     data = {
         "group1": {
@@ -111,7 +62,9 @@ def test_get_data_mean():
         },
     }
 
-    feature_mean = preprocessing.get_data_mean(data, how="feature")
+    preprocessor = preprocess(data, {vn: "Normal" for vn in data["group1"].keys()})[0]
+
+    feature_mean = preprocessor.feature_means
 
     assert isclose(feature_mean["group1"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
     assert isclose(feature_mean["group2"]["view1"][1], (-5.2 + 1.1 + 9.1) / 3)
@@ -121,6 +74,7 @@ def test_get_data_mean():
     assert isclose(feature_mean["group2"]["view3"][1], (10 + 2 + 12) / 3)
 
 
+@pytest.mark.filterwarnings("ignore:Observation names are not unique.+:UserWarning")
 def test_center_data():
     # create sample data set
     data = {
@@ -135,20 +89,15 @@ def test_center_data():
             "view3": create_adata(np.random.randint(0, 1e4, (2, 8))),
         },
     }
-
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
-    data_c = preprocessing.center_data(
-        data,
-        likelihoods,
-        nonnegative_weights={k: False for k in likelihoods},
-        nonnegative_factors={k: False for k in likelihoods},
-    )
+    result = preprocess(data, likelihoods, cast_to=None)[1]
 
-    assert np.allclose(data_c["group1"]["view1"].X.mean(axis=0), 0)
-    assert np.allclose(data_c["group2"]["view1"].X.mean(axis=0), 0)
+    assert np.allclose(result["group1"]["view1"].mean(axis=0), 0)
+    assert np.allclose(result["group2"]["view1"].mean(axis=0), 0)
 
 
+@pytest.mark.filterwarnings("ignore:Observation names are not unique.+:UserWarning")
 def test_scale_data():
     data = {
         "group1": {
@@ -165,86 +114,109 @@ def test_scale_data():
 
     likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
 
-    data_c = preprocessing.scale_data(data, scale_per_group=True, likelihoods=likelihoods)
+    result = preprocess(data, likelihoods, scale_per_group=True, cast_to=None)[1]
 
-    assert np.allclose(data_c["group1"]["view1"].X.std(), 1)
-    assert np.allclose(data_c["group2"]["view1"].X.std(), 1)
+    assert np.allclose(result["group1"]["view1"].std(), 1)
+    assert np.allclose(result["group2"]["view1"].std(), 1)
 
-    data_c = preprocessing.scale_data(data, scale_per_group=False, likelihoods=likelihoods)
+    result = preprocess(data, likelihoods, scale_per_group=False, cast_to=None)[1]
 
-    combined_view1 = np.concatenate([data_c["group1"]["view1"].X, data_c["group2"]["view1"].X], axis=0)
+    combined_view1 = np.concatenate([result["group1"]["view1"], result["group2"]["view1"]], axis=0)
     assert np.allclose(combined_view1.std(), 1)
 
 
 def test_align_obs_var():
-    g1_v1_obs_names = ["b", "c", "d", "e"]
-    g1_v2_obs_names = ["d", "e", "f"]
-    g1_v3_obs_names = ["a", "b", "c", "d"]
-
-    g2_v1_obs_names = ["h", "i", "j", "k"]
-    g2_v2_obs_names = ["j", "k", "l"]
-    g2_v3_obs_names = ["k", "l", "m"]
-
-    g1_v1_var_names = ["g1", "g2"]
-    g2_v1_var_names = ["g1", "g2", "g3"]
-
-    g1_v2_var_names = ["g3", "g4"]
-    g2_v2_var_names = ["g3", "g4", "g5"]
-
-    g1_v3_var_names = ["g5", "g6"]
-    g2_v3_var_names = ["g6", "g7", "g8"]
-
-    data = {
-        "group1": {
-            "view1": create_adata(
-                np.random.randn(len(g1_v1_obs_names), len(g1_v1_var_names)),
-                obs_names=g1_v1_obs_names,
-                var_names=g1_v1_var_names,
-            ),
-            "view2": create_adata(
-                np.random.randint(0, 1, (len(g1_v2_obs_names), len(g1_v2_var_names))),
-                obs_names=g1_v2_obs_names,
-                var_names=g1_v2_var_names,
-            ),
-            "view3": create_adata(
-                np.random.randint(0, 100, (len(g1_v3_obs_names), len(g1_v3_var_names))),
-                obs_names=g1_v3_obs_names,
-                var_names=g1_v3_var_names,
-            ),
-        },
-        "group2": {
-            "view1": create_adata(
-                np.random.randn(len(g2_v1_obs_names), len(g2_v1_var_names)),
-                obs_names=g2_v1_obs_names,
-                var_names=g2_v1_var_names,
-            ),
-            "view2": create_adata(
-                np.random.randint(0, 1, (len(g2_v2_obs_names), len(g2_v2_var_names))),
-                obs_names=g2_v2_obs_names,
-                var_names=g2_v2_var_names,
-            ),
-            "view3": create_adata(
-                np.random.randint(0, 100, (len(g2_v3_obs_names), len(g2_v3_var_names))),
-                obs_names=g2_v3_obs_names,
-                var_names=g2_v3_var_names,
-            ),
-        },
+    obs_names = {
+        "group1": {"view1": ["b", "c", "d", "e"], "view2": ["d", "e", "f"], "view3": ["a", "b", "c", "d"]},
+        "group2": {"view1": ["h", "i", "j", "k"], "view2": ["j", "k", "l"], "view3": ["k", "l", "m"]},
     }
 
-    data_c = preprocessing.align_obs(data, use_obs="union")
-    data_c = preprocessing.align_var(data_c, use_var="union")
+    var_names = {
+        "view1": {"group1": ["g1", "g2"], "group2": ["g1", "g2", "g3"]},
+        "view2": {"group1": ["g3", "g4"], "group2": ["g3", "g4", "g5"]},
+        "view3": {"group1": ["g5", "g6"], "group2": ["g6", "g7", "g8"]},
+    }
 
-    feature_names = {}
-    for k_groups, v_groups in data_c.items():
-        group_obs_names = None
-        for k_views, v_views in v_groups.items():
-            if group_obs_names is None:
-                group_obs_names = v_views.obs_names
-            else:
-                assert np.all(group_obs_names == v_views.obs_names.tolist())
+    data = {}
+    obs_histogram = {}
+    var_histogram = defaultdict(Counter)
+    for group_name, gobs_names in obs_names.items():
+        gdata = {}
+        ghist = Counter()
+        for view_name, vvar_names in var_names.items():
+            cobsnames = gobs_names[view_name]
+            cvarnames = vvar_names[group_name]
+            gdata[view_name] = create_adata(
+                np.random.randn(len(cobsnames), len(cvarnames)), obs_names=cobsnames, var_names=cvarnames
+            )
 
-            if k_views not in feature_names:
-                feature_names[k_views] = v_views.var_names
-            else:
-                print(k_groups, k_views, feature_names[k_views], v_views.var_names.tolist())
-                assert np.all(feature_names[k_views] == v_views.var_names.tolist())
+            ghist.update(cobsnames)
+            var_histogram[view_name].update(cvarnames)
+        data[group_name] = gdata
+        obs_histogram[group_name] = ghist
+
+    dataset = PrismoDataset(data, use_obs="union", use_var="union")
+
+    nobs_histogram = {group_name: Counter(ghist.values()) for group_name, ghist in obs_histogram.items()}
+    nvar_histogram = {view_name: Counter(vhist.values()) for view_name, vhist in var_histogram.items()}
+
+    aligned_obs = {
+        group_name: np.zeros(
+            len(reduce(lambda x, y: x | y, (set(names) for names in group.values()), set())), dtype=int
+        )
+        for group_name, group in obs_names.items()
+    }
+    aligned_var = {
+        view_name: np.zeros(len(reduce(lambda x, y: x | y, (set(names) for names in view.values()), set())), dtype=int)
+        for view_name, view in var_names.items()
+    }
+
+    obs_mapping = {}
+    for group_name, group in obs_names.items():
+        galigned = aligned_obs[group_name]
+        cobsmapping = {}
+        for view_name, view in group.items():
+            arr = np.ones(len(view), dtype=int)
+            aligned = dataset.align_local_array_to_global(
+                arr, group_name, view_name, align_to="samples", axis=0, fill_value=0
+            )
+            cobsmapping[view_name] = np.nonzero(aligned)[0]
+            galigned += aligned
+        obs_mapping[group_name] = cobsmapping
+
+    for group_name, galigned in aligned_obs.items():
+        assert np.sum(galigned == 0) == 0
+        for n, count in nobs_histogram[group_name].items():
+            assert np.sum(galigned == n) == count
+
+    for group_name, group in obs_names.items():
+        arr = np.arange(len(obs_histogram[group_name]))
+        for view_name, view in group.items():
+            aligned_arr = dataset.align_global_array_to_local(arr, group_name, view_name, align_to="samples", axis=0)
+            assert aligned_arr.size == len(view)
+            assert np.all(aligned_arr == arr[obs_mapping[group_name][view_name]])
+
+    var_mapping = {}
+    for view_name, view in var_names.items():
+        valigned = aligned_var[view_name]
+        cvarmapping = {}
+        for group_name, group in view.items():
+            arr = np.ones(len(group), dtype=int)
+            aligned = dataset.align_local_array_to_global(
+                arr, group_name, view_name, align_to="features", axis=0, fill_value=0
+            )
+            cvarmapping[group_name] = np.nonzero(aligned)[0]
+            valigned += aligned
+        var_mapping[view_name] = cvarmapping
+
+    for view_name, valigned in aligned_var.items():
+        assert np.sum(valigned == 0) == 0
+        for n, count in nvar_histogram[view_name].items():
+            assert np.sum(valigned == n) == count
+
+    for view_name, view in var_names.items():
+        arr = np.arange(len(var_histogram[view_name]))
+        for group_name, group in view.items():
+            aligned_arr = dataset.align_global_array_to_local(arr, group_name, view_name, align_to="features", axis=0)
+            assert aligned_arr.size == len(group)
+            assert np.all(aligned_arr == arr[var_mapping[view_name][group_name]])

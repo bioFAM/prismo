@@ -90,16 +90,14 @@ class MuDataDataset(PrismoDataset):
     def feature_names(self) -> dict[str, NDArray[str]]:
         return {viewname: mod.var_names.to_numpy() for viewname, mod in self._data.mod.items()}
 
-    def _get_minibatch(self, idx: dict[str, int | list[int]], return_nonmissing: bool = True) -> dict[str, dict]:
+    def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
         data = {}
-        if return_nonmissing:
-            nonmissing_obs = {}
-            nonmissing_var = {}
+        nonmissing_obs = {}
+        nonmissing_var = {}
         for group_name, group_idx in idx.items():
             group = {}
-            if return_nonmissing:
-                gnonmissing_obs = {}
-                gnonmissing_var = {}
+            gnonmissing_obs = {}
+            gnonmissing_var = {}
             glabel = self._groups[group_name][group_idx]
             subdata = self._data[glabel, :]
             for modname, mod in subdata.mod.items():
@@ -108,31 +106,22 @@ class MuDataDataset(PrismoDataset):
                 arr = self.preprocessor(arr, group_name, modname).astype(self._cast_to)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
-                if return_nonmissing:
-                    group[modname] = arr
-                    gnonmissing_obs[modname] = (
-                        np.nonzero(subdata.obsmap[modname] > 0)[0]
-                        if self._needs_alignment[group_name][modname]
-                        else slice(None)
-                    )
-                else:
-                    group[modname] = self._align_array_to_samples(arr, modname, subdata=subdata)
+                group[modname] = arr
+                gnonmissing_obs[modname] = (
+                    np.nonzero(subdata.obsmap[modname] > 0)[0]
+                    if self._needs_alignment[group_name][modname]
+                    else slice(None)
+                )
             data[group_name] = group
             idx[group_name] = np.asarray(group_idx)
-            if return_nonmissing:
-                nonmissing_obs[group_name] = gnonmissing_obs
-                nonmissing_var[group_name] = gnonmissing_var
-        ret = {"data": data, "sample_idx": idx}
-        if return_nonmissing:
-            ret["nonmissing_samples"] = nonmissing_obs
-            ret["nonmissing_features"] = nonmissing_var
-        return ret
-
-    def __getitem__(self, idx: dict[str, int]) -> dict[str, dict]:
-        return self._get_minibatch(idx, return_nonmissing=False)
-
-    def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
-        return self._get_minibatch(idx)
+            nonmissing_obs[group_name] = gnonmissing_obs
+            nonmissing_var[group_name] = gnonmissing_var
+        return {
+            "data": data,
+            "sample_idx": idx,
+            "nonmissing_samples": nonmissing_obs,
+            "nonmissing_features": nonmissing_var,
+        }
 
     def _align_array_to_samples(
         self,

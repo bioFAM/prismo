@@ -104,65 +104,48 @@ class AnnDataDictDataset(PrismoDataset):
     def feature_names(self) -> dict[str, NDArray[str]]:
         return {view_name: var.to_numpy() for view_name, var in self._aligned_var.items()}
 
-    def _get_minibatch(
-        self, idx: dict[str, int], return_nonmissing: bool = True
-    ) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
+    def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
         data = {}
-        if return_nonmissing:
-            nonmissing_obs = {}
-            nonmissing_var = {}
+        nonmissing_obs = {}
+        nonmissing_var = {}
         for group_name, group_idx in idx.items():
             group = {}
             gobsmap = self._obsmap[group_name]
             gvarmap = self._varmap[group_name]
-            if return_nonmissing:
-                gnonmissing_obs = {}
-                gnonmissing_var = {}
+            gnonmissing_obs = {}
+            gnonmissing_var = {}
             for view_name, view in self._data[group_name].items():
                 if view_name in gobsmap:
                     obsmap = gobsmap[view_name][group_idx]
                     obsidx = obsmap >= 0
                     arr = view.X[obsmap[obsidx], :]
-                    if return_nonmissing:
-                        gnonmissing_obs[view_name] = np.nonzero(obsidx)[0]
+                    gnonmissing_obs[view_name] = np.nonzero(obsidx)[0]
                 else:
                     arr = view.X[group_idx, :]
-                    if return_nonmissing:
-                        gnonmissing_obs[view_name] = slice(None)
-                    else:
-                        obsmap = None
+                    gnonmissing_obs[view_name] = slice(None)
 
-                if return_nonmissing:
-                    if view_name in gvarmap:
-                        gnonmissing_var[view_name] = np.nonzero(gvarmap[view_name] >= 0)[0]
-                    else:
-                        gnonmissing_var[view_name] = slice(None)
+                if view_name in gvarmap:
+                    gnonmissing_var[view_name] = np.nonzero(gvarmap[view_name] >= 0)[0]
+                else:
+                    gnonmissing_var[view_name] = slice(None)
 
                 arr = self.preprocessor(arr, group_name, view_name)
                 if self.cast_to is not None:
                     arr = arr.astype(self.cast_to)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
-                if not return_nonmissing:
-                    arr = self._align_array_to_samples(arr, group_name, view_name, axis=(0, 1), obsmap=obsmap)
                 group[view_name] = arr
             data[group_name] = group
             idx[group_name] = np.asarray(group_idx)
-            if return_nonmissing:
-                nonmissing_obs[group_name] = gnonmissing_obs
-                nonmissing_var[group_name] = gnonmissing_var
+            nonmissing_obs[group_name] = gnonmissing_obs
+            nonmissing_var[group_name] = gnonmissing_var
 
-        ret = {"data": data, "sample_idx": idx}
-        if return_nonmissing:
-            ret["nonmissing_samples"] = nonmissing_obs
-            ret["nonmissing_features"] = nonmissing_var
-        return ret
-
-    def __getitem__(self, idx: dict[str, int]) -> tuple[dict[str, dict[str, NDArray]], dict[str, int]]:
-        return self._get_minibatch(idx, return_nonmissing=False)
-
-    def __getitems__(self, idx: dict[str, int | list[int]]) -> dict[str, dict]:
-        return self._get_minibatch(idx)
+        return {
+            "data": data,
+            "sample_idx": idx,
+            "nonmissing_samples": nonmissing_obs,
+            "nonmissing_features": nonmissing_var,
+        }
 
     def _align_array_to_samples(
         self,

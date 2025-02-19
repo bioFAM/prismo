@@ -161,22 +161,9 @@ class PrismoDataset(Dataset, ABC):
         """Length of this dataset."""
         return max(self.n_samples.values())
 
-    @abstractmethod
     def __getitem__(self, idx: dict[str, int]) -> dict[str, dict]:
-        """Get one sample for each group.
-
-        The data is returned preprocessed using the set `Preprocessor`.
-
-        Args:
-            idx: Sample indices for each group.
-
-        Returns:
-            A dict with two entries: `"data"` is a nested dict with group names keys, view names as subkeys and
-            Numppy arrays of observations as values. `"sample_idx"` is the sample index (the `idx` argument
-            passed through). If the requested sample is missing in the respective view, the return array will
-            consist of nans.
-        """
-        pass
+        """Get one sample for each group."""
+        raise NotImplementedError()
 
     @abstractmethod
     def __getitems__(self, idx: dict[str, list[int]]) -> dict[str, dict]:

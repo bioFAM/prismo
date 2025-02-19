@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,7 @@ class MuDataDataset(PrismoDataset):
         *,
         group_by: str | list[str] | None = None,
         preprocessor: Preprocessor | None = None,
-        cast_to: np.ScalarType = np.float32,
+        cast_to: Union[np.ScalarType] | None = np.float32,  # noqa UP007
         sample_names: dict[str, NDArray[str]] | None = None,
         feature_names: dict[str, NDArray[str]] | None = None,
         **kwargs,
@@ -328,5 +328,11 @@ class MuDataDataset(PrismoDataset):
     def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, dict[str, T]]:
         ret = {}
         for modname, mod in self._data.mod.items():
-            ret[modname] = func(mod, None, modname, **kwargs, **vkwargs[modname])
+            groups = np.empty((mod.n_obs,), dtype="O")
+            for group, group_idx in self._groups.items():
+                modidx = self._data.obsmap[modname][group_idx]
+                modidx = modidx[modidx > 0] - 1
+                groups[modidx] = group
+
+            ret[modname] = func(mod, groups, modname, **kwargs, **vkwargs[modname])
         return ret

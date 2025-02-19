@@ -1,5 +1,5 @@
 import logging
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 
 import numpy as np
 from anndata import AnnData
@@ -13,7 +13,7 @@ from .datasets import Preprocessor, PrismoDataset
 _logger = logging.getLogger(__name__)
 
 
-ViewStatistics = namedtuple("ViewStatistics", ["mean", "var", "min"])
+ViewStatistics = namedtuple("ViewStatistics", ["mean", "min"])
 
 
 class PrismoPreprocessor(Preprocessor):
@@ -34,31 +34,71 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
-        meanfunc = lambda mod, group_name, view_name, axis: ViewStatistics(
-            utils.mean(mod.X, axis=axis), utils.var(mod.X, axis=axis), utils.min(mod.X, axis=axis)
-        )
+        meanfunc = lambda mod, group_name, view_name, axis: utils.mean(mod.X, axis=axis)
         self._feature_means = dataset.apply(meanfunc, axis=0)
         self._sample_means = dataset.apply(meanfunc, axis=1)
 
         self._viewstats = dataset.apply(
-            lambda mod, group_name, view_name: ViewStatistics(
-                utils.mean(mod.X, axis=0), utils.var(mod.X, axis=0), utils.min(mod.X, axis=0)
-            ),
-            by_group=False,
+            lambda adata, group_name, view_name: ViewStatistics(utils.mean(adata.X, axis=0), utils.min(adata.X, axis=0))
         )
+
+        view_vars = dataset.apply(lambda adata, group_name, view_name: utils.var(adata.X, axis=0), by_group=False)
+        self._nonconstantfeatures_by_view = defaultdict(dict)
         self._nonconstantfeatures = {}
-        for view_name, viewstats in self._viewstats.items():
+        for view_name, viewvar in view_vars.items():
             # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
             # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
-            nonconst = viewstats.var > self._constant_feature_var_threshold
-            _logger.debug(f"Removing {viewstats.var.size - nonconst.sum()} features from view {view_name}.")
+            nonconst = viewvar > self._constant_feature_var_threshold
+            _logger.debug(f"Removing {nonconst.size - nonconst.sum()} features from view {view_name}.")
             self._nonconstantfeatures[view_name] = nonconst
 
-            self._viewstats[view_name] = ViewStatistics(*(stat[nonconst] for stat in viewstats))
+            for group_name, stats in self._viewstats.items():
+                gnonconst = dataset.align_global_array_to_local(
+                    nonconst, group_name, view_name, align_to="features", axis=0
+                )
+                self._nonconstantfeatures_by_view[group_name][view_name] = gnonconst
+                stats[view_name] = ViewStatistics(*(stat[gnonconst] for stat in stats[view_name]))
 
-        self._scale = dataset.apply(
-            lambda mod, *args, **kwargs: np.sqrt(utils.var(mod.X, axis=None)), by_group=self._scale_per_group
+        if self._scale_per_group:
+            self._scale = dataset.apply(self._calc_scale_grouped, by_group=True)
+        else:
+            self._scale = dataset.apply(self._calc_scale_ungrouped, groups=dataset.group_names, by_group=False)
+
+    def _calc_scale_ungrouped(self, adata: AnnData, group: NDArray[object], view_name: str, groups: list[str]):
+        if view_name not in self._views_to_scale:
+            return None
+
+        arr = adata.X.copy()
+        for group_name in groups:
+            if view_name in self._nonnegative_weights and group_name in self._nonnegative_factors:
+                attr = "min"
+            else:
+                attr = "mean"
+            arr[group == group_name] -= align_local_array_to_global(  # noqa F821
+                getattr(self._viewstats[group_name][view_name], attr),
+                group_name,
+                view_name,
+                align_to="features",
+                axis=0,
+            )
+        return np.sqrt(utils.var(arr, axis=None))
+
+    def _calc_scale_grouped(self, adata: AnnData, group_name: str, view_name: str):
+        if view_name not in self._views_to_scale:
+            return None
+
+        arr = self._center(
+            adata.X[..., self._nonconstantfeatures_by_view[group_name][view_name]], group_name, view_name
         )
+        return np.sqrt(utils.var(arr, axis=None))
+
+    def _center(self, arr: NDArray, group_name: str, view_name: str):
+        viewstats = self._viewstats[group_name][view_name]
+        if view_name in self._nonnegative_weights and group_name in self._nonnegative_factors:
+            arr -= viewstats.min
+        else:
+            arr -= viewstats.mean
+        return arr
 
     @property
     def feature_means(self) -> dict[str, dict[str, float]]:
@@ -73,23 +113,12 @@ class PrismoPreprocessor(Preprocessor):
         return self._nonconstantfeatures
 
     def __call__(self, arr: NDArray | sparray | spmatrix, group: str, view: str) -> NDArray | sparray | spmatrix:
-        # remove constant features
-        arr = arr[
-            ...,
-            self.align_global_array_to_local(self._nonconstantfeatures[view], group, view, align_to="features", axis=0),
-        ]
+        arr = arr[..., self._nonconstantfeatures_by_view[group][view]]
 
         if view in self._views_to_scale:
-            viewstats = self._viewstats[view]
-
-            # scale to unit variance
+            arr = self._center(arr, group, view)
             arr /= self._scale[group][view] if self._scale_per_group else self._scale[view]
 
-            # center
-            if view in self._nonnegative_weights and group in self._nonnegative_factors:
-                arr -= self.align_global_array_to_local(viewstats.min, group, view, align_to="features", axis=0)
-            else:
-                arr -= self.align_global_array_to_local(viewstats.mean, group, view, align_to="features", axis=0)
         return arr
 
 

@@ -1,6 +1,6 @@
 import logging
 from functools import reduce
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, Union
 
 import anndata as ad
 import numpy as np
@@ -23,7 +23,7 @@ class AnnDataDictDataset(PrismoDataset):
         use_obs: Literal["union", "intersection"] = "union",
         use_var: Literal["union", "intersection"] = "union",
         preprocessor: Preprocessor | None = None,
-        cast_to: np.ScalarType = np.float32,
+        cast_to: Union[np.ScalarType] | None = np.float32,  # noqa UP007
         sample_names: dict[str, NDArray[str]] | None = None,
         feature_names: dict[str, NDArray[str]] | None = None,
         **kwargs,
@@ -63,15 +63,15 @@ class AnnDataDictDataset(PrismoDataset):
             gobsmap = {}
             gvarmap = {}
             for view_name, view in group.items():
-                obsmap = self._aligned_obs[group_name].get_indexer(view.obs_names)
-                varmap = self._aligned_var[view_name].get_indexer(view.var_names)
+                obsmap = view.obs_names.get_indexer(self._aligned_obs[group_name])
+                varmap = view.var_names.get_indexer(self._aligned_var[view_name])
 
                 if np.sum(obsmap < 0) > 0 or np.any(np.diff(obsmap) != 1):
                     gobsmap[view_name] = obsmap
                 if np.sum(varmap < 0) > 0 or np.any(np.diff(varmap) != 1):
                     gvarmap[view_name] = varmap
             self._obsmap[group_name] = gobsmap
-            self._varmap[group_name] = varmap
+            self._varmap[group_name] = gvarmap
 
     @staticmethod
     def _accepts_input(data):
@@ -138,7 +138,9 @@ class AnnDataDictDataset(PrismoDataset):
                     else:
                         gnonmissing_var[view_name] = slice(None)
 
-                arr = self.preprocessor(arr, group_name, view_name).astype(self.cast_to)
+                arr = self.preprocessor(arr, group_name, view_name)
+                if self.cast_to is not None:
+                    arr = arr.astype(self.cast_to)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
                 if not return_nonmissing:
@@ -415,18 +417,22 @@ class AnnDataDictDataset(PrismoDataset):
 
             data = {}
             for group_name, group in self._data.items():
-                data[group_name] = anndata_to_dask(group[view_name]) if havedask else group[view_name]
+                cdata = anndata_to_dask(group[view_name]) if havedask else group[view_name]
+                if cdata.n_vars != self.n_features[view_name]:
+                    cdata.X = cdata.X.astype(np.promote_types(cdata.X.dtype, type(np.nan)))
+                data[group_name] = cdata
             data = ad.concat(
                 data,
                 join="inner" if self._use_var == "intersection" else "outer",
                 label="group",
                 merge="unique",
                 uns_merge=None,
+                fill_value=np.nan,
             )
             if (data.var_names != self._aligned_var[view_name]).any():
                 data = data[:, self._aligned_var[view_name]]
 
-            cret = func(data, group_name, view_name, **kwargs, **vkwargs[view_name])
+            cret = func(data, data.obs["group"].to_numpy(), view_name, **kwargs, **vkwargs[view_name])
             ret[view_name] = apply_to_nested(cret, from_dask)
 
         return ret

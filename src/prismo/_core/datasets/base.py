@@ -2,8 +2,8 @@ import inspect
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
-from types import FunctionType
-from typing import Any, Concatenate, Literal, TypeAlias, TypeVar
+from types import FunctionType, MethodType
+from typing import Any, Concatenate, Literal, TypeAlias, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -56,21 +56,22 @@ class PrismoDataset(Dataset, ABC):
     Args:
         data: The data. This will be stored as `self._data` and can be accessed and manipulaed by subclasses.
         preprocessor: A preprocessor. If None, will use the default preprocessor that does not apply any preprocessing.
-        cast_to: Data type to cast the data to.
+        cast_to: Data type to cast the data to. If `None`, no casting shall be performed.
     """
 
     _subclasses = set()
 
-    def __init__(self, data, *, preprocessor: Preprocessor | None = None, cast_to: np.ScalarType = np.float32):
+    def __init__(
+        self,
+        data,
+        *,
+        preprocessor: Preprocessor | None = None,
+        cast_to: Union[np.ScalarType] | None = np.float32,  # noqa UP007
+    ):
         super().__init__()
 
         self._data = data
-
-        if preprocessor is not None:
-            self.preprocessor = preprocessor
-        else:
-            self.preprocessor = Preprocessor()
-
+        self.preprocessor = preprocessor
         self._cast_to = cast_to
 
     def __init_subclass__(cls, **kwargs):
@@ -108,10 +109,10 @@ class PrismoDataset(Dataset, ABC):
 
     @preprocessor.setter
     def preprocessor(self, preproc: Preprocessor):
-        self._preprocessor = self._inject_alignment_functions(preproc)
+        self._preprocessor = self._inject_alignment_functions(preproc) if preproc is not None else Preprocessor()
 
     @property
-    def cast_to(self) -> np.ScalarType:
+    def cast_to(self) -> Union[np.ScalarType] | None:  # noqa UP007
         """The data type to cast to."""
         return self._cast_to
 
@@ -291,8 +292,9 @@ class PrismoDataset(Dataset, ABC):
         and `align_local_array_to_global`. These are methods of the given PrismoDataset instance, see their documentation
         for how to use them. If `func` is an instance of a class, these two functions will be added to its instance attributes.
 
-        If `by_group == True`, the `AnnData` object passed to `func` will **not** have its features aligned to the global features.
-        It is up to `func` to align when necessary using the provided functions.
+        If `by_group == False`, the `AnnData` object passed to `func` will **not** have its features aligned to the global features.
+        It is up to `func` to align when necessary using the provided functions. In this case, a 1D numpy array containing the
+        group name for each sample will be passed as second argument to `func`.
 
         The data contained in the passed AnnData object may be of any type that AnnData supports, not necessarily plain NumPy arrays.
         It is recommended to use the array-api-compat package to properly handle different data types.
@@ -368,7 +370,7 @@ class PrismoDataset(Dataset, ABC):
         pass
 
     def _inject_alignment_functions(self, func: Callable):
-        if isinstance(func, FunctionType):
+        if isinstance(func, FunctionType | MethodType):
             func.__globals__["align_global_array_to_local"] = self.align_global_array_to_local
             func.__globals__["align_local_array_to_global"] = self.align_local_array_to_global
         else:

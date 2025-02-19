@@ -29,6 +29,7 @@ dependencies = [
     "scipy>=1.8",
     "pandas",
     "statsmodels",
+    "scikit-learn",
     "gpytorch",
     "dtw-python",
     "plotnine",

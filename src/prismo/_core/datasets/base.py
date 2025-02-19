@@ -268,6 +268,7 @@ class PrismoDataset(Dataset, ABC):
         self,
         func: ApplyCallable[T],
         by_group: bool = True,
+        by_view: bool = True,
         group_kwargs: dict[str, dict[str, Any]] | None = None,
         view_kwargs: dict[str, dict[str, Any]] | None = None,
         group_view_kwargs: dict[str, dict[str, dict[str, Any]]] | None = None,
@@ -279,9 +280,12 @@ class PrismoDataset(Dataset, ABC):
         and `align_local_array_to_global`. These are methods of the given PrismoDataset instance, see their documentation
         for how to use them. If `func` is an instance of a class, these two functions will be added to its instance attributes.
 
-        If `by_group == False`, the `AnnData` object passed to `func` will **not** have its features aligned to the global features.
-        It is up to `func` to align when necessary using the provided functions. In this case, a 1D numpy array containing the
-        group name for each sample will be passed as second argument to `func`.
+        If `by_group=True` and `by_view=True`, the `AnnData` object passed to `func` will **not** have its samples and features
+        aligned to the global samples/features, respectively. It is up to `func` to align when necessary using the provided functions.
+
+        If `by_group=False`, a 1D numpy array containing the group name for each sample will be passed as second argument to `func`.
+        Similarly, if `by_view=False`, a 1D numpy array containing the view name for each feature will be passed as third argument
+        to `func`.
 
         The data contained in the passed AnnData object may be of any type that AnnData supports, not necessarily plain NumPy arrays.
         It is recommended to use the array-api-compat package to properly handle different data types.
@@ -296,7 +300,7 @@ class PrismoDataset(Dataset, ABC):
                 value of that argument for the group. Ignored if `by_group=False`.
             view_kwargs: Additional arguments to pass to `func` for each view. The outer dict contains the argument name as key, the inner
                 dict contains the value of that argument for each view. If the inner dict is missing a view, `None` will be used as the
-                value of that argument for the view.
+                value of that argument for the view. Ignored if `by_view=False`.
             group_view_kwargs: Additional arguments to pass to `func` for each combination of group and view. The outer dict contains the
                 argument name as key, the first inner dict has groups as keys and the second inner dict has views as keys. If a group is missing
                 from the outer dict or a view is missing from the inner dict, `None` will be used as the value of that argument for all views
@@ -305,21 +309,26 @@ class PrismoDataset(Dataset, ABC):
 
         Returns: Nested dict with the return value of `func` for each group and view.
         """
-        if view_kwargs is None:
-            view_kwargs = {}
+        if not by_group and not by_view:
+            raise NotImplementedError("At least one of `by_group` and `by_view` must be `True`.")
 
         if group_kwargs is None:
             group_kwargs = {}
         elif not by_group:
-            raise ValueError("You cannot specify group_kwargs with by_group=False.")
+            raise ValueError("You cannot specify group_kwargs with `by_group=False`.")
+
+        if view_kwargs is None:
+            view_kwargs = {}
+        elif not by_view:
+            raise ValueError("You cannot specify view_kwargs with `by_view=False`.")
 
         if group_view_kwargs is None:
             group_view_kwargs = {}
         elif not by_group:
-            raise ValueError("You cannot specify group_view_kwargs with by_group=False.")
+            raise ValueError("You cannot specify group_view_kwargs with `by_group=False`.")
 
         func = self._inject_alignment_functions(func)
-        if by_group:
+        if by_group and by_view:
             ckwargs = defaultdict(lambda: defaultdict(dict))
 
             for argname, gkwargs in group_kwargs.items():
@@ -338,22 +347,32 @@ class PrismoDataset(Dataset, ABC):
                     for view_name in self.view_names:
                         ckwargs[group_name][view_name][argname] = gkwargs.get(view_name, None)
 
-            return self._apply_by_group(func, ckwargs, **kwargs)
+            return self._apply_by_group_view(func, ckwargs, **kwargs)
         else:
+            argsdict = group_kwargs if by_group else view_kwargs
+            attr = "group_names" if by_group else "view_names"
             ckwargs = defaultdict(dict)
-            for argname, vkwargs in view_kwargs.items():
-                for view_name in self.view_names:
-                    ckwargs[view_name][argname] = vkwargs.get(view_name, None)
-            return self._apply(func, ckwargs, **kwargs)
+            for argname, vkwargs in argsdict.items():
+                for name in getattr(self, attr):
+                    ckwargs[name][argname] = vkwargs.get(name, None)
+            return (
+                self._apply_by_group(func, ckwargs, **kwargs)
+                if by_group
+                else self._apply_by_view(func, ckwargs, **kwargs)
+            )
 
     @abstractmethod
-    def _apply_by_group(
-        self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
-    ) -> dict[str, dict[str, T]]:
+    def _apply_by_group(self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         pass
 
     @abstractmethod
-    def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
+    def _apply_by_view(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
+        pass
+
+    @abstractmethod
+    def _apply_by_group_view(
+        self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
+    ) -> dict[str, dict[str, T]]:
         pass
 
     def _inject_alignment_functions(self, func: Callable):

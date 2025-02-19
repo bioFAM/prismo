@@ -1,14 +1,15 @@
 import logging
 from typing import Any, Literal, TypeVar, Union
 
+import anndata as ad
 import numpy as np
 import pandas as pd
-from anndata import AnnData
 from mudata import MuData
 from numpy.typing import NDArray
 from scipy import sparse
 
 from .base import ApplyCallable, Preprocessor, PrismoDataset
+from .utils import anndata_to_dask, apply_to_nested, from_dask, have_dask
 
 T = TypeVar("T")
 _logger = logging.getLogger(__name__)
@@ -177,7 +178,7 @@ class MuDataDataset(PrismoDataset):
         # we don't want to modify the data object. So we create a temporary fake
         # MuData object with the same metadata, but no actual data
         fakeadatas = {
-            modname: AnnData(X=sparse.csr_array(mod.X.shape), obs=mod.obs, var=mod.var)
+            modname: ad.AnnData(X=sparse.csr_array(mod.X.shape), obs=mod.obs, var=mod.var)
             for modname, mod in self._data.mod.items()
         }
 
@@ -303,7 +304,7 @@ class MuDataDataset(PrismoDataset):
                         annotations[modname] = annot[varidx].T
         return annotations, annotations_names
 
-    def _apply_by_group(
+    def _apply_by_group_view(
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
         ret = {}
@@ -314,7 +315,7 @@ class MuDataDataset(PrismoDataset):
             ret[group_name] = cret
         return ret
 
-    def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, dict[str, T]]:
+    def _apply_by_view(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         ret = {}
         for modname, mod in self._data.mod.items():
             groups = np.empty((mod.n_obs,), dtype="O")
@@ -324,4 +325,27 @@ class MuDataDataset(PrismoDataset):
                 groups[modidx] = group
 
             ret[modname] = func(mod, groups, modname, **kwargs, **vkwargs[modname])
+        return ret
+
+    def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
+        havedask = have_dask()
+        ret = {}
+        if not havedask:
+            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+
+        for group_name, group_idx in self._groups.items():
+            subdata = self._data[group_idx, :]
+            data = {}
+            for modname, mod in subdata.mod.items():
+                cdata = anndata_to_dask(mod) if havedask else mod
+                if cdata.n_obs != subdata.n_obs:
+                    cdata.X = cdata.x.astype(np.promote_types(cdata.x.dtype, type(np.nan)))
+                data[modname] = cdata
+            data = ad.concat(
+                data, axis="var", join="outer", label="view", merge="unique", uns_merge=None, fill_value=np.nan
+            )
+            if (data.obs_names != subdata.obs_names).any():
+                data = data[: subdata.obs_names]
+            cret = func(data, group_name, data.var["view"].to_numpy(), **kwargs, **gkwargs[group_name])
+            ret[group_name] = apply_to_nested(cret, from_dask)
         return ret

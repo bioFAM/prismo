@@ -12,6 +12,7 @@ import pandas as pd
 import pyro
 import torch
 from anndata import AnnData
+from array_api_compat import array_namespace
 from dtw import dtw
 from mudata import MuData
 from pyro.infer import SVI, TraceMeanField_ELBO
@@ -593,6 +594,20 @@ class PRISMO:
         Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
         self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
+    @staticmethod
+    def _init_factor_group(adata, group_name, view_name, impute_missings, initializer):
+        arr = adata.X
+        xp = array_namespace(arr)
+        if xp.isnan(arr).any():
+            if impute_missings:
+                from sklearn.impute import SimpleImputer
+
+                imp = SimpleImputer(missing_values=np.nan, strategy="mean")
+                arr = imp.fit_transform(arr)
+            else:
+                raise ValueError("Data has missing values. Please impute missings or set `impute_missings=True`.")
+        return initializer.fit_transform(arr)
+
     def _initialize_factors(self, data, impute_missings=True):
         init_tensor = defaultdict(dict)
         _logger.info(f"Initializing factors using `{self._model_opts.init_factors}` method...")
@@ -620,37 +635,18 @@ class PRISMO:
                         # Compute PCA of random vectors
                         pca = PCA(n_components=self._model_opts.n_factors, whiten=True)
                         pca.fit(stats.norm.rvs(loc=0, scale=1, size=(n, self._model_opts.n_factors)).T)
-                        init_tensor[group_name]["loc"] = torch.tensor(pca.components_.T)
+                        init_tensor[group_name]["loc"] = torch.as_tensor(pca.components_.T)
                 case "pca" | "nmf" as init:
-                    for group_name in self.n_samples.keys():
-                        if init == "pca":
-                            pca = PCA(n_components=self._model_opts.n_factors, whiten=True)
-                        elif init == "nmf":
-                            nmf = NMF(n_components=self._model_opts.n_factors, max_iter=1000)
+                    if init == "pca":
+                        initializer = PCA(n_components=self._model_opts.n_factors, whiten=True)
+                    elif init == "nmf":
+                        initializer = NMF(n_components=self._model_opts.n_factors, max_iter=1000)
 
-                        # Combine all views
-                        concat_data = np.concatenate(
-                            [data[group_name][view_name].X for view_name in self.view_names], axis=-1, dtype=np.float32
-                        )
-
-                        # Check if data has missings. If yes, and impute_missings is True, then impute, else raise an error
-                        if np.isnan(concat_data).any():
-                            if impute_missings:
-                                from sklearn.impute import SimpleImputer
-
-                                imp = SimpleImputer(missing_values=np.NaN, strategy="mean")
-                                imp.fit(concat_data)
-                            else:
-                                raise ValueError(
-                                    "Data has missing values. Please impute missings or set `impute_missings=True`."
-                                )
-                        if init == "pca":
-                            pca.fit(concat_data)
-                            init_tensor[group_name]["loc"] = torch.as_tensor(pca.transform(concat_data))
-                        elif init == "nmf":
-                            nmf.fit(concat_data)
-                            init_tensor[group_name]["loc"] = torch.as_tensor(nmf.transform(concat_data))
-
+                    inits = data.apply(
+                        self._init_factor_group, by_view=False, impute_missings=impute_missings, initializer=initializer
+                    )
+                    for group_name, init in inits.items():
+                        init_tensor[group_name]["loc"] = torch.as_tensor(init)
                 case _:
                     raise ValueError(
                         f"Initialization method `{self._model_opts.init_factors}` not found. Please choose from `random`, `orthogonal`, `PCA`, or `NMF`."

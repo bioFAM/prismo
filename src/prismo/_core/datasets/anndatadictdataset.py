@@ -380,7 +380,7 @@ class AnnDataDictDataset(PrismoDataset):
                         break
         return annotations, annotations_names
 
-    def _apply_by_group(
+    def _apply_by_group_view(
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
         ret = {}
@@ -391,21 +391,22 @@ class AnnDataDictDataset(PrismoDataset):
             ret[group_name] = cret
         return ret
 
-    def _apply(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, dict[str, T]]:
+    def _apply_by_view(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         havedask = have_dask()
         ret = {}
+        if not havedask:
+            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
         for view_name in self.view_names:
-            if not havedask:
-                _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
-
             data = {}
             for group_name, group in self._data.items():
                 cdata = anndata_to_dask(group[view_name]) if havedask else group[view_name]
                 if cdata.n_vars != self.n_features[view_name]:
+                    cdata = cdata.copy()
                     cdata.X = cdata.X.astype(np.promote_types(cdata.X.dtype, type(np.nan)))
                 data[group_name] = cdata
             data = ad.concat(
                 data,
+                axis="obs",
                 join="inner" if self._use_var == "intersection" else "outer",
                 label="group",
                 merge="unique",
@@ -417,5 +418,35 @@ class AnnDataDictDataset(PrismoDataset):
 
             cret = func(data, data.obs["group"].to_numpy(), view_name, **kwargs, **vkwargs[view_name])
             ret[view_name] = apply_to_nested(cret, from_dask)
+
+        return ret
+
+    def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
+        havedask = have_dask()
+        ret = {}
+        if not havedask:
+            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+        for group_name, group in self._data.items():
+            data = {}
+            for view_name, view in group.items():
+                cdata = anndata_to_dask(view) if havedask else view
+                if cdata.n_obs != self.n_samples[group_name]:
+                    cdata = cdata.copy()
+                    cdata.X = cdata.X.astype(np.promote_types(cdata.X.dtype, type(np.nan)))
+                data[view_name] = cdata
+            data = ad.concat(
+                data,
+                axis="var",
+                join="inner" if self._use_obs == "intersection" else "outer",
+                label="view",
+                merge="unique",
+                uns_merge=None,
+                fill_value=np.nan,
+            )
+            if (data.obs_names != self._aligned_obs[group_name]).any():
+                data = data[self._aligned_obs[group_name], :]
+
+            cret = func(data, group_name, data.var["view"].to_numpy(), **kwargs, **gkwargs[group_name])
+            ret[group_name] = apply_to_nested(cret, from_dask)
 
         return ret

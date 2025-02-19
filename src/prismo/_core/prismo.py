@@ -587,12 +587,11 @@ class PRISMO:
         self._gps = self._get_gps(self._covariates)
         self._train_loss_elbo = np.asarray(train_loss_elbo)
 
-        self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
-        if not self._train_opts.save_path.endswith(".h5"):
-            self._train_opts.save_path += ".h5"
-        _logger.info("Saving results...")
-        Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
-        self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
+        if self._train_opts.save_path is not False:
+            self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+            _logger.info("Saving results...")
+            Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
+            self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
     @staticmethod
     def _init_factor_group(adata, group_name, view_name, impute_missings, initializer):

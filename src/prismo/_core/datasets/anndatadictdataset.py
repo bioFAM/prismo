@@ -241,7 +241,7 @@ class AnnDataDictDataset(PrismoDataset):
         outidx.append(...)
         inidx.append(...)
         out = np.full(outshape, fill_value=fill_value, dtype=np.promote_types(type(fill_value), arr.dtype), order="C")
-        out[*outidx] = arr[*inidx]
+        out[tuple(outidx)] = arr[tuple(inidx)]
 
         if align_to_both:
             out = np.moveaxis(out, 1, axis[1] + 1 if axis[1] > axis[0] else axis[1])

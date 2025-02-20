@@ -115,19 +115,24 @@ class AnnDataDictDataset(PrismoDataset):
             gnonmissing_obs = {}
             gnonmissing_var = {}
             for view_name, view in self._data[group_name].items():
+                if view_name in gvarmap:
+                    cvarmap = gvarmap[view_name]
+                    cidx = cvarmap >= 0
+                    cnonmissing_var = np.nonzero(cidx)[0]
+                    cvarmap = cvarmap[cidx]
+                else:
+                    cnonmissing_var = cvarmap = slice(None)
                 if view_name in gobsmap:
                     obsmap = gobsmap[view_name][group_idx]
                     obsidx = obsmap >= 0
-                    arr = view.X[obsmap[obsidx], :]
+                    cobsmap = obsmap[obsidx]
                     cnonmissing_obs = np.nonzero(obsidx)[0]
                 else:
-                    arr = view.X[group_idx, :]
+                    cobsmap = group_idx
                     cnonmissing_obs = slice(None)
-
-                if view_name in gvarmap:
-                    cnonmissing_var = np.nonzero(gvarmap[view_name] >= 0)[0]
-                else:
-                    cnonmissing_var = slice(None)
+                if not isinstance(cobsmap, slice) and not isinstance(cvarmap, slice):
+                    cobsmap, cvarmap = np.ix_(cobsmap, cvarmap)
+                arr = view.X[cobsmap, cvarmap]
 
                 arr, gnonmissing_obs[view_name], gnonmissing_var[view_name] = self.preprocessor(
                     arr, cnonmissing_obs, cnonmissing_var, group_name, view_name

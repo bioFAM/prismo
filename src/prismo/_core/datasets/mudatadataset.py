@@ -102,17 +102,19 @@ class MuDataDataset(PrismoDataset):
             glabel = self._groups[group_name][group_idx]
             subdata = self._data[glabel, :]
             for modname, mod in subdata.mod.items():
-                gnonmissing_var[modname] = slice(None)
-                arr = mod.X
-                arr = self.preprocessor(arr, group_name, modname).astype(self._cast_to)
-                if sparse.issparse(arr):
-                    arr = arr.toarray()
-                group[modname] = arr
-                gnonmissing_obs[modname] = (
+                cnonmissing_obs = (
                     np.nonzero(subdata.obsmap[modname] > 0)[0]
                     if self._needs_alignment[group_name][modname]
                     else slice(None)
                 )
+                arr, gnonmissing_obs[modname], gnonmissing_var[modname] = self.preprocessor(
+                    mod.X, cnonmissing_obs, slice(None), group_name, modname
+                )
+                if self.cast_to is not None:
+                    arr = arr.astype(self.cast_to)
+                if sparse.issparse(arr):
+                    arr = arr.toarray()
+                group[modname] = arr
             data[group_name] = group
             idx[group_name] = np.asarray(group_idx)
             nonmissing_obs[group_name] = gnonmissing_obs

@@ -19,18 +19,30 @@ ApplyCallable: TypeAlias = Callable[Concatenate[AnnData, str, str, ...], T]
 class Preprocessor:
     """Base class for data preprocessors."""
 
-    def __call__(self, arr: NDArray | sparray | spmatrix, group: str, view: str) -> NDArray | sparray | spmatrix:
+    def __call__(
+        self,
+        arr: NDArray | sparray | spmatrix,
+        nonmissing_samples: NDArray[bool] | slice,
+        nonmissing_features: NDArray[bool] | slice,
+        group: str,
+        view: str,
+    ) -> tuple[NDArray | sparray | spmatrix, NDArray[bool] | slice, NDArray[bool] | slice]:
         """Will be called by subclasses of PrismoDataset on each minibatch.
 
         Args:
             arr: The data for one group and view.
+            nonmissing_samples: Which global samples are not missing in the current minibatch.
+            nonmissing_features: Which global features are not missing in the current minibatch.
             group: The group name.
             view: The view name.
 
         Returns:
-            An array containing preprocessed data. In this implementation, returns the unmodified input array.
+            An array containing preprocessed data, a 1D array or slice indicating which global samples are not missing,
+            and a 1D array or slice indicating which global features are not missing. If the preprocessed data is a
+            subset of the input data, the nonmissing arrays will be susetted accordingly. In this implementation,
+            returns the unmodified input.
         """
-        return arr
+        return arr, nonmissing_samples, nonmissing_features
 
 
 class PrismoDataset(Dataset, ABC):
@@ -51,7 +63,12 @@ class PrismoDataset(Dataset, ABC):
     The preprocessor must be able to process an entire minibatch. If it is a function, it will have two functions
     injected into its global namespace: `align_global_array_to_local` and `align_local_array_to_global`. These are
     methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
-    an instance of a class, these two functions will be added to its instance attributes.
+    an instance of a class, these two functions will be added to its instance attributes. The preprocessor must
+    accept five arguments: A (possibly sparse) array with data, a 1D boolean array indicating which global samples
+    are not missing in the current minibatch, a 1D boolean array indicating which global features are not
+    missing in the current minibatch, the group name, and the view name. If the preprocessor subsets samples or
+    features, it must correspondingly subset the nonmissing arrays. Instead of boolean arrays, `slice(None)` may
+    be passed. The preprocessor must return a 3-tuple containing the preprocessed data and the nonmissing arrays/slices.
 
     Args:
         data: The data. This will be stored as `self._data` and can be accessed and manipulaed by subclasses.

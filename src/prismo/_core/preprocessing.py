@@ -112,14 +112,24 @@ class PrismoPreprocessor(Preprocessor):
     def used_features(self) -> dict[str, NDArray[np.bool]]:
         return self._nonconstantfeatures
 
-    def __call__(self, arr: NDArray | sparray | spmatrix, group: str, view: str) -> NDArray | sparray | spmatrix:
-        arr = arr[..., self._nonconstantfeatures_by_view[group][view]]
+    def __call__(
+        self,
+        arr: NDArray | sparray | spmatrix,
+        nonmissing_samples: NDArray[bool] | slice,
+        nonmissing_features: NDArray[bool] | slice,
+        group: str,
+        view: str,
+    ) -> NDArray | sparray | spmatrix:
+        nonconst = self._nonconstantfeatures_by_view[group][view]
+        arr = arr[..., nonconst]
+        if isinstance(nonmissing_features, np.ndarray):
+            nonmissing_features = nonmissing_features[nonconst]
 
         if view in self._views_to_scale:
             arr = self._center(arr, group, view)
             arr /= self._scale[group][view] if self._scale_per_group else self._scale[view]
 
-        return arr
+        return arr, nonmissing_samples, nonmissing_features
 
 
 def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:

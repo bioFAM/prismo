@@ -119,17 +119,19 @@ class AnnDataDictDataset(PrismoDataset):
                     obsmap = gobsmap[view_name][group_idx]
                     obsidx = obsmap >= 0
                     arr = view.X[obsmap[obsidx], :]
-                    gnonmissing_obs[view_name] = np.nonzero(obsidx)[0]
+                    cnonmissing_obs = np.nonzero(obsidx)[0]
                 else:
                     arr = view.X[group_idx, :]
-                    gnonmissing_obs[view_name] = slice(None)
+                    cnonmissing_obs = slice(None)
 
                 if view_name in gvarmap:
-                    gnonmissing_var[view_name] = np.nonzero(gvarmap[view_name] >= 0)[0]
+                    cnonmissing_var = np.nonzero(gvarmap[view_name] >= 0)[0]
                 else:
-                    gnonmissing_var[view_name] = slice(None)
+                    cnonmissing_var = slice(None)
 
-                arr = self.preprocessor(arr, group_name, view_name)
+                arr, gnonmissing_obs[view_name], gnonmissing_var[view_name] = self.preprocessor(
+                    arr, cnonmissing_obs, cnonmissing_var, group_name, view_name
+                )
                 if self.cast_to is not None:
                     arr = arr.astype(self.cast_to)
                 if sparse.issparse(arr):

@@ -198,6 +198,9 @@ class SmoothOptions(_Options):
     kernel: Literal["RBF", "Matern"] = "RBF"
     """Kernel function to use."""
 
+    mefisto_kernel: bool = True
+    """Whether to use the MEFISTO group covariance kernel or treat groups independently."""
+
     warp_groups: list[str] = field(default_factory=list)
     """List of groups to apply dynamic time warping to."""
 
@@ -530,6 +533,7 @@ class PRISMO:
                 self._model_opts.n_factors,
                 len(gp_group_names),
                 self._gp_opts.kernel,
+                self._gp_opts.mefisto_kernel,
             ).to(self._train_opts.device)
             self._gp_group_names = gp_group_names
         else:

@@ -10,6 +10,31 @@ from gpytorch.priors import Prior
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
 
+class BasicKernel(Kernel):
+    """A kernel that does not model group correlations.
+    
+    This kernel should be used when covariates are not aligned across groups."""
+
+    def __init__(
+        self,
+        base_kernel: Kernel | None,
+        n_groups: int,
+    ):
+        super().__init__()
+
+        self.base_kernel = base_kernel
+        self.n_groups = n_groups
+
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor, diag=False, last_dim_is_batch=False, **params):
+        x1_, x2_ = x1[..., 1:], x2[..., 1:]
+        return self.base_kernel(x1_, x2_, diag, last_dim_is_batch, **params)
+
+    # diagonal group covariance matrix for compatibility with MefistoKernel
+    @property
+    def group_corr(self):
+        return torch.eye(self.n_groups)[None, ...].expand(self.base_kernel.batch_shape[0], -1, -1)
+    
+
 class MefistoKernel(Kernel):
     """A kernel that combines a base kernel with group-specific correlations.
 
@@ -87,6 +112,7 @@ class GP(ApproximateGP):
         n_groups: int,
         kernel: str = "RBF",
         rank: int = 1,
+        use_mefisto_kernel: bool = True,
         **kwargs,
     ):
         covariates = tuple(covariates)
@@ -125,7 +151,10 @@ class GP(ApproximateGP):
         base_kernel.outputscale = torch.sigmoid(torch.randn(batch_shape, device=device)).clamp(1e-3, 1 - 1e-3)
         base_kernel.base_kernel.lengthscale = max_dist * torch.rand(batch_shape).to(device=device).clamp(0.1)
 
-        self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
+        if use_mefisto_kernel:
+            self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
+        else:
+            self.covar_module = BasicKernel(base_kernel, n_groups)
 
     @property
     def outputscale(self):
@@ -154,7 +183,6 @@ class GP(ApproximateGP):
         setup_inducing_points(
             covariates, self._inducing_points_idx, self._n_inducing, out=self.variational_strategy.inducing_points
         )
-
 
 def get_inducing_points_idx(
     covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int

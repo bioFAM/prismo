@@ -18,14 +18,20 @@ class BasicKernel(Kernel):
     def __init__(
         self,
         base_kernel: Kernel | None,
+        n_groups: int,
     ):
         super().__init__()
 
         self.base_kernel = base_kernel
+        self.n_groups = n_groups
 
     def forward(self, x1: torch.Tensor, x2: torch.Tensor, diag=False, last_dim_is_batch=False, **params):
         x1_, x2_ = x1[..., 1:], x2[..., 1:]
         return self.base_kernel(x1_, x2_, diag, last_dim_is_batch, **params)
+
+    @property
+    def group_corr(self):
+        return torch.eye(self.n_groups).unsqueeze(0).expand(self.base_kernel.batch_shape[0], -1, -1)
     
 
 class MefistoKernel(Kernel):
@@ -147,7 +153,7 @@ class GP(ApproximateGP):
         if use_mefisto_kernel:
             self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
         else:
-            self.covar_module = BasicKernel(base_kernel)
+            self.covar_module = BasicKernel(base_kernel, n_groups)
 
     @property
     def outputscale(self):

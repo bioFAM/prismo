@@ -1,5 +1,5 @@
 import logging
-from collections import defaultdict, namedtuple
+from collections import namedtuple
 
 import numpy as np
 from anndata import AnnData
@@ -29,10 +29,20 @@ class PrismoPreprocessor(Preprocessor):
         super().__init__()
 
         self._scale_per_group = scale_per_group
-        self._constant_feature_var_threshold = constant_feature_var_threshold
         self._views_to_scale = {view_name for view_name, likelihood in likelihoods.items() if likelihood == "Normal"}
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
+
+        view_vars = dataset.apply(lambda adata, group_name, view_name: utils.var(adata.X, axis=0), by_group=False)
+        nonconstantfeatures = {}
+        for view_name, viewvar in view_vars.items():
+            # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
+            # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
+            nonconst = viewvar > constant_feature_var_threshold
+            _logger.debug(f"Removing {nonconst.size - nonconst.sum()} features from view {view_name}.")
+            nonconstantfeatures[view_name] = dataset.feature_names[view_name][nonconst]
+
+        dataset.reindex_features(nonconstantfeatures)
 
         meanfunc = lambda mod, group_name, view_name, axis: utils.mean(mod.X, axis=axis)
         self._feature_means = dataset.apply(meanfunc, axis=0)
@@ -41,23 +51,6 @@ class PrismoPreprocessor(Preprocessor):
         self._viewstats = dataset.apply(
             lambda adata, group_name, view_name: ViewStatistics(utils.mean(adata.X, axis=0), utils.min(adata.X, axis=0))
         )
-
-        view_vars = dataset.apply(lambda adata, group_name, view_name: utils.var(adata.X, axis=0), by_group=False)
-        self._nonconstantfeatures_by_view = defaultdict(dict)
-        self._nonconstantfeatures = {}
-        for view_name, viewvar in view_vars.items():
-            # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
-            # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
-            nonconst = viewvar > self._constant_feature_var_threshold
-            _logger.debug(f"Removing {nonconst.size - nonconst.sum()} features from view {view_name}.")
-            self._nonconstantfeatures[view_name] = nonconst
-
-            for group_name, stats in self._viewstats.items():
-                gnonconst = dataset.align_global_array_to_local(
-                    nonconst, group_name, view_name, align_to="features", axis=0
-                )
-                self._nonconstantfeatures_by_view[group_name][view_name] = gnonconst
-                stats[view_name] = ViewStatistics(*(stat[gnonconst] for stat in stats[view_name]))
 
         if self._scale_per_group:
             self._scale = dataset.apply(self._calc_scale_grouped, by_group=True)
@@ -87,17 +80,15 @@ class PrismoPreprocessor(Preprocessor):
         if view_name not in self._views_to_scale:
             return None
 
-        arr = self._center(
-            adata.X[..., self._nonconstantfeatures_by_view[group_name][view_name]], group_name, view_name
-        )
+        arr = self._center(adata.X, group_name, view_name)
         return np.sqrt(utils.var(arr, axis=None))
 
     def _center(self, arr: NDArray, group_name: str, view_name: str):
         viewstats = self._viewstats[group_name][view_name]
         if view_name in self._nonnegative_weights and group_name in self._nonnegative_factors:
-            arr -= viewstats.min
+            arr = arr - viewstats.min  # can't use -= due to dask
         else:
-            arr -= viewstats.mean
+            arr = arr - viewstats.mean
         return arr
 
     @property
@@ -108,23 +99,14 @@ class PrismoPreprocessor(Preprocessor):
     def sample_means(self) -> dict[str, dict[str, float]]:
         return self._sample_means
 
-    @property
-    def used_features(self) -> dict[str, NDArray[np.bool]]:
-        return self._nonconstantfeatures
-
     def __call__(
         self,
         arr: NDArray | sparray | spmatrix,
-        nonmissing_samples: NDArray[bool] | slice,
-        nonmissing_features: NDArray[bool] | slice,
+        nonmissing_samples: NDArray[int] | slice,
+        nonmissing_features: NDArray[int] | slice,
         group: str,
         view: str,
     ) -> NDArray | sparray | spmatrix:
-        nonconst = self._nonconstantfeatures_by_view[group][view]
-        arr = arr[..., nonconst]
-        if isinstance(nonmissing_features, np.ndarray):
-            nonmissing_features = nonmissing_features[nonconst]
-
         if view in self._views_to_scale:
             arr = self._center(arr, group, view)
             arr /= self._scale[group][view] if self._scale_per_group else self._scale[view]

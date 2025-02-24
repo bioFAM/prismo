@@ -26,13 +26,13 @@ class Preprocessor:
         nonmissing_features: NDArray[bool] | slice,
         group: str,
         view: str,
-    ) -> tuple[NDArray | sparray | spmatrix, NDArray[bool] | slice, NDArray[bool] | slice]:
+    ) -> tuple[NDArray | sparray | spmatrix, NDArray[int] | slice, NDArray[int] | slice]:
         """Will be called by subclasses of PrismoDataset on each minibatch.
 
         Args:
             arr: The data for one group and view.
-            nonmissing_samples: Which global samples are not missing in the current minibatch.
-            nonmissing_features: Which global features are not missing in the current minibatch.
+            nonmissing_samples: Index array mapping global samples to the current minibatch.
+            nonmissing_features: Index array mapping global features to the current minibatch.
             group: The group name.
             view: The view name.
 
@@ -64,11 +64,12 @@ class PrismoDataset(Dataset, ABC):
     injected into its global namespace: `align_global_array_to_local` and `align_local_array_to_global`. These are
     methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
     an instance of a class, these two functions will be added to its instance attributes. The preprocessor must
-    accept five arguments: A (possibly sparse) array with data, a 1D boolean array indicating which global samples
-    are not missing in the current minibatch, a 1D boolean array indicating which global features are not
-    missing in the current minibatch, the group name, and the view name. If the preprocessor subsets samples or
-    features, it must correspondingly subset the nonmissing arrays. Instead of boolean arrays, `slice(None)` may
-    be passed. The preprocessor must return a 3-tuple containing the preprocessed data and the nonmissing arrays/slices.
+    accept five arguments: A (possibly sparse) array with data, a 1D index array indicating which global samples
+    correspond to which samples in the current minibatch, a 1D index array indicating which global features
+    correspond to features in the current minibatch, the group name, and the view name. If the preprocessor subsets
+    samples or features, it must correspondingly subset the nonmissing arrays. Instead of boolean arrays, `slice(None)`
+    may be passed. The preprocessor must return a 3-tuple containing the preprocessed data and the nonmissing
+    arrays/slices.
 
     Args:
         data: The data. This will be stored as `self._data` and can be accessed and manipulaed by subclasses.
@@ -198,6 +199,24 @@ class PrismoDataset(Dataset, ABC):
             and NumPy index arrays indicating which samples **in the current minibatch** are not missing as values.
             If there are no missing samples, the value may be `slice(None)`. Similarly, `"nonmissing_features"`
             indicates which features are not missing.
+        """
+        pass
+
+    @abstractmethod
+    def reindex_samples(self, sample_names: dict[str, NDArray[str]] | None = None):
+        """Realign the samples.
+
+        Args:
+            sample_names: Global sample names for each group. If `None`, will use the natural global alignment of the data.
+        """
+        pass
+
+    @abstractmethod
+    def reindex_features(self, feature_names: dict[str, NDArray[str]] | None = None):
+        """Realign the features.
+
+        Args:
+            feature_names: Global feature names for each view. If `None`, will use the natural global alignment of the data.
         """
         pass
 

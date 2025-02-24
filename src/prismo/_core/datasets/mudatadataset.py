@@ -9,10 +9,26 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from .base import ApplyCallable, Preprocessor, PrismoDataset
-from .utils import anndata_to_dask, apply_to_nested, from_dask, have_dask
+from .utils import anndata_to_dask, apply_to_nested, array_to_dask, from_dask, have_dask
 
 T = TypeVar("T")
 _logger = logging.getLogger(__name__)
+
+
+def _mudata_to_dask(mudata: MuData, with_extra=True):
+    mods = {modname: anndata_to_dask(mod) for modname, mod in mudata.mod.items()}
+    dask_mudata = MuData(mods)
+    dask_mudata.obs = mudata.obs
+    dask_mudata.var = mudata.var
+    dask_mudata.obsmap = mudata.obsmap
+    dask_mudata.varmap = mudata.varmap
+    if with_extra:
+        for attrname in ("obsm", "obsp", "varm", "varp"):
+            attr = getattr(mudata, attrname)
+            dask_attr = getattr(dask_mudata, attrname)
+            for k, v in attr.items():
+                dask_attr[k] = array_to_dask(v)
+    return dask_mudata
 
 
 class MuDataDataset(PrismoDataset):
@@ -28,36 +44,78 @@ class MuDataDataset(PrismoDataset):
         **kwargs,
     ):
         super().__init__(mudata, preprocessor=preprocessor, cast_to=cast_to)
-        self._groups = self._data.obs.groupby(group_by if group_by is not None else lambda x: "group_1").indices
-        if feature_names is not None:
-            need_update = False
-            for view_name, view_feature_names in feature_names.items():
-                if np.any(view_feature_names != self._data.mod[view_name].var_names):
-                    self._data.mod[view_name] = self._data.mod[view_name][:, view_feature_names]
-                    need_update = True
-            if need_update:
-                self._data.update_var()
+        self._orig_data = self._data
+        self._group_by = group_by
+        self._sample_selection = self._feature_selection = slice(None)
+
+        self.reindex_samples(sample_names)
+        self.reindex_features(feature_names)
+
+    def reindex_samples(self, sample_names: dict[str, NDArray[str]] | None = None):
         if sample_names is not None and any(
-            np.any(sample_names[group_name] != self._data.obs_names[group_idx])
+            sample_names[group_name].size != group_idx.size
+            or np.any(sample_names[group_name] != self._data.obs_names[group_idx])
             for group_name, group_idx in self._groups.items()
+            if group_name in sample_names
         ):
-            obs_idx = np.concatenate(
-                [
-                    self._data.obs_names[group_idx].get_indexer(sample_names[group_name])
-                    for group_name, group_idx in self._groups.items()
-                ]
-            )
-            self._data = self._data[obs_idx, :]
-            if group_by is not None:
-                self._groups = self._data.obs.groupby(group_by).indices
+            groups = self._orig_data.obs.groupby(
+                self._group_by if self._group_by is not None else lambda x: "group_1"
+            ).indices
+            selection = pd.Index()
+            for group_name, group_idx in groups.items():
+                group_sample_names = sample_names.get(group_name)
+                if group_sample_names is not None:
+                    group_sample_names = pd.Index(group_sample_names)
+                    if np.any(~group_sample_names.isin(self._orig_data.obs_names[group_idx])):
+                        _logger.warning(
+                            f"Not all sample names given for group {group_name} are present in the data. Restricting alignment to group names present in th e data."
+                        )
+                        group_sample_names = group_sample_names.intersection(self._orig_data.obs_names[group_idx])
+                else:
+                    group_sample_names = self._orig_data.obs_names[group_idx]
+                selection.append(group_sample_names)
+            self._data = self._orig_data[selection, self._feature_selection]
+            self._sample_selection = selection
+        else:
+            self._data = self._orig_data[:, self._feature_selection]
+            self._sample_selection = slice(None)
+        self._groups = self._data.obs.groupby(
+            self._group_by if self._group_by is not None else lambda x: "group_1"
+        ).indices
 
         self._needs_alignment = {}
         for group_name, group_idx in self._groups.items():
-            gneeds_align = {}
+            gneeds_align = set()
             for view_name, obsmap in self._data.obsmap.items():
                 obsmap = obsmap[group_idx]
-                gneeds_align[view_name] = np.any(obsmap == 0) or not np.any(np.diff(obsmap) != 1)
+                if np.any(obsmap == 0) or np.any(np.diff(obsmap) != 1):
+                    gneeds_align.add(view_name)
             self._needs_alignment[group_name] = gneeds_align
+
+    def reindex_features(self, feature_names: dict[str, NDArray[str]] | None = None):
+        if feature_names is not None and any(
+            feature_names[view_name].size != fnames.size or np.any(feature_names[view_name] != fnames)
+            for view_name, fnames in self.feature_names.items()
+            if view_name in feature_names
+        ):
+            selection = pd.Index()
+            for modname, mod in self._orig_data.mod.items():
+                view_feature_names = feature_names.get(modname)
+                if view_feature_names is not None:
+                    view_feature_names = pd.Index(view_feature_names)
+                    if np.any(~view_feature_names.isin(mod.var_names)):
+                        _logger.warning(
+                            f"Not all feature names given for view {modname} are present in the data. Restricting alignment to feature names present in the data."
+                        )
+                        view_feature_names = view_feature_names.intersection(mod.var_names)
+                else:
+                    view_feature_names = mod.var_names
+                selection.append(view_feature_names)
+            self._data = self._orig_data[self._sample_selection, selection]
+            self._feature_selection = selection
+        else:
+            self._data = self._orig_data[:, self._sample_selection]
+            self._feature_selection = slice(None)
 
     @staticmethod
     def _accepts_input(data):
@@ -104,7 +162,7 @@ class MuDataDataset(PrismoDataset):
             for modname, mod in subdata.mod.items():
                 cnonmissing_obs = (
                     np.nonzero(subdata.obsmap[modname] > 0)[0]
-                    if self._needs_alignment[group_name][modname]
+                    if modname in self._needs_alignment[group_name]
                     else slice(None)
                 )
                 arr, gnonmissing_obs[modname], gnonmissing_var[modname] = self.preprocessor(
@@ -138,7 +196,7 @@ class MuDataDataset(PrismoDataset):
         if subdata is None:
             if group_name is None:
                 raise ValueError("Need either subdata or group_name, but both are None.")
-            if not self._needs_alignment[group_name][view_name]:
+            if view_name not in self._needs_alignment[group_name]:
                 return arr
             subdata = self._data[self._groups[group_name], :]
 
@@ -330,19 +388,26 @@ class MuDataDataset(PrismoDataset):
         return ret
 
     def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
-        havedask = have_dask()
         ret = {}
-        if not havedask:
-            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
 
+        if have_dask():
+            data = _mudata_to_dask(self._orig_data, with_extra=False)[self._sample_selection, self._feature_selection]
+        else:
+            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+            data = self._data
         for group_name, group_idx in self._groups.items():
-            subdata = self._data[group_idx, :]
+            subdata = data[group_idx, :]
             data = {}
+            convert = False
             for modname, mod in subdata.mod.items():
-                cdata = anndata_to_dask(mod) if havedask else mod
-                if cdata.n_obs != subdata.n_obs:
-                    cdata.X = cdata.x.astype(np.promote_types(cdata.x.dtype, type(np.nan)))
-                data[modname] = cdata
+                if mod.n_obs != subdata.n_obs:
+                    convert = True
+                data[modname] = mod
+            if convert:
+                for modname, mod in data.items():
+                    mod = mod.copy()
+                    mod.X = mod.X.astype(np.promote_types(mod.X.dtype, type(np.nan)))
+                    data[modname] = mod
             data = ad.concat(
                 data, axis="var", join="outer", label="view", merge="unique", uns_merge=None, fill_value=np.nan
             )

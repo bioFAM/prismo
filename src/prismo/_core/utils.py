@@ -69,28 +69,33 @@ def impute(
     havemissing = data.n_obs < factors.shape[0] or data.n_vars < weights.shape[1]
     if missingonly and not havemissing:
         return data
+    elif not missingonly:
+        imputation = _imputation_link(factors @ weights, likelihood)
     else:
-        if not missingonly or not sparse.issparse(data.X):
-            imputation = _imputation_link(factors @ weights, likelihood)
+        missing_obs = align_local_array_to_global(  # noqa F821
+            np.broadcast_to(False, (data.n_obs,)), group_name, view_name, fill_value=True, align_to="samples"
+        )
+        missing_var = align_local_array_to_global(  # noqa F821
+            np.broadcast_to(False, (data.n_vars,)), group_name, view_name, fill_value=True, align_to="features"
+        )
+
+        if sparse.issparse(data.X):
+            imputation = sparse.lil_array((factors.shape[0], weights.shape[1]))
         else:
-            missing_obs = align_local_array_to_global(  # noqa F821
-                np.broadcast_to(False, (data.n_obs,)), group_name, view_name, fill_value=True, align_to="samples"
+            imputation = np.empty((sample_names.size, feature_names.size), dtype=data.X.dtype)
+
+        imputation[np.ix_(~missing_obs, ~missing_var)] = data.X
+
+        if sparse.issparse(data.X):
+            for row in np.nonzero(missing_obs)[0]:
+                imputation[row, :] = _imputation_link(factors[row, :] @ weights, likelihood)
+            imputation = imputation.T  # slow column slicing for lil arrays
+            for col in np.nonzero(missing_var)[0]:
+                imputation[col, :] = _imputation_link(factors @ weights[:, col], likelihood).T
+            imputation = imputation.tocsr().T
+        else:
+            imputation[np.ix_(missing_obs, missing_var)] = _imputation_link(
+                factors[missing_obs, :] @ weights[:, missing_var]
             )
-            missing_var = align_local_array_to_global(  # noqa F821
-                np.broadcast_to(False, (data.n_vars,)), group_name, view_name, fill_value=True, align_to="features"
-            )
-
-            if sparse.issparse(data.X):
-                imputation = sparse.lil_array((factors.shape[0], weights.shape[1]))
-
-            imputation[np.ix_(~missing_obs, ~missing_var)] = data.X
-
-            if sparse.issparse(data.X):
-                for row in np.nonzero(missing_obs)[0]:
-                    imputation[row, :] = _imputation_link(factors[row, :] @ weights, likelihood)
-                imputation = imputation.T  # slow column slicing for lil arrays
-                for col in np.nonzero(missing_var)[0]:
-                    imputation[col, :] = _imputation_link(factors @ weights[:, col], likelihood).T
-                imputation = imputation.tocsr().T
 
         return AnnData(X=imputation, obs=pd.DataFrame(index=sample_names), var=pd.DataFrame(index=feature_names))

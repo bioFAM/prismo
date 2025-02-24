@@ -1,3 +1,4 @@
+from collections import namedtuple
 from collections.abc import Callable, Mapping, Sequence, Set
 from importlib.util import find_spec
 from typing import Any
@@ -7,12 +8,17 @@ from anndata import AnnData
 from numpy.typing import NDArray
 from scipy.sparse import coo_array, csc_array, csr_array, issparse, sparray, spmatrix
 
+AlignmentMap = namedtuple("AlignmentMap", ["l2g", "g2l"])
+
 
 def have_dask():
     return find_spec("dask") is not None and find_spec("sparse") is not None
 
 
 def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
+    import os
+
+    os.environ["SPARSE_AUTO_DENSIFY"] = "1"  # https://github.com/pydata/sparse/issues/842
     import dask.array as da
     import dask.dataframe as dd
     import sparse
@@ -29,6 +35,9 @@ def from_dask(arr):
     if type(arr).__module__.startswith("dask."):
         arr = arr.compute()
     if type(arr).__module__.startswith("sparse."):
+        import os
+
+        os.environ["SPARSE_AUTO_DENSIFY"] = "1"  # https://github.com/pydata/sparse/issues/842
         import sparse
 
         if isinstance(arr, sparse.GCXS):

@@ -30,7 +30,7 @@ from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, Stac
 from .io import MOFACompatOption, load_model, save_model
 from .model import Generative, Variational
 from .training import EarlyStopper
-from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute
+from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute, sample_all_data_as_one_batch
 
 _logger = logging.getLogger(__name__)
 
@@ -741,14 +741,26 @@ class PRISMO:
         pyro.clear_param_store()
 
         # Train
-        loader = DataLoader(
-            StackDataset(data=data, covariates=covariates),
-            batch_sampler=PrismoBatchSampler(data.n_samples, self._train_opts.batch_size, False),
-            collate_fn=default_convert,
-            num_workers=self._train_opts.num_workers,
-            pin_memory=self._train_opts.pin_memory,
-            persistent_workers=self._train_opts.num_workers > 0,
-        )
+        singlebatch = self._train_opts.batch_size >= max(self.n_samples.values())
+        collate_fn_map = {
+            torch.Tensor: lambda x, **kwargs: x[0].to(self._train_opts.device, non_blocking=True),
+            slice: lambda x, **kwargs: x[0],
+        }
+        dataset = StackDataset(data=data, covariates=covariates)
+        if singlebatch:
+            batch = collate(
+                (default_convert(dataset.__getitems__(sample_all_data_as_one_batch(data))),),
+                collate_fn_map=collate_fn_map,
+            )
+        else:
+            loader = DataLoader(
+                dataset,
+                batch_sampler=PrismoBatchSampler(data.n_samples, self._train_opts.batch_size, False),
+                collate_fn=default_convert,
+                num_workers=self._train_opts.num_workers,
+                pin_memory=self._train_opts.pin_memory,
+                persistent_workers=self._train_opts.num_workers > 0,
+            )
 
         train_loss_elbo = []
         earlystopper = EarlyStopper(
@@ -757,16 +769,14 @@ class PRISMO:
         start_timer = time.time()
         for i in range(self._train_opts.max_epochs):
             epoch_loss = 0
-            for batch in loader:
-                batch = collate(
-                    (batch,),
-                    collate_fn_map={
-                        torch.Tensor: lambda x, **kwargs: x[0].to(self._train_opts.device, non_blocking=True),
-                        slice: lambda x, **kwargs: x[0],
-                    },
-                )
+            if singlebatch:
                 with self._train_opts.device:
                     epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
+            else:
+                for batch in loader:
+                    batch = collate((batch,), collate_fn_map=collate_fn_map)
+                    with self._train_opts.device:
+                        epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
             train_loss_elbo.append(epoch_loss)
             if (
                 self._gp is not None

@@ -7,6 +7,9 @@ from anndata import AnnData
 from numpy.typing import NDArray
 from scipy import sparse
 from scipy.special import expit
+from torch.utils.data import BatchSampler, SequentialSampler
+
+from .datasets import PrismoDataset
 
 WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
 FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
@@ -14,6 +17,15 @@ Likelihood: TypeAlias = Literal["Normal", "GammaPoisson", "Bernoulli"]
 PossiblySparseArray: TypeAlias = NDArray | sparse.spmatrix | sparse.sparray
 
 MeanStd = namedtuple("MeanStd", ["mean", "std"])
+
+
+def sample_all_data_as_one_batch(data: PrismoDataset) -> dict[str, list[int]]:
+    return {
+        k: next(
+            iter(BatchSampler(SequentialSampler(range(nsamples)), batch_size=data.n_samples_total, drop_last=False))
+        )
+        for k, nsamples in data.n_samples.items()
+    }
 
 
 def mean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):

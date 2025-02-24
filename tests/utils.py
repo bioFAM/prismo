@@ -1,17 +1,8 @@
 import numpy as np
-from torch.utils.data import BatchSampler, SequentialSampler
 
 from prismo._core import PrismoDataset
 from prismo._core.preprocessing import PrismoPreprocessor
-
-
-def one_batch_sample(data: PrismoDataset) -> dict[str, list[int]]:
-    return {
-        k: next(
-            iter(BatchSampler(SequentialSampler(range(nsamples)), batch_size=data.n_samples_total, drop_last=False))
-        )
-        for k, nsamples in data.n_samples.items()
-    }
+from prismo._core.utils import sample_all_data_as_one_batch
 
 
 def preprocess(data, likelihoods, scale_per_group=True, cast_to=np.float32):
@@ -25,4 +16,4 @@ def preprocess(data, likelihoods, scale_per_group=True, cast_to=np.float32):
     )
     data.preprocessor = preprocessor
 
-    return preprocessor, data.__getitems__(one_batch_sample(data))["data"]
+    return preprocessor, data.__getitems__(sample_all_data_as_one_batch(data))["data"]

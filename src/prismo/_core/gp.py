@@ -29,9 +29,10 @@ class BasicKernel(Kernel):
         x1_, x2_ = x1[..., 1:], x2[..., 1:]
         return self.base_kernel(x1_, x2_, diag, last_dim_is_batch, **params)
 
+    # diagonal group covariance matrix for compatibility with MefistoKernel
     @property
     def group_corr(self):
-        return torch.eye(self.n_groups).unsqueeze(0).expand(self.base_kernel.batch_shape[0], -1, -1)
+        return torch.eye(self.n_groups)[None, ...].expand(self.base_kernel.batch_shape[0], -1, -1)
     
 
 class MefistoKernel(Kernel):
@@ -182,7 +183,6 @@ class GP(ApproximateGP):
         setup_inducing_points(
             covariates, self._inducing_points_idx, self._n_inducing, out=self.variational_strategy.inducing_points
         )
-
 
 def get_inducing_points_idx(
     covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int

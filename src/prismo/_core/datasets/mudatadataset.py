@@ -46,16 +46,20 @@ class MuDataDataset(PrismoDataset):
         self._orig_data = self._data
         self._group_by = group_by
         self._sample_selection = self._feature_selection = slice(None)
+        self._groups = None
 
         self.reindex_samples(sample_names)
         self.reindex_features(feature_names)
 
     def reindex_samples(self, sample_names: dict[str, NDArray[str]] | None = None):
-        if sample_names is not None and any(
-            sample_names[group_name].size != group_idx.size
-            or np.any(sample_names[group_name] != self._data.obs_names[group_idx])
-            for group_name, group_idx in self._groups.items()
-            if group_name in sample_names
+        if sample_names is not None and (
+            self._groups is None
+            or any(
+                sample_names[group_name].size != group_idx.size
+                or np.any(sample_names[group_name] != self._data.obs_names[group_idx])
+                for group_name, group_idx in self._groups.items()
+                if group_name in sample_names
+            )
         ):
             groups = self._orig_data.obs.groupby(
                 self._group_by if self._group_by is not None else lambda x: "group_1"
@@ -78,6 +82,7 @@ class MuDataDataset(PrismoDataset):
         else:
             self._data = self._orig_data[:, self._feature_selection]
             self._sample_selection = slice(None)
+
         self._groups = self._data.obs.groupby(
             self._group_by if self._group_by is not None else lambda x: "group_1"
         ).indices

@@ -17,25 +17,25 @@ class PrismoBatchSampler(Sampler[dict[str, list[int]]]):
     def __init__(self, n_samples: dict[str, int], batch_size: int, drop_last: bool = False):
         super().__init__()
         self._n_samples = n_samples
-        self._largestgroup = max(n_samples.values())
+        self._largest_group = max(n_samples.values())
         self._batch_size = batch_size
         self._drop_last = drop_last
         self._samplers = {
-            k: BatchSampler(RandomSampler(range(nsamples), num_samples=self._largestgroup), batch_size, drop_last)
+            k: BatchSampler(RandomSampler(range(nsamples), num_samples=self._largest_group), batch_size, drop_last)
             for k, nsamples in self._n_samples.items()
         }
 
     def __len__(self):
         return (
-            self._largestgroup // self._batch_size
+            self._largest_group // self._batch_size
             if self._drop_last
-            else (self._largestgroup + self._batch_size - 1) // self._batch_size
+            else (self._largest_group + self._batch_size - 1) // self._batch_size
         )
 
     def __iter__(self):
-        iterators = {k: iter(smplr) for k, smplr in self._samplers.items()}
+        iterators = {k: iter(sampler) for k, sampler in self._samplers.items()}
         for _ in range(len(self)):
-            yield {k: next(smplr) for k, smplr in iterators.items()}
+            yield {k: next(sampler) for k, sampler in iterators.items()}
 
 
 class CovariatesDataset(Dataset):

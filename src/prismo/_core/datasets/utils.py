@@ -72,7 +72,7 @@ def from_dask(arr, convert_coo=True):
 
 def apply_to_nested(data, func: Callable[[Any], Any]):
     if isinstance(data, Mapping):
-        return type(data)({k: apply_to_nested(data[k], func) for k in data})
+        return type(data)({k: apply_to_nested(v, func) for k, v in data.items()})
     elif isinstance(data, tuple):
         args = (apply_to_nested(v, func) for v in data)
         if hasattr(data, "_fields"):  # namedtuple
@@ -86,12 +86,12 @@ def apply_to_nested(data, func: Callable[[Any], Any]):
 
 
 def anndata_to_dask(adata: AnnData):
-    dadata = AnnData(
+    dask_adata = AnnData(
         X=array_to_dask(adata.X), var=adata.var, obs=adata.obs
     )  # AnnData does not support Dask DataFrames for var and obs
-    for attr in ("obsm", "obsp", "varm", "varp", "layers"):
-        aattr = getattr(adata, attr)
-        dattr = getattr(dadata, attr)
-        for k, v in aattr.items():
-            dattr[k] = array_to_dask(v)
-    return dadata
+    for attrname in ("obsm", "obsp", "varm", "varp", "layers"):
+        attr = getattr(adata, attrname)
+        dask_attr = getattr(dask_adata, attrname)
+        for k, v in attr.items():
+            dask_attr[k] = array_to_dask(v)
+    return dask_adata

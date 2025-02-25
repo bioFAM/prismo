@@ -20,7 +20,7 @@ urls.Source = "https://github.com/bioFAM/prismo"
 urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
     "anndata>=0.11",
-    "mudata",
+    "mudata @ git+https://github.com/scverse/mudata", # need mudata > 0.3.1
     "array-api-compat",
     "h5py",
     "pyro-ppl",
@@ -75,6 +75,9 @@ version-file = "src/prismo/_version.py"
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.coverage.run]
 source = ["prismo"]

@@ -17,11 +17,10 @@ _logger = logging.getLogger(__name__)
 
 def _mudata_to_dask(mudata: MuData, with_extra=True):
     mods = {modname: anndata_to_dask(mod) for modname, mod in mudata.mod.items()}
-    dask_mudata = MuData(mods)
+    dask_mudata = MuData(mods, obs=mudata.obs, var=mudata.var, obsmap=mudata.obsmap, varmap=mudata.varmap)
+    # MuData constructor runs update(), so we need to reset obs and var
     dask_mudata.obs = mudata.obs
     dask_mudata.var = mudata.var
-    dask_mudata.obsmap = mudata.obsmap
-    dask_mudata.varmap = mudata.varmap
     if with_extra:
         for attrname in ("obsm", "obsp", "varm", "varp"):
             attr = getattr(mudata, attrname)
@@ -61,7 +60,7 @@ class MuDataDataset(PrismoDataset):
             groups = self._orig_data.obs.groupby(
                 self._group_by if self._group_by is not None else lambda x: "group_1"
             ).indices
-            selection = pd.Index()
+            selection = pd.Index(())
             for group_name, group_idx in groups.items():
                 group_sample_names = sample_names.get(group_name)
                 if group_sample_names is not None:
@@ -98,7 +97,7 @@ class MuDataDataset(PrismoDataset):
             for view_name, fnames in self.feature_names.items()
             if view_name in feature_names
         ):
-            selection = pd.Index()
+            selection = pd.Index(())
             for modname, mod in self._orig_data.mod.items():
                 view_feature_names = feature_names.get(modname)
                 if view_feature_names is not None:
@@ -169,7 +168,7 @@ class MuDataDataset(PrismoDataset):
                     mod.X, cnonmissing_obs, slice(None), group_name, modname
                 )
                 if self.cast_to is not None:
-                    arr = arr.astype(self.cast_to)
+                    arr = arr.astype(self.cast_to, copy=False)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
                 group[modname] = arr
@@ -367,34 +366,48 @@ class MuDataDataset(PrismoDataset):
     def _apply_by_group_view(
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
+        if have_dask():
+            data = _mudata_to_dask(self._orig_data, with_extra=False)[self._sample_selection, self._feature_selection]
+        else:
+            _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+            data = self._data
         ret = {}
         for group_name, group_idx in self._groups.items():
             cret = {}
-            for modname, mod in self._data[group_idx, :].mod.items():
-                cret[modname] = func(mod, group_name, modname, **kwargs, **gvkwargs[group_name][modname])
+            for modname, mod in data[group_idx, :].mod.items():
+                ccret = func(mod, group_name, modname, **kwargs, **gvkwargs[group_name][modname])
+                cret[modname] = apply_to_nested(ccret, from_dask)
             ret[group_name] = cret
         return ret
 
     def _apply_by_view(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
+        data = self._data
+        if self._sample_selection != slice(None) or self._feature_selection != slice(None):
+            if have_dask():
+                data = _mudata_to_dask(self._orig_data, with_extra=False)[
+                    self._sample_selection, self._feature_selection
+                ]
+            else:
+                _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
         ret = {}
-        for modname, mod in self._data.mod.items():
+        for modname, mod in data.mod.items():
             groups = np.empty((mod.n_obs,), dtype="O")
             for group, group_idx in self._groups.items():
                 modidx = self._data.obsmap[modname][group_idx]
                 modidx = modidx[modidx > 0] - 1
                 groups[modidx] = group
 
-            ret[modname] = func(mod, groups, modname, **kwargs, **vkwargs[modname])
+            cret = func(mod, groups, modname, **kwargs, **vkwargs[modname])
+            ret[modname] = apply_to_nested(cret, from_dask)
         return ret
 
     def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
-        ret = {}
-
         if have_dask():
             data = _mudata_to_dask(self._orig_data, with_extra=False)[self._sample_selection, self._feature_selection]
         else:
             _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
             data = self._data
+        ret = {}
         for group_name, group_idx in self._groups.items():
             subdata = data[group_idx, :]
             data = {}

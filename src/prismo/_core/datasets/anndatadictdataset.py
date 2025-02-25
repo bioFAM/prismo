@@ -203,7 +203,7 @@ class AnnDataDictDataset(PrismoDataset):
                     arr, cnonmissing_obs, cnonmissing_var, group_name, view_name
                 )
                 if self.cast_to is not None:
-                    arr = arr.astype(self.cast_to)
+                    arr = arr.astype(self.cast_to, copy=False)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
                 group[view_name] = arr
@@ -381,7 +381,8 @@ class AnnDataDictDataset(PrismoDataset):
                     varidx = slice(None) if vvarmap is None else vvarmap.g2l[vvarmap.g2l >= 0]
                     view = view[obsidx, varidx]
 
-                cret[view_name] = func(view, group_name, view_name, **kwargs, **gvkwargs[group_name][view_name])
+                ccret = func(view, group_name, view_name, **kwargs, **gvkwargs[group_name][view_name])
+                cret[view_name] = apply_to_nested(ccret, from_dask)
             ret[group_name] = cret
         return ret
 

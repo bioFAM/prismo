@@ -40,6 +40,8 @@ class PrismoPreprocessor(Preprocessor):
             # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
             nonconst = viewvar > constant_feature_var_threshold
             _logger.debug(f"Removing {nonconst.size - nonconst.sum()} features from view {view_name}.")
+            if issparse(nonconst):
+                nonconst = nonconst.toarray()
             nonconstantfeatures[view_name] = dataset.feature_names[view_name][nonconst]
 
         dataset.reindex_features(nonconstantfeatures)
@@ -49,13 +51,19 @@ class PrismoPreprocessor(Preprocessor):
         self._sample_means = dataset.apply(meanfunc, axis=1)
 
         self._viewstats = dataset.apply(
-            lambda adata, group_name, view_name: ViewStatistics(utils.mean(adata.X, axis=0), utils.min(adata.X, axis=0))
+            lambda adata, group_name, view_name: ViewStatistics(
+                utils.mean(adata.X, axis=0, keepdims=True), utils.min(adata.X, axis=0, keepdims=True)
+            )
         )
 
         if self._scale_per_group:
             self._scale = dataset.apply(self._calc_scale_grouped, by_group=True)
         else:
             self._scale = dataset.apply(self._calc_scale_ungrouped, groups=dataset.group_names, by_group=False)
+
+        for gstats in self._viewstats.values():
+            for view_name, vstats in gstats.items():
+                gstats[view_name] = ViewStatistics(*(x.toarray() if issparse(x) else x for x in vstats))
 
     def _calc_scale_ungrouped(self, adata: AnnData, group: NDArray[object], view_name: str, groups: list[str]):
         if view_name not in self._views_to_scale:
@@ -81,7 +89,9 @@ class PrismoPreprocessor(Preprocessor):
             return None
 
         arr = self._center(adata.X, group_name, view_name)
-        return np.sqrt(utils.var(arr, axis=None))
+        arr = utils.var(arr, axis=None)
+        xp = array_namespace(arr)
+        return xp.sqrt(arr)
 
     def _center(self, arr: NDArray, group_name: str, view_name: str):
         viewstats = self._viewstats[group_name][view_name]

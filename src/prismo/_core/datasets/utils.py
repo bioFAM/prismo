@@ -3,10 +3,21 @@ from collections.abc import Callable, Mapping, Sequence, Set
 from importlib.util import find_spec
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from anndata import AnnData
 from numpy.typing import NDArray
-from scipy.sparse import coo_array, csc_array, csr_array, issparse, sparray, spmatrix
+from scipy.sparse import (
+    coo_array,
+    coo_matrix,
+    csc_array,
+    csc_matrix,
+    csr_array,
+    csr_matrix,
+    issparse,
+    sparray,
+    spmatrix,
+)
 
 AlignmentMap = namedtuple("AlignmentMap", ["l2g", "g2l"])
 
@@ -24,33 +35,38 @@ def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
     import sparse
 
     if issparse(arr):
-        arr = sparse.asarray(arr)
+        if isinstance(arr, csr_array | csr_matrix):
+            arr.sort_indices()
+            arr = sparse.GCXS((arr.data, arr.indices, arr.indptr), shape=arr.shape, compressed_axes=(0,))
+        elif isinstance(arr, csc_array | csc_matrix):
+            arr.sort_indices()
+            arr = sparse.GCXS((arr.data, arr.indices, arr.indptr), shape=arr.shape, compressed_axes=(1,))
+        elif isinstance(arr, coo_array):
+            arr = sparse.COO(arr.coords, arr.data, shape=arr.shape)
+        elif isinstance(arr, coo_matrix):
+            arr = sparse.COO(np.stack((arr.row, arr.col), axis=0), arr.data, shape=arr.shape)
+        else:
+            arr = sparse.asarray(arr, format="csr")
     if isinstance(arr, pd.DataFrame):
         return dd.from_pandas(arr, sort=False)
     else:
-        return da.from_array(arr)
+        return da.from_array(arr, chunks=np.full(len(arr.shape), fill_value=-1))
 
 
-def from_dask(arr):
+def from_dask(arr, convert_coo=True):
     if type(arr).__module__.startswith("dask."):
         arr = arr.compute()
     if type(arr).__module__.startswith("sparse."):
         import os
 
         os.environ["SPARSE_AUTO_DENSIFY"] = "1"  # https://github.com/pydata/sparse/issues/842
-        import sparse
 
-        if isinstance(arr, sparse.GCXS):
-            if arr.compressed_axes == (0,):
-                arr = csr_array((arr.data, arr.indices, arr.indptr), shape=arr.shape)
-            elif arr.compressed_axes == (1,):
-                arr = csc_array((arr.data, arr.indices, arr.indptr), shape=arr.shape)
-            else:
-                raise ValueError(f"Unsupported compressed axes {arr.compressed_axes} in sparse array.")
-        elif isinstance(arr, sparse.COO):
-            arr = coo_array((arr.data, arr.coords), shape=arr.shape)
+        if arr.ndim == 2:
+            arr = arr.to_scipy_sparse()
+            if convert_coo and isinstance(arr, coo_array | coo_matrix):
+                arr = arr.tocsr()
         else:
-            raise ValueError(f"Unsupported sparse array format {type(arr)}")
+            arr = arr.todense()
     return arr
 
 
@@ -58,7 +74,11 @@ def apply_to_nested(data, func: Callable[[Any], Any]):
     if isinstance(data, Mapping):
         return type(data)({k: apply_to_nested(data[k], func) for k in data})
     elif isinstance(data, tuple):
-        return type(data)(*(apply_to_nested(v, func) for v in data))
+        args = (apply_to_nested(v, func) for v in data)
+        if hasattr(data, "_fields"):  # namedtuple
+            return type(data)(*args)
+        else:
+            return type(data)(args)
     elif isinstance(data, Sequence | Set) and not isinstance(data, str | bytes):
         return type(data)(apply_to_nested(v, func) for v in data)
     else:

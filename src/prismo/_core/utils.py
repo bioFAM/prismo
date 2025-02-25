@@ -40,31 +40,31 @@ def mean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
     return mean
 
 
-def var(arr: PossiblySparseArray, axis: int | None = None):
+def var(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
     if sparse.issparse(arr):
         _mean = mean(arr, axis=axis, keepdims=True)
-        var = (np.asarray(arr - _mean) ** 2).sum(axis=axis) / (
+        var = (np.asarray(arr - _mean) ** 2).sum(axis=axis, keepdims=keepdims) / (
             arr.shape[axis] if axis is not None else np.prod(arr.shape)
         )
     else:
-        var = arr.var(axis=axis)
+        var = arr.var(axis=axis, keepdims=keepdims)
     return var
 
 
-def min(arr: PossiblySparseArray, axis: int | None = None):
-    return _minmax(arr, method="min", axis=axis)
+def min(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
+    return _minmax(arr, method="min", axis=axis, keepdims=keepdims)
 
 
-def max(arr: PossiblySparseArray, axis: int | None = None):
-    return _minmax(arr, method="max", axis=axis)
+def max(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
+    return _minmax(arr, method="max", axis=axis, keepdims=keepdims)
 
 
-def _minmax(arr: PossiblySparseArray, method: Literal["min", "max"], axis: int | None = None):
+def _minmax(arr: PossiblySparseArray, method: Literal["min", "max"], axis: int | None = None, keepdims=False):
     res = getattr(arr, method)(axis=axis)
     if sparse.issparse(res):
-        res = res.todense()
-    if isinstance(res, np.matrix):
-        res = np.asarray(res).squeeze(axis)
+        res = res.toarray()
+    if keepdims:
+        res = np.expand_dims(res, axis if axis is not None else tuple(range(arr.ndim)))
     return res
 
 

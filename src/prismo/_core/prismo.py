@@ -458,7 +458,7 @@ class PRISMO:
             # TODO: annotations need to be processed if not aligned or full
             n_informed_factors = annotations[data.view_names[0]].shape[0]
             if data.view_names[0] in annotations_names:
-                factor_names += annotations_names[data.view_names[0]]
+                factor_names += annotations_names[data.view_names[0]].tolist()
             else:
                 factor_names += [
                     f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)
@@ -696,8 +696,8 @@ class PRISMO:
     def _adjust_options(self, data: dict[dict[AnnData]]):
         # convert input arguments to dictionaries if necessary
         for opt_name, keys in zip(
-            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
-            (data.view_names, data.group_names, data.view_names, data.group_names),
+            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors", "annotations_varm_key"),
+            (data.view_names, data.group_names, data.view_names, data.group_names, data.view_names),
             strict=False,
         ):
             val = getattr(self._model_opts, opt_name)
@@ -892,7 +892,7 @@ class PRISMO:
                 sample_idx = np.random.choice(view.n_obs, subsample, replace=False)
             else:
                 sample_idx = slice(None)
-            cdata = data.preprocessor(view.X[sample_idx, :], sample_idx, slice(None), group_name, view_name)[0]
+            cdata = data.preprocessor(view.X[sample_idx, :], slice(None), slice(None), group_name, view_name)[0]
             if issparse(cdata):
                 cdata = cdata.todense()
 

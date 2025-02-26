@@ -892,7 +892,7 @@ class PRISMO:
                 sample_idx = np.random.choice(view.n_obs, subsample, replace=False)
             else:
                 sample_idx = slice(None)
-            cdata = view.X[sample_idx, :]
+            cdata = data.preprocessor(view.X[sample_idx, :], sample_idx, slice(None), group_name, view_name)[0]
             if issparse(cdata):
                 cdata = cdata.todense()
 

@@ -3,14 +3,25 @@ from __future__ import annotations
 import logging
 from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import anndata as ad
 import h5py
 import numpy as np
 import pandas as pd
 import torch
+from numpy.typing import NDArray
+from scipy.sparse import issparse
+
+from .datasets import PrismoDataset
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from . import PRISMO
+
+
+MOFACompatOption = Literal["full", "modelonly"] | bool
 
 
 def save_model(
@@ -18,9 +29,9 @@ def save_model(
     model_topickle,
     path: str | Path,
     mofa_compat: bool = False,
-    model: PRISMO | None = None,  # noqa F821
-    data: dict[str, dict[str, ad.AnnData]] | None = None,
-    intercepts: dict[str, dict[str, np.ndarray]] | None = None,
+    model: PRISMO | None = None,
+    data: PrismoDataset | None = None,
+    intercepts: dict[str, dict[str, NDArray[np.number]]] | None = None,
 ):
     """Save a PRISMO model to an HDF5 file.
 
@@ -37,10 +48,8 @@ def save_model(
     """
     if mofa_compat and model is None:
         raise ValueError("Need a PRISMO object if saving in MOFA compatibility mode.")
-    if mofa_compat and data is None:
-        raise ValueError("Need input data if saving in MOFA compatibility mode.")
-    if mofa_compat and intercepts is None:
-        raise ValueError("Need intercepts if saving in MOFA compatibility mode.")
+    if (mofa_compat is True or mofa_compat == "full") and (data is None or intercepts is None):
+        raise ValueError("Need both data and intercepts if saving data in MOFA compatibility mode.")
 
     from .. import __version__
 
@@ -51,9 +60,10 @@ def save_model(
         logger.warning(f"{path} already exists, overwriting")
     with h5py.File(path, "w") as f:
         prismogrp = f.create_group("prismo")
-        ad.io.write_elem(
-            prismogrp, "state", model_state
-        )  # turn on compression when https://github.com/h5py/h5py/issues/2525 is fixed
+        with ad.settings.override(allow_write_nullable_strings=True):
+            ad.io.write_elem(
+                prismogrp, "state", model_state
+            )  # turn on compression when https://github.com/h5py/h5py/issues/2525 is fixed
 
         pkl = BytesIO()
         torch.save(model_topickle, pkl)
@@ -66,8 +76,8 @@ def save_model(
             # This currently uses some private model attributes that are not part of the public API.
             # Not the cleanest design, but otoh I don't think these things should be part of our
             # API at the moment.'
-            f.create_dataset("groups/groups", data=model.group_names, **dset_kwargs)
-            f.create_dataset("views/views", data=model.view_names, **dset_kwargs)
+            f.create_dataset("groups/groups", data=model.group_names.astype("O"), **dset_kwargs)
+            f.create_dataset("views/views", data=model.view_names.astype("O"), **dset_kwargs)
 
             samples_grp = f.create_group("samples")
             for group_name, group_samples in model.sample_names.items():
@@ -116,26 +126,19 @@ def save_model(
                         cvals[col.isna()] = ""  # np.isnan doesn't work on object arrays
                     cgrp.create_dataset(col.name, data=cvals, **dset_kwargs)
 
-            intercept_grp = f.create_group("intercepts")
-            for group_name, gintercepts in intercepts.items():
-                for view_name, intercept in gintercepts.items():
-                    cgrp = intercept_grp.require_group(view_name)
-                    cgrp.create_dataset(group_name, data=intercept, **dset_kwargs)
+            if mofa_compat == "full":
+                intercept_grp = f.create_group("intercepts")
+                for group_name, gintercepts in intercepts.items():
+                    for view_name, intercept in gintercepts.items():
+                        cgrp = intercept_grp.require_group(view_name)
+                        cgrp.create_dataset(group_name, data=intercept, **dset_kwargs)
 
-            data_grp = f.create_group("data")
-            for group_name, gdata in data.items():
-                for view_name, view_data in gdata.items():
-                    cgrp = data_grp.require_group(view_name)
-                    cgrp.create_dataset(group_name, data=view_data.X, **dset_kwargs)
-
-            imp_grp = f.create_group("imputed_data")
-            imp_data = model.impute_data(data, missing_only=True)
-            for group_name, gimp in imp_data.items():
-                for view_name, imp in gimp.items():
-                    vgrp = imp_grp.require_group(view_name)
-                    ggrp = vgrp.require_group(group_name)
-                    ggrp.create_dataset("mean", data=imp.X, **dset_kwargs)
-                    # TODO: variance
+                data_grp = f.create_group("data")
+                data.apply(
+                    lambda adata, group_name, view_name: data_grp.create_dataset(
+                        f"{view_name}/{group_name}", data=adata.X if not issparse(adata.X) else adata.X.toarray()
+                    )
+                )
 
             exp_grp = f.create_group("expectations")
             factor_grp = exp_grp.create_group("Z")

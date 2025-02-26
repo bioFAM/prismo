@@ -1,11 +1,32 @@
 import os
 import tempfile
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pytest
-import torch
+from anndata import AnnData
 
 from prismo import PRISMO, DataOptions, ModelOptions, TrainingOptions
+
+
+def compare_nested(data1, data2):
+    if isinstance(data1, Mapping) and isinstance(data2, Mapping):
+        if data1.keys() != data2.keys():
+            return False
+        return all(compare_nested(data1[k], data2[k]) for k in data1.keys())
+    elif (
+        isinstance(data1, Sequence | set)
+        and not isinstance(data1, str | bytes)
+        and isinstance(data2, Sequence | set)
+        and not isinstance(data2, str | bytes)
+    ):
+        if len(data1) != len(data2):
+            return False
+        return all(compare_nested(d1, d2) for d1, d2 in zip(data1, data2, strict=False))
+    elif isinstance(data1, np.ndarray) and isinstance(data2, np.ndarray):
+        return np.all(data1 == data2)
+    else:
+        return data1 == data2
 
 
 @pytest.fixture
@@ -24,7 +45,7 @@ def test_save_load_model(setup_teardown):
     temp_file = setup_teardown
 
     # Prepare dummy data
-    data = {"group1": {"view1": torch.rand(3, 10), "view2": torch.rand(3, 5)}}
+    data = {"group1": {"view1": AnnData(X=np.random.rand(3, 10)), "view2": AnnData(X=np.random.rand(3, 5))}}
 
     # Create and train the PRISMO model for a single epoch
     model = PRISMO(
@@ -52,7 +73,7 @@ def test_save_load_model(setup_teardown):
     # Check if the model's parameter is correctly loaded
     if model._gp is not None:  # TODO: test with GP
         for original_param, loaded_param in zip(model._gp.parameters(), loaded_model._gp.parameters(), strict=False):
-            assert torch.equal(original_param, loaded_param), "Model parameter mismatch"
+            assert np.equal(original_param, loaded_param), "Model parameter mismatch"
 
     for attr in (
         "group_names",
@@ -75,4 +96,4 @@ def test_save_load_model(setup_teardown):
         "gp_scale",
         "gp_group_correlation",
     ):
-        assert np.all(getattr(model, attr) == getattr(loaded_model, attr)), attr
+        assert compare_nested(getattr(model, attr), getattr(loaded_model, attr)), attr

@@ -96,13 +96,18 @@ class Generative(PyroModule):
     def get_gp_group_idx(self, group: str):
         return getattr(self, f"gp_group_{group}")
 
-    def _get_plates(self, **kwargs):
+    _sample_plate_dim = -1
+    _feature_plate_dim = -2
+
+    def _get_plates(self, subsample=None):
         plates = {}
-        subsample = kwargs.get("subsample", None)
 
         for group_name in self.group_names:
             plates[f"samples_{group_name}"] = pyro.plate(
-                "plate_samples_" + group_name, self.n_samples[group_name], dim=-1, subsample=subsample[group_name]
+                f"plate_samples_{group_name}",
+                self.n_samples[group_name],
+                dim=self._sample_plate_dim,
+                subsample=subsample[group_name],
             )
 
         if len(self.gp_group_names):
@@ -113,14 +118,16 @@ class Generative(PyroModule):
                 offset += self.n_samples[g]
             gp_subsample = torch.cat(gp_subsample)
 
-            plates["gp_samples"] = pyro.plate("plate_gp_samples", offset, dim=-1, subsample=gp_subsample)
+            plates["gp_samples"] = pyro.plate(
+                "plate_gp_samples", offset, dim=self._sample_plate_dim, subsample=gp_subsample
+            )
 
             # needs to be at dim=-2 to work with GPyTorch
             plates["gp_batch"] = pyro.plate("gp_batch", self.n_factors, dim=-2)
 
         for view_name in self.view_names:
             plates[f"features_{view_name}"] = pyro.plate(
-                "plate_features_" + view_name, self.n_features[view_name], dim=-2
+                "plate_features_" + view_name, self.n_features[view_name], dim=self._feature_plate_dim
             )
 
         plates["factors"] = pyro.plate("plate_factors", self.n_factors, dim=-3)
@@ -295,21 +302,22 @@ class Generative(PyroModule):
     def _dist_obs_bernoulli(self, loc, **kwargs):
         return dist.Bernoulli(logits=loc)
 
-    def forward(self, data):
+    def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates):
         current_gp_groups = {g: self.get_gp_group_idx(g) for g in self.gp_group_names if g in data}
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
-        subsample = {group_name: group["sample_idx"] for group_name, group in data.items()}
 
-        plates = self._get_plates(subsample=subsample)
+        plates = self._get_plates(subsample=sample_idx)
 
         sample_means = {}
         for group_name in data.keys():
             sample_means[group_name] = {}
             for view_name in self.view_names:
                 if self.likelihoods[view_name] in ["GammaPoisson"]:
-                    sample_means[group_name][view_name] = torch.tensor(self.sample_means[group_name][view_name])[
-                        data[group_name]["sample_idx"]
-                    ]
+                    sample_means[group_name][view_name] = torch.tensor(
+                        self.sample_means[group_name][view_name][
+                            sample_idx[group_name][nonmissing_samples[group_name][view_name]]
+                        ]
+                    )
 
         feature_means = {}
         for group_name in data.keys():
@@ -321,24 +329,20 @@ class Generative(PyroModule):
         # sample non-GP factors
         for group_name in current_group_names:
             self.sample_dict[f"z_{group_name}"] = self.sample_factors[group_name](
-                group_name, plates, covariates=data[group_name].get("covariates", None)
+                group_name, plates, covariates=covariates.get(group_name, None)
             )
 
         # sample GP factors
         if len(current_gp_groups):
             factors = self._sample_factors_gp(
                 plates,
-                covariates=torch.cat(tuple(data[g]["covariates"] for g in current_gp_groups.keys()), dim=0),
+                covariates=torch.cat(tuple(covariates[g] for g in current_gp_groups.keys()), dim=0),
                 group_idx=torch.cat(
-                    tuple(
-                        torch.as_tensor(i).expand(data[g]["covariates"].shape[0]) for g, i in current_gp_groups.items()
-                    ),
+                    tuple(torch.as_tensor(i).expand(covariates[g].shape[0]) for g, i in current_gp_groups.items()),
                     dim=0,
                 ),
             )
-            factors = torch.split(
-                factors, tuple(data[g]["covariates"].shape[0] for g in current_gp_groups.keys()), dim=-1
-            )
+            factors = torch.split(factors, tuple(covariates[g].shape[0] for g in current_gp_groups.keys()), dim=-1)
             for group_name, factor in zip(current_gp_groups.keys(), factors, strict=True):
                 self.sample_dict[f"z_{group_name}"] = factor
 
@@ -365,23 +369,23 @@ class Generative(PyroModule):
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
 
         # sample observations
-        for group_name in data.keys():
-            for view_name in self.view_names:
-                view_obs = data[group_name][view_name]
+        for group_name, group in data.items():
+            gnonmissing_samples = nonmissing_samples[group_name]
+            gnonmissing_features = nonmissing_features[group_name]
+            for view_name, view_obs in group.items():
+                vnonmissing_samples = gnonmissing_samples[view_name]
+                vnonmissing_features = gnonmissing_features[view_name]
 
-                z = self.sample_dict[f"z_{group_name}"]
-                w = self.sample_dict[f"w_{view_name}"]
+                z = self.sample_dict[f"z_{group_name}"][..., vnonmissing_samples]
+                w = self.sample_dict[f"w_{view_name}"][..., vnonmissing_features, :]
 
                 loc = torch.einsum("...ijk,...ilj->...jlk", z, w)
 
                 obs = view_obs.T
-                obs_mask = torch.logical_not(torch.isnan(obs))
-                obs = torch.nan_to_num(obs, nan=0)
 
                 dist_parameterized = self.dist_obs[view_name](
                     loc,
                     obs=obs,
-                    obs_mask=obs_mask,
                     group_name=group_name,
                     view_name=view_name,
                     feature_means=feature_means,
@@ -389,10 +393,19 @@ class Generative(PyroModule):
                 )
 
                 with (
-                    pyro.poutine.mask(mask=obs_mask),
                     pyro.poutine.scale(scale=self.view_scales[view_name]),
-                    plates[f"features_{view_name}"],
-                    plates[f"samples_{group_name}"],
+                    pyro.plate(
+                        f"features_{group_name}_{view_name}",
+                        self.n_features[view_name],
+                        dim=self._feature_plate_dim,
+                        subsample=vnonmissing_features if isinstance(vnonmissing_features, torch.Tensor) else None,
+                    ),  # pyro.plate can't handle slices'
+                    pyro.plate(
+                        f"samples_{group_name}_{view_name}",
+                        self.n_samples[group_name],
+                        dim=self._sample_plate_dim,
+                        subsample=sample_idx[group_name][vnonmissing_samples],
+                    ),
                 ):
                     self.sample_dict[f"x_{group_name}_{view_name}"] = pyro.sample(
                         f"x_{group_name}_{view_name}", dist_parameterized, obs=obs
@@ -944,35 +957,29 @@ class Variational(PyroModule):
         with plates[f"features_{view_name}"]:
             return pyro.sample(f"dispersion_{view_name}", dist.LogNormal(dispersion_loc, dispersion_scale))
 
-    def forward(self, data):
+    def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates):
         current_gp_groups = {
             g: self.generative.get_gp_group_idx(g) for g in self.generative.gp_group_names if g in data
         }
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
 
-        subsample = {group_name: group["sample_idx"] for group_name, group in data.items()}
-
-        plates = self.generative._get_plates(subsample=subsample)
+        plates = self.generative._get_plates(subsample=sample_idx)
 
         for group_name in current_group_names:
             self.sample_dict[f"z_{group_name}"] = self.sample_factors[group_name](
-                group_name, plates, covariates=data[group_name].get("covariates", None)
+                group_name, plates, covariates=covariates.get(group_name, None)
             )
 
         if len(current_gp_groups):
             factors = self._sample_factors_gp(
                 plates,
-                covariates=torch.cat(tuple(data[g]["covariates"] for g in current_gp_groups.keys()), dim=0),
+                covariates=torch.cat(tuple(covariates[g] for g in current_gp_groups.keys()), dim=0),
                 group_idx=torch.cat(
-                    tuple(
-                        torch.as_tensor(i).expand(data[g]["covariates"].shape[0]) for g, i in current_gp_groups.items()
-                    ),
+                    tuple(torch.as_tensor(i).expand(covariates[g].shape[0]) for g, i in current_gp_groups.items()),
                     dim=0,
                 ),
             )
-            factors = torch.split(
-                factors, tuple(data[g]["covariates"].shape[0] for g in current_gp_groups.keys()), dim=-1
-            )
+            factors = torch.split(factors, tuple(covariates[g].shape[0] for g in current_gp_groups.keys()), dim=-1)
             for group_name, factor in zip(current_gp_groups.keys(), factors, strict=True):
                 self.sample_dict[f"z_{group_name}"] = factor
 

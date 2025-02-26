@@ -1,16 +1,19 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Literal
 
-import anndata as ad
 import numpy as np
 import pandas as pd
 import plotnine as p9
+from anndata import AnnData
 from mizani import bounds
 from mizani.palettes import brewer_pal
+from mudata import MuData
 
 if TYPE_CHECKING:
-    from .._core import PRISMO
+    from .._core import PRISMO, PrismoDataset
 
 
 def _rescale_zerosymmetric(x, to: tuple[float, float] = (0, 1), _from: tuple[float, float] | None = None):
@@ -34,7 +37,7 @@ _scale_color_zerosymmetric_diverging = partial(
 
 
 def plot_factors_scatter(
-    model: "PRISMO",
+    model: PRISMO,
     x: int,
     y: int,
     group: str | None = None,
@@ -91,7 +94,7 @@ def plot_factors_scatter(
 
 
 def plot_covariates_factor_scatter(
-    model: "PRISMO",
+    model: PRISMO,
     factor: int,
     group: str | None = None,
     covariate_dims: list[int] | None = None,
@@ -167,7 +170,7 @@ def plot_covariates_factor_scatter(
 
 
 def plot_training_curve(
-    model: "PRISMO", linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
+    model: PRISMO, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
 ) -> p9.ggplot:
     """Plot the training curve: -ELBO vs epoch.
 
@@ -189,7 +192,7 @@ def plot_training_curve(
     return plot
 
 
-def plot_factor_correlation(model: "PRISMO", figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
+def plot_factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
     """Plot the correlation between factors.
 
     Args:
@@ -231,7 +234,8 @@ def plot_factor_correlation(model: "PRISMO", figsize: tuple[float, float] = (8, 
 
 
 def plot_overview(
-    data: dict[str, dict[str, ad.AnnData]],
+    data: dict[str, dict[str, AnnData]] | MuData | PrismoDataset,
+    group_by: str | list[str] | None = None,
     missingcolor: str = "#214D83",
     nonmissingcolor: str = "#8AB6D4",
     figsize: tuple[float, float] = (15, 5),
@@ -242,7 +246,9 @@ def plot_overview(
 
     Args:
         data: A nested dictionary where the first level keys are group names,
-            and the second level keys are view names. The keys are AnnData objects.
+            and the second level keys are view names. The values are AnnData objects.
+        group_by: Columns of `.obs` in :mudata:ref:`MuData` objects to group data by.
+            Ignored if the input data is not a :mudata:ref:`MuData` object.
         missingcolor: The color to use for missing data.
         nonmissingcolor: The color to use for non-missing data.
         figsize: Figure size in inches.
@@ -251,26 +257,17 @@ def plot_overview(
         max_plot_x_labels: The maximum number of x-axis labels to show. If the number of observations is greater than this value in any group,
             the x-axis labels are not shown.
     """
-    missings_list = []
-    for group_name, group_data in data.items():
-        for view_name, view_data in group_data.items():
-            missings_list.append(
-                pd.DataFrame(
-                    {
-                        "view": view_name,
-                        "group": group_name,
-                        "obs_name": view_data.obs_names,
-                        "missing": np.isnan(view_data.X).any(axis=1),
-                    }
-                )
-            )
+    from .._core import PrismoDataset
 
-    missings = pd.concat(missings_list, axis=0)
-    n_obs_groups = missings.groupby("group").size()
+    if not isinstance(data, PrismoDataset):
+        data = PrismoDataset(data, group_by=group_by)
+
+    missings = data.get_missing_obs()
+    n_obs_groups = max(data.n_samples.values())
 
     # if the number of observations in every group is low, plot every observation
-    if n_obs_groups.max() < max_plot_obs:
-        plot_x_labels = n_obs_groups.max() < max_plot_x_labels
+    if n_obs_groups < max_plot_obs:
+        plot_x_labels = n_obs_groups < max_plot_x_labels
 
         plot = (
             p9.ggplot(missings, p9.aes(x="obs_name", y="view", fill="missing"))
@@ -301,7 +298,7 @@ def plot_overview(
 
 
 def plot_variance_explained(
-    model: "PRISMO", group_by: Literal["group", "view"] = "group", figsize: tuple[float, float] | None = None
+    model: PRISMO, group_by: Literal["group", "view"] = "group", figsize: tuple[float, float] | None = None
 ) -> p9.ggplot:
     """Plot the variance explained per factor in each group and view.
 
@@ -345,7 +342,7 @@ def plot_variance_explained(
 
 
 def plot_all_weights(
-    model: "PRISMO",
+    model: PRISMO,
     clip: tuple[float, float] | None = (-1, 1),
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,
@@ -389,7 +386,7 @@ def plot_all_weights(
 
 
 def plot_factor(
-    model: "PRISMO",
+    model: PRISMO,
     factor: int = 1,
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,  # F821
@@ -439,7 +436,7 @@ def _check_covariate(cov, cnames, group_name, covars):
 
 
 def _plot_factors_covariate(
-    model: "PRISMO",
+    model: PRISMO,
     covariate1: str | int,
     covariate2: str | int | None = None,
     gp: bool = False,
@@ -509,7 +506,7 @@ def _plot_factors_covariate(
 
 
 def plot_factors_covariate(
-    model: "PRISMO",
+    model: PRISMO,
     covariate1: str | int,
     covariate2: str | int | None = None,
     figsize: tuple[float, float] | None = None,
@@ -527,7 +524,7 @@ def plot_factors_covariate(
 
 
 def plot_gp_covariate(
-    model: "PRISMO",
+    model: PRISMO,
     ci_opacity: float = 0.3,
     group: Literal["facet", "color"] = "facet",
     color: str = "black",
@@ -611,7 +608,7 @@ def plot_gp_covariate(
     return plt
 
 
-def plot_smoothness(model: "PRISMO", figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
+def plot_smoothness(model: PRISMO, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
     """Plot the smoothness of the GP for each factor.
 
     Args:
@@ -635,7 +632,7 @@ def plot_smoothness(model: "PRISMO", figsize: tuple[float, float] = (3, 3)) -> p
 
 
 def _prepare_weights_df(
-    model: "PRISMO",
+    model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
@@ -697,7 +694,7 @@ _weights_inferred_color_scale = p9.scale_color_manual(
 
 
 def plot_top_weights(
-    model: "PRISMO",
+    model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | Sequence[int] | None = None,
@@ -756,7 +753,7 @@ def plot_top_weights(
 
 
 def plot_weights(
-    model: "PRISMO",
+    model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | str | Sequence[int] | Sequence[str] | None = None,

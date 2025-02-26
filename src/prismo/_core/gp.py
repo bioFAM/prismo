@@ -8,6 +8,7 @@ from gpytorch.means import ZeroMean
 from gpytorch.models import ApproximateGP
 from gpytorch.priors import Prior
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
+from numpy.typing import NDArray
 
 
 class BasicKernel(Kernel):
@@ -107,7 +108,7 @@ class GP(ApproximateGP):
     def __init__(
         self,
         n_inducing: int,
-        covariates: Iterable[torch.Tensor],
+        covariates: Iterable[NDArray],
         n_factors: int,
         n_groups: int,
         kernel: str = "RBF",
@@ -207,7 +208,7 @@ def get_inducing_points_idx(
     )
 
 
-def setup_inducing_points(covariates: Iterable[torch.Tensor], idx, n_inducing, *, out=None) -> torch.Tensor:
+def setup_inducing_points(covariates: Iterable[NDArray], idx, n_inducing, *, out=None) -> torch.Tensor:
     """Initialize inducing points from covariates using provided indices.
 
     Args:
@@ -222,7 +223,7 @@ def setup_inducing_points(covariates: Iterable[torch.Tensor], idx, n_inducing, *
     if covariates is None:
         return None
 
-    covariates = tuple(covariates)
+    covariates = tuple(torch.as_tensor(cov) for cov in covariates)
     group_idx = tuple(torch.as_tensor(i) for i in range(len(covariates)))
 
     if out is None:

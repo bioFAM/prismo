@@ -7,7 +7,7 @@ name = "prismo"
 dynamic = ["version"]
 description = "Factor Analysis Models"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {file = "LICENSE"}
 authors = [
     {name = "ABC"},
@@ -19,16 +19,17 @@ urls.Documentation = "https://prismo.readthedocs.io/"
 urls.Source = "https://github.com/bioFAM/prismo"
 urls.Home-page = "https://github.com/bioFAM/prismo"
 dependencies = [
-    "anndata",
-    "mudata",
+    "anndata>=0.11",
+    "mudata @ git+https://github.com/scverse/mudata", # need mudata > 0.3.1
+    "array-api-compat",
     "h5py",
     "pyro-ppl",
     "torch",
     "numpy",
-    "scipy",
+    "scipy>=1.8",
     "pandas",
     "statsmodels",
-    "tensordict",
+    "scikit-learn",
     "gpytorch",
     "dtw-python",
     "plotnine",
@@ -39,6 +40,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+lazy = [
+    "dask[array,dataframe]",
+    "sparse"
+]
 dev = [
     "pre-commit",
     "coverage",
@@ -70,6 +75,9 @@ version-file = "src/prismo/_version.py"
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.coverage.run]
 source = ["prismo"]

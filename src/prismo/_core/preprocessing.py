@@ -51,9 +51,7 @@ class PrismoPreprocessor(Preprocessor):
         self._sample_means = dataset.apply(meanfunc, axis=1)
 
         self._viewstats = dataset.apply(
-            lambda adata, group_name, view_name: ViewStatistics(
-                utils.mean(adata.X, axis=0, keepdims=True), utils.min(adata.X, axis=0, keepdims=True)
-            )
+            lambda adata, group_name, view_name: ViewStatistics(utils.mean(adata.X, axis=0), utils.min(adata.X, axis=0))
         )
 
         if self._scale_per_group:
@@ -96,9 +94,12 @@ class PrismoPreprocessor(Preprocessor):
     def _center(self, arr: NDArray, group_name: str, view_name: str):
         viewstats = self._viewstats[group_name][view_name]
         if view_name in self._nonnegative_weights and group_name in self._nonnegative_factors:
-            arr = arr - viewstats.min  # can't use -= due to dask
+            tosubtract = viewstats.min
         else:
-            arr = arr - viewstats.mean
+            tosubtract = viewstats.mean
+        arr = arr - np.broadcast_to(
+            tosubtract, arr.shape
+        )  # need to manually broadcast to force sparse to autoconvert to dense instead of raising
         return arr
 
     @property

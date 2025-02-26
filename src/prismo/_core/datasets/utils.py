@@ -34,23 +34,36 @@ def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
     import dask.dataframe as dd
     import sparse
 
+    if isinstance(arr, pd.DataFrame):
+        return dd.from_pandas(arr, sort=False)
+
+    elemsize = arr.dtype.itemsize
+    chunksize_mb = 500  # TODO: make it a global setting
+
+    chunksize = chunksize_mb * 1024 * 1024
     if issparse(arr):
         if isinstance(arr, csr_array | csr_matrix):
             arr.sort_indices()
             arr = sparse.GCXS((arr.data, arr.indices, arr.indptr), shape=arr.shape, compressed_axes=(0,))
+
+            chunks = (chunksize // (arr.shape[1] * elemsize), -1)
         elif isinstance(arr, csc_array | csc_matrix):
             arr.sort_indices()
             arr = sparse.GCXS((arr.data, arr.indices, arr.indptr), shape=arr.shape, compressed_axes=(1,))
+
+            chunks = (-1, chunksize // (arr.shape[0] * elemsize))
         elif isinstance(arr, coo_array):
             arr = sparse.COO(arr.coords, arr.data, shape=arr.shape)
+            chunks = (-1, -1)
         elif isinstance(arr, coo_matrix):
             arr = sparse.COO(np.stack((arr.row, arr.col), axis=0), arr.data, shape=arr.shape)
+            chunks = (-1, -1)
         else:
             arr = sparse.asarray(arr, format="csr")
-    if isinstance(arr, pd.DataFrame):
-        return dd.from_pandas(arr, sort=False)
+            chunks = (chunksize // (arr.shape[1] * elemsize), -1)
     else:
-        return da.from_array(arr, chunks=np.full(len(arr.shape), fill_value=-1))
+        chunks = (-1, -1)
+    return da.from_array(arr, chunks=chunks)
 
 
 def from_dask(arr, convert_coo=True):

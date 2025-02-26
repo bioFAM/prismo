@@ -454,7 +454,7 @@ class PRISMO:
 
         prior_masks = {}
 
-        if annotations is not None:
+        if informed:
             # TODO: annotations need to be processed if not aligned or full
             n_informed_factors = annotations[data.view_names[0]].shape[0]
             if data.view_names[0] in annotations_names:

@@ -48,28 +48,32 @@ class Preprocessor:
 class PrismoDataset(Dataset, ABC):
     """Base class for PRISMO datasets, compatible with the PyTorch dataloader interface.
 
-    The constructor of subclasses must additionally take a **kwargs argument which is ignored. This ensures that
-    users can simply call `PrismoDataset(data, args)`, where args may be a union of arguments suitable for different
-    data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
-    constructor arguments except for the first (which should be the data) to be keyword arguments. Subclass
-    constructors must also take arguments `sample_names` and `feature_names`, both of which default to `None`.
-    If given, they specify the global sample and feature names, respectively, to align the data to.
+    Key concepts:
+        We distinguish between global and local samples/features. Global samples are the union of samples from all
+        groups and views. Local samples correspond to one view in one group. Global samples may be differently
+        ordered than local samples and may contain samples not present in individual views.
 
-    Conceptually, we distinguish between global and local samples/features. Global samples are the union of samples
-    from all groups and views. Local samples correspond to one view in one group. Global samples may be differently
-    ordered than local samples and may contain samples not present in individual views. Subclass must therefore
-    implement methods to align local samples to global samples and vice versa. Similarly for features.
+    Requirements for subclasses:
+        Subclasses must implement methods to align local samples to global samples and vice versa. Similarly for features.
 
-    The preprocessor must be able to process an entire minibatch. If it is a function, it will have two functions
-    injected into its global namespace: `align_global_array_to_local` and `align_local_array_to_global`. These are
-    methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
-    an instance of a class, these two functions will be added to its instance attributes. The preprocessor must
-    accept five arguments: A (possibly sparse) array with data, a 1D index array indicating which global samples
-    correspond to which samples in the current minibatch, a 1D index array indicating which global features
-    correspond to features in the current minibatch, the group name, and the view name. If the preprocessor subsets
-    samples or features, it must correspondingly subset the nonmissing arrays. Instead of boolean arrays, `slice(None)`
-    may be passed. The preprocessor must return a 3-tuple containing the preprocessed data and the nonmissing
-    arrays/slices.
+        The constructor of subclasses must take a **kwargs argument which is ignored. This ensures that users can
+        simply call `PrismoDataset(data, args)`, where args may be a union of arguments suitable for different
+        data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
+        constructor arguments except for the first (which should be the data) to be keyword arguments. Subclass
+        constructors must also take arguments `sample_names` and `feature_names`, both of which default to `None`.
+        If given, they specify the global sample and feature names, respectively, to align the data to.
+
+    Preprocessor interface:
+        The preprocessor must be able to process an entire minibatch. If it is a function, it will have two functions
+        injected into its global namespace: `align_global_array_to_local` and `align_local_array_to_global`. These are
+        methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
+        an instance of a class, these two functions will be added to its instance attributes. The preprocessor must
+        accept five arguments: A (possibly sparse) array with data, a 1D index array indicating which global samples
+        correspond to which samples in the current minibatch, a 1D index array indicating which global features
+        correspond to features in the current minibatch, the group name, and the view name. If the preprocessor subsets
+        samples or features, it must correspondingly subset the index arrays. Instead of index arrays, `slice(None)`
+        may be passed. The preprocessor must return a 3-tuple containing the preprocessed data and the index
+        arrays/slices.
 
     Args:
         data: The data. This will be stored as `self._data` and can be accessed and manipulaed by subclasses.

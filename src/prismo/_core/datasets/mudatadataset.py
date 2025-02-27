@@ -8,6 +8,7 @@ from mudata import MuData
 from numpy.typing import NDArray
 from scipy import sparse
 
+from ..settings import settings
 from .base import ApplyCallable, Preprocessor, PrismoDataset
 from .utils import anndata_to_dask, apply_to_nested, array_to_dask, from_dask, have_dask
 
@@ -371,11 +372,14 @@ class MuDataDataset(PrismoDataset):
     def _apply_by_group_view(
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
-        if have_dask():
-            data = _mudata_to_dask(self._orig_data, with_extra=False)[self._sample_selection, self._feature_selection]
-        else:
-            _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
-            data = self._data
+        if settings.use_dask:
+            if have_dask():
+                data = _mudata_to_dask(self._orig_data, with_extra=False)[
+                    self._sample_selection, self._feature_selection
+                ]
+            else:
+                _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+                data = self._data
         ret = {}
         for group_name, group_idx in self._groups.items():
             cret = {}
@@ -388,12 +392,13 @@ class MuDataDataset(PrismoDataset):
     def _apply_by_view(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         data = self._data
         if self._sample_selection != slice(None) or self._feature_selection != slice(None):
-            if have_dask():
-                data = _mudata_to_dask(self._orig_data, with_extra=False)[
-                    self._sample_selection, self._feature_selection
-                ]
-            else:
-                _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+            if settings.use_dask:
+                if have_dask():
+                    data = _mudata_to_dask(self._orig_data, with_extra=False)[
+                        self._sample_selection, self._feature_selection
+                    ]
+                else:
+                    _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
         ret = {}
         for modname, mod in data.mod.items():
             groups = np.empty((mod.n_obs,), dtype="O")
@@ -407,11 +412,14 @@ class MuDataDataset(PrismoDataset):
         return ret
 
     def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
-        if have_dask():
-            data = _mudata_to_dask(self._orig_data, with_extra=False)[self._sample_selection, self._feature_selection]
-        else:
-            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
-            data = self._data
+        if settings.use_dask:
+            if have_dask():
+                data = _mudata_to_dask(self._orig_data, with_extra=False)[
+                    self._sample_selection, self._feature_selection
+                ]
+            else:
+                _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+                data = self._data
         ret = {}
         for group_name, group_idx in self._groups.items():
             subdata = data[group_idx, :]

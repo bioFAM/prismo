@@ -247,8 +247,8 @@ def plot_overview(
     Args:
         data: A nested dictionary where the first level keys are group names,
             and the second level keys are view names. The values are AnnData objects.
-        group_by: Columns of `.obs` in :mudata:ref:`MuData` objects to group data by.
-            Ignored if the input data is not a :mudata:ref:`MuData` object.
+        group_by: Columns of `.obs` in :external:py:class:`MuData<mudata.MuData>` objects to group data by.
+            Ignored if the input data is not a :external:py:class:`MuData<mudata.MuData>` object.
         missingcolor: The color to use for missing data.
         nonmissingcolor: The color to use for non-missing data.
         figsize: Figure size in inches.

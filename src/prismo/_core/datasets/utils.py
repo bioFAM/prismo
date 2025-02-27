@@ -19,6 +19,8 @@ from scipy.sparse import (
     spmatrix,
 )
 
+from ..settings import settings
+
 AlignmentMap = namedtuple("AlignmentMap", ["l2g", "g2l"])
 
 
@@ -38,9 +40,8 @@ def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
         return dd.from_pandas(arr, sort=False)
 
     elemsize = arr.dtype.itemsize
-    chunksize_mb = 500  # TODO: make it a global setting
 
-    chunksize = chunksize_mb * 1024 * 1024
+    chunksize = settings.dask_chunksize_mb * 1024 * 1024
     if issparse(arr):
         if isinstance(arr, csr_array | csr_matrix):
             arr.sort_indices()
@@ -106,5 +107,5 @@ def anndata_to_dask(adata: AnnData):
         attr = getattr(adata, attrname)
         dask_attr = getattr(dask_adata, attrname)
         for k, v in attr.items():
-            dask_attr[k] = array_to_dask(v)
+            dask_attr._data[k] = array_to_dask(v)
     return dask_adata

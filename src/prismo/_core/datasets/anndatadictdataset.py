@@ -8,6 +8,7 @@ import pandas as pd
 from numpy.typing import NDArray
 from scipy import sparse
 
+from ..settings import settings
 from .base import ApplyCallable, Preprocessor, PrismoDataset
 from .utils import AlignmentMap, anndata_to_dask, apply_to_nested, from_dask, have_dask
 
@@ -364,7 +365,7 @@ class AnnDataDictDataset(PrismoDataset):
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
         havedask = have_dask()
-        if not havedask:
+        if not havedask and settings.use_dask:
             _logger.warning("Could not import dask. Input arrays may be copied.")
         ret = {}
         for group_name, group in self._data.items():
@@ -375,7 +376,7 @@ class AnnDataDictDataset(PrismoDataset):
                 vobsmap = gobsmap.get(view_name)
                 vvarmap = gvarmap.get(view_name)
                 if vobsmap is not None or vvarmap is not None:
-                    if havedask:
+                    if havedask and settings.use_dask:
                         view = anndata_to_dask(view)
                     obsidx = slice(None) if vobsmap is None else vobsmap.g2l[vobsmap.g2l >= 0]
                     varidx = slice(None) if vvarmap is None else vvarmap.g2l[vvarmap.g2l >= 0]
@@ -389,13 +390,13 @@ class AnnDataDictDataset(PrismoDataset):
     def _apply_by_view(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         havedask = have_dask()
         ret = {}
-        if not havedask:
+        if not havedask and settings.use_dask:
             _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
         for view_name in self.view_names:
             data = {}
             convert = False
             for group_name, group in self._data.items():
-                cdata = anndata_to_dask(group[view_name]) if havedask else group[view_name]
+                cdata = anndata_to_dask(group[view_name]) if havedask and settings.use_dask else group[view_name]
                 obsmap = self._obsmap[group_name].get(view_name)
                 if obsmap is not None:
                     cdata = cdata[obsmap.g2l[obsmap.g2l >= 0], :]
@@ -430,14 +431,14 @@ class AnnDataDictDataset(PrismoDataset):
     def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         havedask = have_dask()
         ret = {}
-        if not havedask:
+        if not havedask and settings.use_dask:
             _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
         for group_name, group in self._data.items():
             data = {}
             convert = False
             gvarmap = self._varmap[group_name]
             for view_name, view in group.items():
-                cdata = anndata_to_dask(view) if havedask else view
+                cdata = anndata_to_dask(view) if havedask and settings.use_dask else view
                 varmap = gvarmap.get(view_name)
                 if varmap is not None:
                     cdata = cdata[:, varmap.g2l[varmap.g2l >= 0]]

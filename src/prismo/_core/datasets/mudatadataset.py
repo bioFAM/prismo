@@ -62,9 +62,7 @@ class MuDataDataset(PrismoDataset):
                 if group_name in sample_names
             )
         ):
-            groups = self._orig_data.obs.groupby(
-                self._group_by if self._group_by is not None else lambda x: "group_1"
-            ).indices
+            groups = self._get_groups(self._orig_data.obs)
             selection = pd.Index(())
             for group_name, group_idx in groups.items():
                 group_sample_names = sample_names.get(group_name)
@@ -84,9 +82,7 @@ class MuDataDataset(PrismoDataset):
             self._data = self._orig_data[:, self._feature_selection]
             self._sample_selection = slice(None)
 
-        self._groups = self._data.obs.groupby(
-            self._group_by if self._group_by is not None else lambda x: "group_1"
-        ).indices
+        self._groups = self._get_groups(self._data.obs)
 
         self._needs_alignment = {}
         for group_name, group_idx in self._groups.items():
@@ -96,6 +92,13 @@ class MuDataDataset(PrismoDataset):
                 if np.any(obsmap == 0) or np.any(np.diff(obsmap) != 1):
                     gneeds_align.add(view_name)
             self._needs_alignment[group_name] = gneeds_align
+
+    def _get_groups(self, df):
+        return df.groupby(
+            pd.Categorical(df[self._group_by]).rename_categories(lambda x: str(x))
+            if self._group_by is not None
+            else lambda x: "group_1"
+        ).indices
 
     def reindex_features(self, feature_names: dict[str, NDArray[str]] | None = None):
         if feature_names is not None and any(

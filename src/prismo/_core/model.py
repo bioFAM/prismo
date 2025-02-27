@@ -52,8 +52,7 @@ class Generative(PyroModule):
         if isinstance(nonnegative_factors, bool):
             nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
 
-        self._have_prior_scales = isinstance(prior_scales, dict) and len(prior_scales)
-        if self._have_prior_scales:
+        if isinstance(prior_scales, dict) and len(prior_scales):
             for vn, ps in prior_scales.items():
                 self.register_buffer(f"prior_scales_{vn}", torch.as_tensor(ps), persistent=False)
 
@@ -90,8 +89,8 @@ class Generative(PyroModule):
 
         self.sample_dict: dict[str, torch.Tensor] = {}
 
-    def _get_prior_scale(self, group: str):
-        return getattr(self, f"prior_scales_{group}")
+    def _get_prior_scale(self, view_name: str):
+        return getattr(self, f"prior_scales_{view_name}", None)
 
     def get_gp_group_idx(self, group: str):
         return getattr(self, f"gp_group_{group}")
@@ -193,9 +192,7 @@ class Generative(PyroModule):
         with plates["factors"], plates[f"samples_{group_name}"]:
             return pyro.sample(f"z_{group_name}", dist.Laplace(torch.zeros((1,)), torch.ones((1,))))
 
-    def _sample_factors_horseshoe(self, group_name, plates, **kwargs):
-        regularized = kwargs.get("regularized", True)
-
+    def _sample_factors_horseshoe(self, group_name, plates, regularized=True, **kwargs):
         global_scale = pyro.sample(f"global_scale_z_{group_name}", dist.HalfCauchy(torch.ones((1,))))
         with plates["factors"]:
             inter_scale = pyro.sample(f"inter_scale_z_{group_name}", dist.HalfCauchy(torch.ones((1,))))
@@ -220,7 +217,7 @@ class Generative(PyroModule):
                 s = pyro.sample(f"s_z_{group_name}", dist.Bernoulli(theta))
                 return pyro.sample(f"z_{group_name}", dist.Normal(torch.zeros(1), torch.ones(1) / (alpha + EPS))) * s
 
-    def _sample_factors_gp(self, plates, **kwargs):
+    def _sample_factors_gp(self, plates, group_idx, covariates, **kwargs):
         gp = self.gp
 
         # Inducing values p(u)
@@ -229,7 +226,7 @@ class Generative(PyroModule):
         pyro.sample("gp.u", prior_distribution)
 
         # Draw samples from p(f)
-        f_dist = gp(kwargs.get("group_idx")[..., None], kwargs.get("covariates"), prior=True)
+        f_dist = gp(group_idx[..., None], covariates, prior=True)
         f_dist = dist.Normal(loc=f_dist.mean, scale=f_dist.stddev).to_event(len(f_dist.event_shape) - 1)
 
         with plates["gp_batch"]:
@@ -248,10 +245,7 @@ class Generative(PyroModule):
         with plates["factors"], plates[f"features_{view_name}"]:
             return pyro.sample(f"w_{view_name}", dist.Laplace(torch.zeros((1,)), torch.ones((1,))))
 
-    def _sample_weights_horseshoe(self, view_name, plates, **kwargs):
-        regularized = kwargs.get("regularized", True)
-        prior_scales = kwargs.get("prior_scales", None)
-
+    def _sample_weights_horseshoe(self, view_name, plates, regularized=True, prior_scales=None, **kwargs):
         regularized |= prior_scales is not None
 
         global_scale = pyro.sample(f"global_scale_w_{view_name}", dist.HalfCauchy(torch.ones((1,))))
@@ -267,7 +261,7 @@ class Generative(PyroModule):
                     )
                     c = torch.sqrt(caux)
                     if prior_scales is not None:
-                        c = c * prior_scales.unsqueeze(-1)
+                        c = c * prior_scales[..., None]
                     local_scale = (c * local_scale) / torch.sqrt(c**2 + local_scale**2)
 
                 return pyro.sample(f"w_{view_name}", dist.Normal(torch.zeros((1,)), local_scale))
@@ -353,10 +347,7 @@ class Generative(PyroModule):
 
         # sample weights and transform if non-negative is required
         for view_name in self.view_names:
-            prior_scales = None
-            if self._have_prior_scales:
-                prior_scales = self._get_prior_scale(view_name)
-
+            prior_scales = self._get_prior_scale(view_name)
             self.sample_dict[f"w_{view_name}"] = self.sample_weights[view_name](
                 view_name, plates, prior_scales=prior_scales
             )
@@ -884,7 +875,7 @@ class Variational(PyroModule):
                     z_scale = z_scale.index_select(-1, index)
                 return pyro.sample(f"z_{group_name}", dist.Normal(z_loc, z_scale))
 
-    def _sample_factors_gp(self, plates, **kwargs):
+    def _sample_factors_gp(self, plates, group_idx, covariates, **kwargs):
         gp = self.generative.gp
 
         # Inducing values q(u)
@@ -894,7 +885,7 @@ class Variational(PyroModule):
 
         with plates["gp_batch"]:
             # Draw samples from q(f)
-            f_dist = gp(kwargs.get("group_idx")[..., None], kwargs.get("covariates"), prior=False)
+            f_dist = gp(group_idx[..., None], covariates, prior=False)
             f_dist = dist.Normal(f_dist.mean, f_dist.stddev).to_event(len(f_dist.event_shape) - 1)
             pyro.sample("gp.f", f_dist.mask(False))
 
@@ -915,9 +906,8 @@ class Variational(PyroModule):
         with plates["factors"], plates[f"features_{view_name}"]:
             return pyro.sample(f"w_{view_name}", dist.Laplace(w_loc, w_scale))
 
-    def _sample_weights_horseshoe(self, view_name, plates, **kwargs):
-        regularized = kwargs.get("regularized", True)
-        regularized |= kwargs.get("prior_scales", None) is not None
+    def _sample_weights_horseshoe(self, view_name, plates, regularized=True, prior_scales=None, **kwargs):
+        regularized |= prior_scales is not None
 
         global_scale_loc, global_scale_scale = self._get_loc_and_scale(f"global_scale_w_{view_name}")
         pyro.sample(f"global_scale_w_{view_name}", dist.LogNormal(global_scale_loc, global_scale_scale))

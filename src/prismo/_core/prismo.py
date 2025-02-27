@@ -474,11 +474,7 @@ class PRISMO:
                 }
 
             for vn in data.view_names:
-                if vn not in prior_masks:
-                    prior_masks[vn] = np.zeros(
-                        (n_dense_factors + n_informed_factors, data.n_features[vn]), dtype=np.bool
-                    )
-                elif (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
+                if vn in prior_masks and (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
                     _logger.warn(
                         f"Horseshoe prior required for annotations, but got {prior} for view {vn}. Annotations will be ignored."
                     )
@@ -584,7 +580,7 @@ class PRISMO:
         self._sparse_weights_probabilities = variational.get_sparse_weight_probabilities()
         self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
         self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
-        self._covariates, self._covariates_names = covariates.covariates, covariates.covariates_names
+        self._covariates, self._covariates_names = (covariates.covariates, covariates.covariates_names)
         self._gps = self._get_gps(self._covariates)
         self._train_loss_elbo = np.asarray(train_loss_elbo)
 
@@ -717,15 +713,22 @@ class PRISMO:
         init_tensor = self._initialize_factors(data)
 
         prior_scales = None
-        if self._annotations is not None:
+        if self.n_informed_factors > 0:
             prior_scales = {
-                vn: np.clip(vm.astype(np.float32) + self._model_opts.prior_penalty, 1e-8, 1.0)
-                for vn, vm in self._annotations.items()
+                vn: np.clip(
+                    self._annotations.get(
+                        vn, np.broadcast_to(0, (self.n_dense_factors + self.n_informed_factors, self.n_features[vn]))
+                    ).astype(np.float32)
+                    + self._model_opts.prior_penalty,
+                    1e-8,
+                    1.0,
+                )
+                for vn in self.view_names
             }
             if self._n_dense_factors > 0:
                 dense_scale = 1.0
-                for vn in self._annotations.keys():
-                    prior_scales[vn][: self._n_dense_factors, :] = dense_scale
+                for scale in prior_scales.values():
+                    scale[: self._n_dense_factors, :] = dense_scale
 
         covariates = CovariatesDataset(data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key)
         svi, variational, gp_warp_groups_order = self._setup_svi(

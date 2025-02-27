@@ -127,7 +127,7 @@ class Generative(PyroModule):
 
         for view_name in self.view_names:
             plates[f"features_{view_name}"] = pyro.plate(
-                "plate_features_" + view_name, self.n_features[view_name], dim=self._feature_plate_dim
+                f"plate_features_{view_name}", self.n_features[view_name], dim=self._feature_plate_dim
             )
 
         plates["factors"] = pyro.plate("plate_factors", self.n_factors, dim=-3)
@@ -241,11 +241,11 @@ class Generative(PyroModule):
             return pyro.sample("z", dist.Normal(f, (1 - outputscale).clamp(1e-3, 1 - 1e-3)))
 
     def _sample_weights_normal(self, view_name, plates, **kwargs):
-        with plates["factors"], plates["features_" + view_name]:
+        with plates["factors"], plates[f"features_{view_name}"]:
             return pyro.sample(f"w_{view_name}", dist.Normal(torch.zeros((1,)), torch.ones((1,))))
 
     def _sample_weights_laplace(self, view_name, plates, **kwargs):
-        with plates["factors"], plates["features_" + view_name]:
+        with plates["factors"], plates[f"features_{view_name}"]:
             return pyro.sample(f"w_{view_name}", dist.Laplace(torch.zeros((1,)), torch.ones((1,))))
 
     def _sample_weights_horseshoe(self, view_name, plates, **kwargs):
@@ -257,7 +257,7 @@ class Generative(PyroModule):
         global_scale = pyro.sample(f"global_scale_w_{view_name}", dist.HalfCauchy(torch.ones((1,))))
         with plates["factors"]:
             inter_scale = pyro.sample(f"inter_scale_w_{view_name}", dist.HalfCauchy(torch.ones((1,))))
-            with plates["features_" + view_name]:
+            with plates[f"features_{view_name}"]:
                 local_scale = pyro.sample(f"local_scale_w_{view_name}", dist.HalfCauchy(torch.ones((1,))))
                 local_scale = local_scale * inter_scale * global_scale
 
@@ -276,12 +276,12 @@ class Generative(PyroModule):
         with plates["factors"]:
             alpha = pyro.sample(f"alpha_w_{view_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
             theta = pyro.sample(f"theta_w_{view_name}", dist.Beta(torch.ones((1,)), torch.ones((1,))))
-            with plates["features_" + view_name]:
+            with plates[f"features_{view_name}"]:
                 s = pyro.sample(f"s_w_{view_name}", dist.Bernoulli(theta))
                 return pyro.sample(f"w_{view_name}", dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
 
     def _sample_dispersion_gamma(self, view_name, plates, **kwargs):
-        with plates["features_" + view_name]:
+        with plates[f"features_{view_name}"]:
             return pyro.sample(f"dispersion_{view_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
 
     def _dist_obs_normal(self, loc, **kwargs):

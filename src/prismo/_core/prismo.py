@@ -420,8 +420,10 @@ class PRISMO:
                     by_group=False,
                 )
 
+        msg = []
         for view_name, likelihood in self._model_opts.likelihoods.items():
-            _logger.info(f"{view_name}: {likelihood}")
+            msg.append(f"{view_name}: {likelihood}")
+        _logger.info("Using these likelihoods: " + "; ".join(msg))
 
     def _setup_annotations(self, data):
         annotations = self._model_opts.annotations
@@ -1194,8 +1196,6 @@ class PRISMO:
         return self._get_component(annotations, return_type)
 
     def _setup_device(self, device):
-        _logger.info("Setting up device...")
-
         device = torch.device(device)
         tens = torch.tensor(())
         try:

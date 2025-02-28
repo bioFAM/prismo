@@ -1,5 +1,4 @@
 import logging
-import random
 import time
 from collections import defaultdict
 from dataclasses import MISSING, asdict, dataclass, field, fields
@@ -712,6 +711,9 @@ class PRISMO:
             self._train_opts.batch_size = data.n_samples_total
 
     def _fit(self, data, preprocessor):
+        _logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
+        pyro.set_rng_seed(self._train_opts.seed)
+
         init_tensor = self._initialize_factors(data)
 
         prior_scales = None
@@ -737,13 +739,6 @@ class PRISMO:
             prior_scales, init_tensor, covariates.covariates, preprocessor.feature_means, preprocessor.sample_means
         )
 
-        _logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
-        random.seed(self._train_opts.seed)
-        np.random.seed(self._train_opts.seed)
-        torch.manual_seed(self._train_opts.seed)
-        torch.cuda.manual_seed_all(self._train_opts.seed)
-        pyro.set_rng_seed(self._train_opts.seed)
-
         # clean start
         _logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)
@@ -764,7 +759,9 @@ class PRISMO:
         else:
             loader = DataLoader(
                 dataset,
-                batch_sampler=PrismoBatchSampler(data.n_samples, self._train_opts.batch_size, False),
+                batch_sampler=PrismoBatchSampler(
+                    data.n_samples, self._train_opts.batch_size, False, generator=torch.default_generator
+                ),
                 collate_fn=default_convert,
                 num_workers=self._train_opts.num_workers,
                 pin_memory=self._train_opts.pin_memory,

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from numpy.typing import NDArray
 from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
 
@@ -14,14 +15,20 @@ class PrismoBatchSampler(Sampler[dict[str, list[int]]]):
     are concatenated to yield the length of the largest dataset.
     """
 
-    def __init__(self, n_samples: dict[str, int], batch_size: int, drop_last: bool = False):
+    def __init__(
+        self, n_samples: dict[str, int], batch_size: int, drop_last: bool = False, generator: torch.Generator = None
+    ):
         super().__init__()
         self._n_samples = n_samples
         self._largest_group = max(n_samples.values())
         self._batch_size = batch_size
         self._drop_last = drop_last
         self._samplers = {
-            k: BatchSampler(RandomSampler(range(nsamples), num_samples=self._largest_group), batch_size, drop_last)
+            k: BatchSampler(
+                RandomSampler(range(nsamples), num_samples=self._largest_group, generator=generator),
+                batch_size,
+                drop_last,
+            )
             for k, nsamples in self._n_samples.items()
         }
 

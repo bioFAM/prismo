@@ -131,6 +131,7 @@ def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:
     """Infer the likelihood for a view based on the data distribution."""
     data = view.X.data if issparse(view.X) else view.X
     xp = array_namespace(data)
+    data = data[~xp.isnan(data)]
     if xp.all(xp.isclose(data, 0) | xp.isclose(data, 1)):  # TODO: set correct atol value
         return "Bernoulli"
     elif xp.allclose(data, xp.round(data)) and data.min() >= 0:
@@ -143,6 +144,7 @@ def validate_likelihood(view: AnnData, group_name: str, view_name: str, likeliho
     """Validate the likelihood for a view based on the data distribution."""
     data = view.X.data if issparse(view.X) else view.X
     xp = array_namespace(data)
+    data = data[~xp.isnan(data)]
     if likelihood == "Bernoulli" and not xp.all(
         xp.isclose(data, 0) | xp.isclose(data, 1)
     ):  # TODO: set correct atol value

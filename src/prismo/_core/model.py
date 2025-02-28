@@ -278,14 +278,12 @@ class Generative(PyroModule):
         with plates[f"features_{view_name}"]:
             return pyro.sample(f"dispersion_{view_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
 
-    def _dist_obs_normal(self, loc, **kwargs):
-        view_name = kwargs["view_name"]
+    def _dist_obs_normal(self, loc, view_name, **kwargs):
         precision = self.sample_dict[f"dispersion_{view_name}"]
         return dist.Normal(loc, torch.reciprocal(precision + EPS))
 
-    def _dist_obs_gamma_poisson(self, loc, **kwargs):
-        view_name = kwargs["view_name"]
-        mean = kwargs["sample_means"][kwargs["group_name"]][kwargs["view_name"]]
+    def _dist_obs_gamma_poisson(self, loc, group_name, view_name, sample_means, **kwargs):
+        mean = sample_means[group_name][view_name]
         dispersion = self.sample_dict[f"dispersion_{view_name}"]
         mean[torch.isnan(mean)] = (
             0  # if a sample is missing from a view, all features will be nan, and the mean of that sample will also be nan. This sample will be masked anyway
@@ -373,10 +371,13 @@ class Generative(PyroModule):
                 loc = torch.einsum("...ijk,...ilj->...jlk", z, w)
 
                 obs = view_obs.T
+                obs_mask = ~torch.isnan(obs)
+                obs = torch.nan_to_num(obs, nan=0)
 
                 dist_parameterized = self.dist_obs[view_name](
                     loc,
                     obs=obs,
+                    obs_mask=obs_mask,
                     group_name=group_name,
                     view_name=view_name,
                     feature_means=feature_means,
@@ -384,6 +385,7 @@ class Generative(PyroModule):
                 )
 
                 with (
+                    pyro.poutine.mask(mask=obs_mask),
                     pyro.poutine.scale(scale=self.view_scales[view_name]),
                     pyro.plate(
                         f"features_{group_name}_{view_name}",

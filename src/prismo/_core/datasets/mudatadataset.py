@@ -122,7 +122,7 @@ class MuDataDataset(PrismoDataset):
             self._data = self._orig_data[self._sample_selection, selection]
             self._feature_selection = selection
         else:
-            self._data = self._orig_data[:, self._sample_selection]
+            self._data = self._orig_data[self._sample_selection, :]
             self._feature_selection = slice(None)
 
     @staticmethod
@@ -273,9 +273,9 @@ class MuDataDataset(PrismoDataset):
                 if sparse.issparse(mod.X):
                     modmissing = mod.X.copy()
                     modmissing.data = np.isnan(modmissing.data)
-                    modmissing = np.asarray(modmissing.sum(axis=1)).squeeze() > 0
+                    modmissing = ~(np.asarray(modmissing.sum(axis=1)).squeeze() == 0)
                 else:
-                    modmissing = np.isnan(mod.X).any(axis=1)
+                    modmissing = np.isnan(mod.X).all(axis=1)
                 modmissing = self._align_array_to_samples(modmissing, modname, subdata, fill_value=True)
                 dfs.append(
                     pd.DataFrame(

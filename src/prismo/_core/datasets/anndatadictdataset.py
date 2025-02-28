@@ -276,9 +276,9 @@ class AnnDataDictDataset(PrismoDataset):
                 if sparse.issparse(view.X):
                     viewmissing = view.X.copy()
                     viewmissing.data = np.isnan(viewmissing.data)
-                    viewmissing = np.asarray(viewmissing.sum(axis=1)).squeeze() > 0
+                    viewmissing = ~(np.asarray(viewmissing.sum(axis=1)).squeeze() == 0)
                 else:
-                    viewmissing = np.isnan(view.X).any(axis=1)
+                    viewmissing = np.isnan(view.X).all(axis=1)
                 viewmissing = self.align_local_array_to_global(
                     viewmissing, group_name, view_name, "samples", fill_value=True
                 )

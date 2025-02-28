@@ -110,7 +110,7 @@ class PrismoDataset(Dataset, ABC):
             return super().__new__(cls)
         for subcls in __class__._subclasses:
             if subcls._accepts_input(data):
-                return subcls(data, *args, **kwargs)
+                return subcls.__new__(subcls, data, *args, **kwargs)
         raise NotImplementedError("Input data type not recognized.")
 
     @staticmethod

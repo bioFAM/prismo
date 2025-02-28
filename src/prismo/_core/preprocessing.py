@@ -33,7 +33,7 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
-        view_vars = dataset.apply(lambda adata, group_name, view_name: utils.var(adata.X, axis=0), by_group=False)
+        view_vars = dataset.apply(lambda adata, group_name, view_name: utils.nanvar(adata.X, axis=0), by_group=False)
         nonconstantfeatures = {}
         for view_name, viewvar in view_vars.items():
             # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
@@ -46,12 +46,14 @@ class PrismoPreprocessor(Preprocessor):
 
         dataset.reindex_features(nonconstantfeatures)
 
-        meanfunc = lambda mod, group_name, view_name, axis: utils.mean(mod.X, axis=axis)
+        meanfunc = lambda mod, group_name, view_name, axis: utils.nanmean(mod.X, axis=axis)
         self._feature_means = dataset.apply(meanfunc, axis=0)
         self._sample_means = dataset.apply(meanfunc, axis=1)
 
         self._viewstats = dataset.apply(
-            lambda adata, group_name, view_name: ViewStatistics(utils.mean(adata.X, axis=0), utils.min(adata.X, axis=0))
+            lambda adata, group_name, view_name: ViewStatistics(
+                utils.nanmean(adata.X, axis=0), utils.nanmin(adata.X, axis=0)
+            )
         )
 
         if self._scale_per_group:
@@ -80,14 +82,14 @@ class PrismoPreprocessor(Preprocessor):
                 align_to="features",
                 axis=0,
             )
-        return np.sqrt(utils.var(arr, axis=None))
+        return np.sqrt(utils.nanvar(arr, axis=None))
 
     def _calc_scale_grouped(self, adata: AnnData, group_name: str, view_name: str):
         if view_name not in self._views_to_scale:
             return None
 
         arr = self._center(adata.X, group_name, view_name)
-        arr = utils.var(arr, axis=None)
+        arr = utils.nanvar(arr, axis=None)
         xp = array_namespace(arr)
         return xp.sqrt(arr)
 

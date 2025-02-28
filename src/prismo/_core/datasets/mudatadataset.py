@@ -180,7 +180,9 @@ class MuDataDataset(PrismoDataset):
                     arr = arr.astype(self.cast_to, copy=False)
                 if sparse.issparse(arr):
                     arr = arr.toarray()
-                group[modname] = arr
+                group[modname] = np.asarray(
+                    arr
+                )  # arr may be an anndata._core.views.ArrayView, which is not recognized by PyTorch
             data[group_name] = group
             idx[group_name] = np.asarray(group_idx)
             nonmissing_obs[group_name] = gnonmissing_obs

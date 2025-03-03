@@ -314,7 +314,7 @@ def plot_variance_explained(
     else:
         raise ValueError("`group_by` argument must be either 'group' or 'view'.")
 
-    df_r2 = model.get_r2()
+    df_r2 = model.get_r2(ordered=True)
 
     combined_df = []
     if figsize is None:
@@ -333,7 +333,7 @@ def plot_variance_explained(
         p9.ggplot(combined_df, p9.aes(x=x, y="factor", fill="var_exp"))
         + p9.geom_tile()
         + p9.scale_fill_distiller(palette="OrRd", limits=(0, None), expand=(0, 0, 1.1, 0), name="Variance\nexplained")
-        + p9.labs(x=x.capitalize())
+        + p9.labs(x="", y="")
         + p9.theme(axis_text_x=p9.element_text(rotation=90), figure_size=figsize)
         + p9.facet_wrap(group_by)
     )

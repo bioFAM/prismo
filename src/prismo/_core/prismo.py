@@ -574,9 +574,6 @@ class PRISMO:
         self._weights = variational.get_weights()
         self._factors = variational.get_factors()
         self._dispersions = variational.get_dispersion()
-        self._df_r2_full, self._df_r2_factors, self._factor_order = self._sort_factors(
-            data, weights=self._weights.mean, factors=self._factors.mean
-        )
         self._sparse_factors_probabilities = variational.get_sparse_factor_probabilities()
         self._sparse_weights_probabilities = variational.get_sparse_weight_probabilities()
         self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
@@ -584,6 +581,12 @@ class PRISMO:
         self._covariates, self._covariates_names = (covariates.covariates, covariates.covariates_names)
         self._gps = self._get_gps(self._covariates)
         self._train_loss_elbo = np.asarray(train_loss_elbo)
+
+        self._df_r2_full, self._df_r2_factors, self._factor_order = self._sort_factors(
+            data,
+            weights=self.get_weights(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
+            factors=self.get_factors(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
+        )
 
         if self._train_opts.save_path is not False:
             self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
@@ -835,7 +838,7 @@ class PRISMO:
 
     def _r2_impl(self, y_true, factor, weights, view_name):
         # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
-        y_pred = factor.T @ weights
+        y_pred = factor @ weights
         likelihood = self._model_opts.likelihoods[view_name]
 
         if likelihood == "Normal":
@@ -864,12 +867,12 @@ class PRISMO:
             _logger.info(
                 f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
             )
-            return r2_full, [0.0] * factors.shape[0]
+            return r2_full, [0.0] * factors.shape[1]
 
         r2s = []
         if self._model_opts.likelihoods[view_name] == "Normal":
-            for k in range(factors.shape[0]):
-                r2s.append(self._r2_impl(y_true, factors[None, k, :], weights[None, k, :], view_name))
+            for k in range(factors.shape[1]):
+                r2s.append(self._r2_impl(y_true, factors[:, k, None], weights[None, k, :], view_name))
         else:
             # For models with a link function that is not the identity, such as Bernoulli, calculating R2 of single
             # factors leads to erroneous results, in the case of Bernoulli it can lead to every factor having negative
@@ -878,8 +881,8 @@ class PRISMO:
             # in a worse prediction than the intercept-only null model. As a workaround, we therefore calculate R2 of
             # a model with all factors except for one and subtract it from the R2 value of the full model to arrive at
             # the R2 of the current factor.
-            for k in range(factors.shape[0]):
-                cfactors = np.delete(factors, k, 0)
+            for k in range(factors.shape[1]):
+                cfactors = np.delete(factors, k, 1)
                 cweights = np.delete(weights, k, 0)
                 cr2 = self._r2_impl(y_true, cfactors, cweights, view_name)
                 r2s.append(max(0.0, r2_full - cr2))
@@ -901,7 +904,7 @@ class PRISMO:
             try:
                 return self._r2(
                     cdata,
-                    align_global_array_to_local(factors[group_name], group_name, view_name, align_to="samples", axis=1)[  # noqa F821
+                    align_global_array_to_local(factors[group_name], group_name, view_name, align_to="samples", axis=0)[  # noqa F821
                         :, sample_idx
                     ],
                     align_global_array_to_local(weights[view_name], group_name, view_name, align_to="features", axis=1),  # noqa F821

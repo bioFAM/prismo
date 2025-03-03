@@ -443,7 +443,7 @@ class MuDataDataset(PrismoDataset):
                 data, axis="var", join="outer", label="view", merge="unique", uns_merge=None, fill_value=np.nan
             )
             if (data.obs_names != subdata.obs_names).any():
-                data = data[: subdata.obs_names]
+                data = data[subdata.obs_names, :]
             cret = func(data, group_name, data.var["view"].to_numpy(), **kwargs, **gkwargs[group_name])
             ret[group_name] = apply_to_nested(cret, from_dask)
         return ret

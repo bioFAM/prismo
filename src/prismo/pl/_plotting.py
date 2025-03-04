@@ -761,6 +761,7 @@ def plot_weights(
     figsize: tuple[int, int] | None = None,
     nrows: int | None = None,
     ncols: int | None = None,
+    prettify: bool = True,
 ) -> p9.ggplot:
     """Plot the weights for a given factor and view.
 
@@ -774,12 +775,22 @@ def plot_weights(
         figsize: Figure size in inches.
         nrows: Number of rows in the faceted plot. If None, plotnine will determine automatically.
         ncols: Number of columns in the faceted plot. If None, plotnine will determine automatically.
+        prettify: If `True`, replace underscores with spaces, and abbreviate HALLMARK and REACTOME.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
         figsize = (3 * len(factors), 3 * len(views))
         if p9.options.limitsize:
             figsize = (min(figsize[0], 25), min(figsize[1], 25))
+            
+    if prettify:
+        df["factor"] = df["factor"].astype(str)
+        df["factor"] = df["factor"].replace({
+            "_": " ",
+            "HALLMARK": "[H]",
+            "REACTOME": "[R]"
+        }, regex=True)
+        df["factor"] = df["factor"].apply(lambda x: x[:40] + "..." if len(x) > 40 else x)
 
     grp = df.groupby(["factor", "view"])
     df["rank"] = grp["weight"].rank(ascending=False, method="min")

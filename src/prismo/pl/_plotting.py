@@ -37,7 +37,7 @@ _scale_color_zerosymmetric_diverging = partial(
 )
 
 
-def plot_factors_scatter(
+def factors_scatter(
     model: PRISMO,
     x: int,
     y: int,
@@ -94,7 +94,7 @@ def plot_factors_scatter(
     return plot
 
 
-def plot_covariates_factor_scatter(
+def covariates_factor_scatter(
     model: PRISMO,
     factor: int,
     group: str | None = None,
@@ -170,7 +170,7 @@ def plot_covariates_factor_scatter(
     return plot
 
 
-def plot_training_curve(
+def training_curve(
     model: PRISMO, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
 ) -> p9.ggplot:
     """Plot the training curve: -ELBO vs epoch.
@@ -193,7 +193,7 @@ def plot_training_curve(
     return plot
 
 
-def plot_factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
+def factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
     """Plot the correlation between factors.
 
     Args:
@@ -234,7 +234,7 @@ def plot_factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)
     return plot
 
 
-def plot_overview(
+def overview(
     data: dict[str, dict[str, AnnData]] | MuData | PrismoDataset,
     group_by: str | list[str] | None = None,
     missingcolor: str = "#214D83",
@@ -298,7 +298,7 @@ def plot_overview(
     return plot
 
 
-def plot_variance_explained(
+def variance_explained(
     model: PRISMO, group_by: Literal["group", "view"] = "group", figsize: tuple[float, float] | None = None
 ) -> p9.ggplot:
     """Plot the variance explained per factor in each group and view.
@@ -342,7 +342,7 @@ def plot_variance_explained(
     return combined_heatmap
 
 
-def plot_all_weights(
+def all_weights(
     model: PRISMO,
     clip: tuple[float, float] | None = (-1, 1),
     show_featurenames: bool = False,
@@ -386,7 +386,7 @@ def plot_all_weights(
     return plt
 
 
-def plot_factor(
+def factor(
     model: PRISMO,
     factor: int = 1,
     show_featurenames: bool = False,
@@ -506,7 +506,7 @@ def _plot_factors_covariate(
     return plt
 
 
-def plot_factors_covariate(
+def factors_covariate(
     model: PRISMO,
     covariate1: str | int,
     covariate2: str | int | None = None,
@@ -524,7 +524,7 @@ def plot_factors_covariate(
     return _plot_factors_covariate(model, covariate1, covariate2, gp=False, figsize=figsize)
 
 
-def plot_gp_covariate(
+def gp_covariate(
     model: PRISMO,
     ci_opacity: float = 0.3,
     group: Literal["facet", "color"] = "facet",
@@ -609,7 +609,7 @@ def plot_gp_covariate(
     return plt
 
 
-def plot_smoothness(model: PRISMO, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
+def smoothness(model: PRISMO, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
     """Plot the smoothness of the GP for each factor.
 
     Args:
@@ -694,7 +694,7 @@ _weights_inferred_color_scale = p9.scale_color_manual(
 )
 
 
-def plot_top_weights(
+def top_weights(
     model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
@@ -753,7 +753,7 @@ def plot_top_weights(
     return plot
 
 
-def plot_weights(
+def weights(
     model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
@@ -858,7 +858,7 @@ def _plot_sparse_probabilities_histogram(
     return plot
 
 
-def plot_weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
+def weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
     """Plot a histogram of probabilities that weights are non-zero for views with SnS prior.
 
     The spike-and-slab prior is a mixture distribution of a Normal distribution with a
@@ -876,7 +876,7 @@ def plot_weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | No
     )
 
 
-def plot_factor_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
+def factor_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
     """Plot a histogram of probabilities that factors are non-zero for views with SnS prior.
 
     The spike-and-slab prior is a mixture distribution of a Normal distribution with a

@@ -790,11 +790,10 @@ def plot_weights(
         df["factor"] = df["factor"].astype(str)
 
         if isinstance(prettify, bool):
-            df["factor"] = df["factor"].replace({"_": " "})
+            df["factor"] = df["factor"].str.replace("_", " ")
         elif isinstance(prettify, dict):
-            if "_" not in prettify:
-                prettify["_"] = " "
-            df["factor"] = df["factor"].replace(prettify, regex=True)
+            for k, v in prettify.items():
+                df["factor"] = df["factor"].str.replace(k, v)
         df["factor"] = df["factor"].apply(
             lambda x: x[:abbreviation_length] + "..." if len(x) > abbreviation_length else x
         )

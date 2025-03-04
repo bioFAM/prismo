@@ -983,6 +983,26 @@ class Variational(PyroModule):
 
         return self.sample_dict
 
+    def get_lr_func(self, base_lr: float, **kwargs):
+        sns_params = {
+            f"s_w_{view_name}" for view_name, view_prior in self.generative.weight_prior.items() if view_prior == "SnS"
+        } | {
+            f"s_z_{group_name}"
+            for group_name, group_prior in self.generative.factor_prior.items()
+            if group_prior == "SnS"
+        }
+
+        def lr_func(param_name):
+            idx = param_name.rfind(".")
+            if idx > -1:
+                param_name = param_name[idx + 1 :]
+            lr = base_lr
+            if param_name in sns_params:
+                lr *= 10
+            return dict(lr=lr, **kwargs)
+
+        return lr_func
+
     @torch.inference_mode()
     def get_factors(self):
         """Get all factor matrices, z_x."""

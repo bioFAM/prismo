@@ -247,6 +247,10 @@ class PRISMO:
             data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
         )
         self._adjust_options(data)
+
+        if self._data_opts.plot_data_overview:
+            plot_overview(data).show()
+
         self._setup_likelihoods(data)
         self._setup_annotations(data)
 
@@ -258,9 +262,6 @@ class PRISMO:
             self._data_opts.scale_per_group,
         )
         data.preprocessor = preprocessor
-
-        if self._data_opts.plot_data_overview:
-            plot_overview(data).show()
 
         self._metadata = data.get_obs()
         self._view_names = data.view_names
@@ -557,7 +558,8 @@ class PRISMO:
         gamma = 0.1
         lrd = gamma ** (1 / n_iterations)
         _logger.info(f"Decaying learning rate over {n_iterations} iterations.")
-        optimizer = ClippedAdam({"lr": self._train_opts.lr, "lrd": lrd})
+
+        optimizer = ClippedAdam(variational.get_lr_func(self._train_opts.lr, lrd=lrd))
 
         svi = SVI(
             model=pyro.poutine.scale(generative, scale=1.0 / self.n_samples_total),

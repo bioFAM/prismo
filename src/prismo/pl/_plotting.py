@@ -11,6 +11,7 @@ from anndata import AnnData
 from mizani import bounds
 from mizani.palettes import brewer_pal
 from mudata import MuData
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from .._core import PRISMO, PrismoDataset
@@ -759,10 +760,8 @@ def plot_weights(
     factors: int | str | Sequence[int] | Sequence[str] | None = None,
     pointsize: float = 2,
     figsize: tuple[int, int] | None = None,
-    nrows: int | None = None,
-    ncols: int | None = None,
-    prettify: bool | dict[str, str] = True,
-    abbreviation_length: int = 40,
+    nrow: int | None = None,
+    ncol: int | None = None,
 ) -> p9.ggplot:
     """Plot the weights for a given factor and view.
 
@@ -774,29 +773,14 @@ def plot_weights(
         pointsize: Point size for the annotated features. Points for unannotated features will be
             of size `0.25 * pointsize`.
         figsize: Figure size in inches.
-        nrows: Number of rows in the faceted plot. If None, plotnine will determine automatically.
-        ncols: Number of columns in the faceted plot. If None, plotnine will determine automatically.
-        prettify: If `True`, replace underscores with spaces. If dict, additionally replaces
-            keys in the dict with their values.
-        abbreviation_length: Maximum length of factor names. Is only applied if `prettify` is `True`.
+        nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
         figsize = (3 * len(factors), 3 * len(views))
         if p9.options.limitsize:
             figsize = (min(figsize[0], 25), min(figsize[1], 25))
-
-    if prettify:
-        df["factor"] = df["factor"].astype(str)
-
-        if isinstance(prettify, bool):
-            df["factor"] = df["factor"].str.replace("_", " ")
-        elif isinstance(prettify, dict):
-            for k, v in prettify.items():
-                df["factor"] = df["factor"].str.replace(k, v)
-        df["factor"] = df["factor"].apply(
-            lambda x: x[:abbreviation_length] + "..." if len(x) > abbreviation_length else x
-        )
 
     grp = df.groupby(["factor", "view"])
     df["rank"] = grp["weight"].rank(ascending=False, method="min")
@@ -847,18 +831,64 @@ def plot_weights(
         )
     )
 
-    if nrows is not None or ncols is not None:
+    if nrow is not None or ncol is not None:
         df["facet"] = df["view"] + " - " + df["factor"].astype(str)
         labeled_data["facet"] = labeled_data["view"] + " - " + labeled_data["factor"].astype(str)
 
-        facet_kwargs = {"scales": "free_y"}
-        if nrows is not None:
-            facet_kwargs["nrow"] = nrows
-        if ncols is not None:
-            facet_kwargs["ncol"] = ncols
-
-        plot += p9.facet_wrap("facet", **facet_kwargs)
+        plot += p9.facet_wrap("facet", scales="free_y", nrow=nrow, ncol=ncol)
     else:
         plot += p9.facet_grid("view", "factor", scales="free_y")
 
     return plot
+
+
+def _plot_sparse_probabilities_histogram(
+    probs: dict[NDArray], bins: int = 50, nrow: int | None = None, ncol: int | None = None
+):
+    df = []
+    for name, arr in probs.items():
+        df.append(pd.DataFrame({"key": name, "prob": arr.reshape(-1)}))
+    df = pd.concat(df, axis=0, ignore_index=True)
+    plot = (
+        p9.ggplot(df, p9.aes("prob"))
+        + p9.geom_histogram(bins=bins)
+        + p9.facet_wrap("key", scales="free", nrow=nrow, ncol=ncol)
+        + p9.labs(x="Probability")
+    )
+    return plot
+
+
+def plot_weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
+    """Plot a histogram of probabilities that weights are non-zero for views with SnS prior.
+
+    The spike-and-slab prior is a mixture distribution of a Normal distribution with a
+    potentially non-zero mean and a Dirac delta distribution at zero. This function plots
+    the posterior probability of the Normal mixture compoonent.
+
+    Args:
+        model: The PRISMO model.
+        bins: Number of histogram bins.
+        nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
+    """
+    return _plot_sparse_probabilities_histogram(
+        model.get_sparse_weight_probabilities("numpy"), bins=bins, nrow=nrow, ncol=ncol
+    )
+
+
+def plot_factor_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
+    """Plot a histogram of probabilities that factors are non-zero for views with SnS prior.
+
+    The spike-and-slab prior is a mixture distribution of a Normal distribution with a
+    potentially non-zero mean and a Dirac delta distribution at zero. This function plots
+    the posterior probability of the Normal mixture compoonent.
+
+    Args:
+        model: The PRISMO model.
+        bins: Number of histogram bins.
+        nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
+    """
+    return _plot_sparse_probabilities_histogram(
+        model.get_sparse_factor_probabilities("numpy"), bins=bins, nrow=nrow, ncol=ncol
+    )

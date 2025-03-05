@@ -300,11 +300,8 @@ def overview(
             p9.ggplot(obs_counts, p9.aes(x="view", y="count"))
             + p9.geom_bar(stat="identity", fill=missingcolor)
             + p9.facet_wrap("group", scales="free_x")
-            + p9.theme(
-                axis_text_x=p9.element_text(angle=90, ha="center", va="top"),
-                axis_ticks_x=p9.element_blank(),
-                figure_size=figsize,
-            )
+            + p9.scale_y_continuous(expand=(0, 0.0, 0.05, 0))
+            + p9.theme(figure_size=figsize, **_no_axis_ticks_y)
             + p9.labs(y="Number of non-missing observations", x="")
             + p9.coord_flip()
         )

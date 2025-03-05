@@ -907,7 +907,7 @@ class PRISMO:
                 return self._r2(
                     cdata,
                     align_global_array_to_local(factors[group_name], group_name, view_name, align_to="samples", axis=0)[  # noqa F821
-                        :, sample_idx
+                        sample_idx, :
                     ],
                     align_global_array_to_local(weights[view_name], group_name, view_name, align_to="features", axis=1),  # noqa F821
                     view_name,

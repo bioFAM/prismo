@@ -150,7 +150,7 @@ ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"notebooks/*" = ["F403", "F405"]
+"docs/notebooks/*" = ["F403", "F405", "D"]
 "docs/*" = ["I"]
 "docs/extensions/*" = ["D"]
 "tests/*" = ["D"]

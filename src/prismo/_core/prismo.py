@@ -23,7 +23,7 @@ from sklearn.decomposition import NMF, PCA
 from torch.utils.data import DataLoader, default_convert
 from torch.utils.data._utils.collate import collate  # this is documented, so presumably part of the public API
 
-from ..pl import plot_overview
+from .. import pl
 from . import gp, preprocessing
 from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
 from .io import MOFACompatOption, load_model, save_model
@@ -249,7 +249,7 @@ class PRISMO:
         self._adjust_options(data)
 
         if self._data_opts.plot_data_overview:
-            plot_overview(data).show()
+            pl.overview(data).show()
 
         self._setup_likelihoods(data)
         self._setup_annotations(data)

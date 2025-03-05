@@ -42,25 +42,25 @@ def mean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
 
 # TODO: use numba for this?
 def _nanmean_cs_aligned(arr: csr_array | csr_matrix | csc_array | csc_matrix):
-    axis = 0 if isinstance(arr, csr_array | csr_matrix) else 1
-    out = np.empty(arr.shape[axis], dtype=np.float64 if np.issubdtype(arr.dtype, np.integer) else arr.dtype)
-    for r in range(arr.shape[axis]):
+    axis = 1 if isinstance(arr, csr_array | csr_matrix) else 0
+    out = np.empty(arr.shape[1 - axis], dtype=np.float64 if np.issubdtype(arr.dtype, np.integer) else arr.dtype)
+    for r in range(out.size):
         data = arr.data[arr.indptr[r] : arr.indptr[r + 1]]
         mask = np.isnan(data)
-        out[r] = data[~mask].sum() / (arr.shape[1 - axis] - mask.sum())
+        out[r] = data[~mask].sum() / (arr.shape[axis] - mask.sum())
     return out
 
 
 # TODO: use numba for this?
 def _nanmean_cs_nonaligned(arr: csr_array | csr_matrix | csc_array | csc_matrix):
-    axis = 1 if isinstance(arr, csr_array | csr_matrix) else 0
-    out = np.zeros(arr.shape[axis], dtype=np.float64 if np.issubdtype(arr.dtype, np.integer) else arr.dtype)
-    n = np.full(arr.shape[axis], fill_value=arr.shape[1 - axis], dtype=np.uint32)
+    axis = 0 if isinstance(arr, csr_array | csr_matrix) else 1
+    out = np.zeros(arr.shape[1 - axis], dtype=np.float64 if np.issubdtype(arr.dtype, np.integer) else arr.dtype)
+    n = np.full(out.size, fill_value=arr.shape[axis], dtype=np.uint32)
     for r in range(arr.shape[axis]):
         idx = arr.indices[arr.indptr[r] : arr.indptr[r + 1]]
         data = arr.data[arr.indptr[r] : arr.indptr[r + 1]]
         mask = np.isnan(data)
-        out[idx[~mask]] += data[mask]
+        out[idx[~mask]] += data[~mask]
         n[idx[mask]] -= 1
     out /= n
     return out
@@ -79,18 +79,18 @@ def nanmean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
                 or axis == 1
                 and isinstance(arr, csc_array | csc_matrix)
             ):
-                mean = _nanmean_cs_aligned(arr)
+                mean = _nanmean_cs_nonaligned(arr)
             elif (
                 axis == 1
                 and isinstance(arr, csr_array | csr_matrix)
                 or axis == 0
                 and isinstance(arr, csc_array | csc_matrix)
             ):
-                mean = _nanmean_cs_nonaligned(arr)
+                mean = _nanmean_cs_aligned(arr)
             else:
                 raise NotImplementedError(f"Unsupported sparse matrix type {type(arr)}.")
             if keepdims:
-                mean = mean.expand_dims(axis)
+                mean = np.expand_dims(mean, axis)
     else:
         mean = np.nanmean(arr, axis=axis, keepdims=keepdims)
     return mean

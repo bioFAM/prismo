@@ -36,6 +36,9 @@ _scale_color_zerosymmetric_diverging = partial(
     expand=(0, 0),
 )
 
+_no_axis_ticks_x = {"axis_ticks_length_major_x": 0, "axis_ticks_length_minor_x": 0}
+_no_axis_ticks_y = {"axis_ticks_length_major_y": 0, "axis_ticks_length_minor_y": 0}
+
 
 def factors_scatter(
     model: PRISMO,
@@ -220,6 +223,8 @@ def factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> 
         p9.ggplot(final_df, p9.aes(x="factor1", y="factor2", fill="correlation"))
         + p9.geom_tile()
         + _scale_fill_zerosymmetric_diverging(limits=(-1, 1), expand=(0, 0), name="Correlation")
+        + p9.scale_x_discrete(expand=(0, 0))
+        + p9.scale_y_discrete(expand=(0, 0))
         + p9.coord_equal()
         + p9.labs(x="", y="")
         + p9.theme(
@@ -227,6 +232,8 @@ def factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> 
             axis_text_x=p9.element_text(angle=45, hjust=1),
             panel_grid_major=p9.element_blank(),
             panel_grid_minor=p9.element_blank(),
+            **_no_axis_ticks_x,
+            **_no_axis_ticks_y,
         )
         + p9.facet_wrap("group")
     )
@@ -268,18 +275,21 @@ def overview(
 
     # if the number of observations in every group is low, plot every observation
     if n_obs_groups < max_plot_obs:
-        plot_x_labels = n_obs_groups < max_plot_x_labels
+        theme = p9.theme(figure_size=figsize, **_no_axis_ticks_y)
+        if n_obs_groups < max_plot_x_labels:
+            theme += p9.theme(axis_text_x=p9.element_text(angle=90, ha="center", va="top"))
+        else:
+            theme += p9.theme(axis_text_x=p9.element_blank(), axis_ticks_x=p9.element_blank())
 
         plot = (
             p9.ggplot(missings, p9.aes(x="obs_name", y="view", fill="missing"))
             + p9.geom_tile()
             + p9.facet_wrap("group", scales="free_x")
             + p9.scale_fill_manual(values=[missingcolor, nonmissingcolor])
-            + p9.theme(
-                axis_text_x=(p9.element_text(angle=90, ha="center", va="top") if plot_x_labels else p9.element_blank()),
-                figure_size=figsize,
-            )
-            + p9.labs(title="Data Overview", x="Observation", y="View")
+            + p9.scale_x_discrete(expand=(0, 0))
+            + p9.scale_y_discrete(expand=(0, 0))
+            + theme
+            + p9.labs(x="Observations", y="")
         )
 
     # otherwise, make a barplot showing the number of observations
@@ -290,8 +300,12 @@ def overview(
             p9.ggplot(obs_counts, p9.aes(x="view", y="count"))
             + p9.geom_bar(stat="identity", fill=missingcolor)
             + p9.facet_wrap("group", scales="free_x")
-            + p9.theme(axis_text_x=(p9.element_text(angle=90, ha="center", va="top")), figure_size=figsize)
-            + p9.labs(title="Data Overview", y="Number of non-missing observations", x="View")
+            + p9.theme(
+                axis_text_x=p9.element_text(angle=90, ha="center", va="top"),
+                axis_ticks_x=p9.element_blank(),
+                figure_size=figsize,
+            )
+            + p9.labs(y="Number of non-missing observations", x="")
             + p9.coord_flip()
         )
 
@@ -334,8 +348,12 @@ def variance_explained(
         p9.ggplot(combined_df, p9.aes(x=x, y="factor", fill="var_exp"))
         + p9.geom_tile()
         + p9.scale_fill_distiller(palette="OrRd", limits=(0, None), expand=(0, 0, 1.1, 0), name="Variance\nexplained")
+        + p9.scale_x_discrete(expand=(0, 0))
+        + p9.scale_y_discrete(expand=(0, 0))
         + p9.labs(x="", y="")
-        + p9.theme(axis_text_x=p9.element_text(rotation=90), figure_size=figsize)
+        + p9.theme(
+            axis_text_x=p9.element_text(rotation=90), figure_size=figsize, **_no_axis_ticks_x, **_no_axis_ticks_y
+        )
         + p9.facet_wrap(group_by)
     )
 
@@ -415,7 +433,12 @@ def factor(
         + p9.geom_hline(yintercept=0, linetype="dotted", color="gray")
         + _scale_color_zerosymmetric_diverging()
         + p9.facet_wrap("group", ncol=1, scales="free_y")
-        + p9.theme(figure_size=figsize, axis_text_x=p9.element_text(rotation=90))
+        + p9.theme(
+            figure_size=figsize,
+            axis_text_x=p9.element_text(rotation=90),
+            panel_grid_major_x=p9.element_blank(),
+            panel_grid_minor_x=p9.element_blank(),
+        )
     )
     if not show_featurenames:
         plt = plt + p9.theme(axis_text_x=p9.element_blank(), axis_ticks_x=p9.element_blank())
@@ -627,7 +650,7 @@ def smoothness(model: PRISMO, figsize: tuple[float, float] = (3, 3)) -> p9.ggplo
         + p9.geom_bar(stat="identity")
         + p9.labs(x="", y="Smoothness")
         + p9.scale_y_continuous(limits=(0, 1), expand=(0, 0))
-        + p9.theme(figure_size=figsize, axis_text_x=p9.element_text(rotation=90))
+        + p9.theme(figure_size=figsize, axis_text_x=p9.element_text(rotation=90), **_no_axis_ticks_x)
     )
     return plt
 
@@ -739,7 +762,7 @@ def top_weights(
         + _weights_inferred_color_scale
         + p9.scale_x_continuous(expand=(0, 0, 0.05, 0))
         + p9.labs(x="| Weight |", y="", color="")
-        + p9.theme(figure_size=figsize)
+        + p9.theme(figure_size=figsize, **_no_axis_ticks_y)
     )
 
     facet_kwargs = {"scales": "free"}
@@ -854,6 +877,8 @@ def _plot_sparse_probabilities_histogram(
         + p9.geom_histogram(bins=bins)
         + p9.facet_wrap("key", scales="free", nrow=nrow, ncol=ncol)
         + p9.labs(x="Probability")
+        + p9.scale_x_continuous(expand=(0, 0))
+        + p9.scale_y_continuous(expand=(0, 0, 0.05, 0))
     )
     return plot
 

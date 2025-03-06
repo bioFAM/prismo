@@ -22,6 +22,8 @@ from scipy.special import expit
 from sklearn.decomposition import NMF, PCA
 from torch.utils.data import DataLoader, default_convert
 from torch.utils.data._utils.collate import collate  # this is documented, so presumably part of the public API
+from tqdm.auto import tqdm
+from tqdm.notebook import tqdm_notebook
 
 from .. import pl
 from . import gp, preprocessing
@@ -403,27 +405,23 @@ class PRISMO:
             raise ValueError("Likelihoods must be a dictionary or a string containing a valid likelihood name.")
 
         if self._model_opts.likelihoods is None:
-            _logger.info("No likelihoods provided. Inferring likelihoods from data.")
             self._model_opts.likelihoods = data.apply(preprocessing.infer_likelihood, by_group=False)
+            msg = []
+            for view_name, likelihood in self._model_opts.likelihoods.items():
+                msg.append(f"{view_name}: {likelihood}")
+            _logger.info("No likelihoods provided. Using inferred likelihoods: " + "; ".join(msg))
         else:
             if isinstance(self._model_opts.likelihoods, str):
-                _logger.info("Using provided likelihood for all views.")
                 self._model_opts.likelihoods = {
                     view_name: self._model_opts.likelihoods for view_name in data.view_names
                 }
 
             if isinstance(self._model_opts.likelihoods, dict):
-                _logger.info("Checking compatibility of provided likelihoods with data.")
                 data.apply(
                     preprocessing.validate_likelihood,
                     view_kwargs={"likelihood": self._model_opts.likelihoods},
                     by_group=False,
                 )
-
-        msg = []
-        for view_name, likelihood in self._model_opts.likelihoods.items():
-            msg.append(f"{view_name}: {likelihood}")
-        _logger.info("Using these likelihoods: " + "; ".join(msg))
 
     def _setup_annotations(self, data):
         annotations = self._model_opts.annotations
@@ -477,7 +475,7 @@ class PRISMO:
 
             for vn in data.view_names:
                 if vn in prior_masks and (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
-                    _logger.warn(
+                    _logger.warning(
                         f"Horseshoe prior required for annotations, but got {prior} for view {vn}. Annotations will be ignored."
                     )
 
@@ -515,7 +513,7 @@ class PRISMO:
                     if self._gp_opts.warp_reference_group is None:
                         self._gp_opts.warp_reference_group = self._gp_opts.warp_groups[0]
                 elif len(self._gp_opts.warp_groups) == 1:
-                    _logger.warn("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
+                    _logger.warning("Need at least 2 groups for warping, but only one was given. Ignoring warping.")
                     self._gp_opts.warp_groups = []
             else:
                 covariates = self._covariates
@@ -557,7 +555,6 @@ class PRISMO:
         n_iterations = int(self._train_opts.max_epochs * (self.n_samples_total // self._train_opts.batch_size))
         gamma = 0.1
         lrd = gamma ** (1 / n_iterations)
-        _logger.info(f"Decaying learning rate over {n_iterations} iterations.")
 
         optimizer = ClippedAdam(variational.get_lr_func(self._train_opts.lr, lrd=lrd))
 
@@ -591,8 +588,9 @@ class PRISMO:
         )
 
         if self._train_opts.save_path is not False:
-            self._train_opts.save_path = self._train_opts.save_path or f"model_{time.strftime('%Y%m%d_%H%M%S')}.h5"
-            _logger.info("Saving results...")
+            if self._train_opts.save_path is None:
+                self._train_opts.save_path = f"prismo_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+            _logger.info(f"Saving results to {self._train_opts.save_path}...")
             Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
             self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
 
@@ -716,7 +714,6 @@ class PRISMO:
             self._train_opts.batch_size = data.n_samples_total
 
     def _fit(self, data, preprocessor):
-        _logger.info(f"Setting training seed to `{self._train_opts.seed}`.")
         pyro.set_rng_seed(self._train_opts.seed)
 
         init_tensor = self._initialize_factors(data)
@@ -745,7 +742,6 @@ class PRISMO:
         )
 
         # clean start
-        _logger.info("Cleaning parameter store.")
         pyro.enable_validation(True)
         pyro.clear_param_store()
 
@@ -777,32 +773,33 @@ class PRISMO:
         earlystopper = EarlyStopper(
             mode="min", min_delta=0.1, patience=self._train_opts.early_stopper_patience, percentage=True
         )
-        start_timer = time.time()
-        for i in range(self._train_opts.max_epochs):
-            epoch_loss = 0
-            if singlebatch:
-                with self._train_opts.device:
-                    epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
-            else:
-                for batch in loader:
-                    batch = collate((batch,), collate_fn_map=collate_fn_map)
+        with tqdm(range(self._train_opts.max_epochs), unit="epochs", dynamic_ncols=True) as t:
+            for i in t:
+                epoch_loss = 0
+                if singlebatch:
                     with self._train_opts.device:
                         epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
-            train_loss_elbo.append(epoch_loss)
-            if (
-                self._gp is not None
-                and len(self._gp_opts.warp_groups)
-                and i > 0
-                and not i % self._gp_opts.warp_interval
-            ):
-                self._warp_covariates(covariates, variational, gp_warp_groups_order)
+                else:
+                    for batch in loader:
+                        batch = collate((batch,), collate_fn_map=collate_fn_map)
+                        with self._train_opts.device:
+                            epoch_loss += svi.step(**batch["data"], covariates=batch["covariates"])
+                train_loss_elbo.append(epoch_loss)
+                if (
+                    self._gp is not None
+                    and len(self._gp_opts.warp_groups)
+                    and i > 0
+                    and not i % self._gp_opts.warp_interval
+                ):
+                    self._warp_covariates(covariates, variational, gp_warp_groups_order)
 
-            if i % self._train_opts.print_every == 0:
-                _logger.info(f"Epoch: {i:>7} | Time: {time.time() - start_timer:>10.2f}s | Loss: {epoch_loss:>10.2f}")
+                t.set_postfix({"Loss": epoch_loss}, refresh=False)
 
-            if earlystopper.step(epoch_loss):
-                _logger.info(f"Training finished after {i} steps.")
-                break
+                if earlystopper.step(epoch_loss):
+                    _logger.info(f"Training converged after {i} epochs.")
+                    break
+        if isinstance(t, tqdm_notebook):  # https://github.com/tqdm/tqdm/issues/1659
+            t.container.children[1].bar_style = "success"
 
         self._post_fit(data, covariates, preprocessor.feature_means, variational, train_loss_elbo)
 
@@ -866,7 +863,7 @@ class PRISMO:
     def _r2(self, y_true, factors, weights, view_name):
         r2_full = self._r2_impl(y_true, factors, weights, view_name)
         if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
-            _logger.info(
+            _logger.warning(
                 f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
             )
             return r2_full, [0.0] * factors.shape[1]
@@ -923,7 +920,7 @@ class PRISMO:
             for view_name, view_r2 in group_r2.items():
                 group_r2_full[view_name], group_r2_factors[view_name] = view_r2
             if len(group_r2_factors) == 0:
-                logging.warning(f"No R2 values found for group {group_name}. Skipping...")
+                _logger.warning(f"No R2 values found for group {group_name}. Skipping...")
                 continue
             dfs_factors[group_name] = pd.DataFrame(group_r2_factors)
             dfs_full[group_name] = pd.Series(group_r2_full)
@@ -938,7 +935,7 @@ class PRISMO:
             sorted_r2_means = df_sum.mean(axis=1).sort_values(ascending=False)
             factor_order = sorted_r2_means.index.to_numpy()
         except NameError:
-            _logger.info("Sorting factors failed. Using default order.")
+            _logger.warning("Sorting factors failed. Using default order.")
             factor_order = np.array(list(range(self.model_opts.n_factors)))
 
         return dfs_full, dfs_factors, factor_order

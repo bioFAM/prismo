@@ -421,6 +421,7 @@ class PRISMO:
                 )
 
     def _setup_annotations(self, data):
+        annotations = None
         if self._data_opts.annotations_varm_key is not None:
             annotations, annotations_names = data.get_annotations(self._data_opts.annotations_varm_key)
 

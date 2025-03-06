@@ -91,6 +91,9 @@ class DataOptions(_Options):
     scale_per_group: bool = True
     """Scale Normal likelihood data per group, otherwise across all groups."""
 
+    annotations_varm_key: dict[str, str] | str | None = None
+    """Key of .varm attribute of each AnnData object that contains annotation values."""
+
     covariates_obs_key: dict[str, str] | str | None = None
     """Key of .obs attribute of each :external:py:class:`AnnData<anndata.AnnData>` object that contains covariate values."""
 
@@ -131,12 +134,6 @@ class ModelOptions(_Options):
 
     nonnegative_factors: dict[str, bool] | bool = False
     """Non-negativity constraints for factors for each group (if dict) or for all groups (if bool)."""
-
-    annotations: dict[str, pd.DataFrame] | dict[str, np.ndarray] | None = None
-    """Dictionary with weight annotations for informed views. Must have shape (n_factors, n_features)."""
-
-    annotations_varm_key: dict[str, str] | str | None = None
-    """Key of .varm attribute of each AnnData object that contains annotation values."""
 
     prior_penalty: float = 0.01
     """Prior penalty for annotations."""  # TODO: add more detail
@@ -424,14 +421,8 @@ class PRISMO:
                 )
 
     def _setup_annotations(self, data):
-        annotations = self._model_opts.annotations
-        if annotations is not None:
-            annotations_names = {}
-            for view_name, annot in annotations.items():
-                if isinstance(annot, pd.DataFrame):
-                    annotations_names[view_name] = annot.columns.to_list()
-        if annotations is None and self._model_opts.annotations_varm_key is not None:
-            annotations, annotations_names = data.get_annotations(self._model_opts.annotations_varm_key)
+        if self._data_opts.annotations_varm_key is not None:
+            annotations, annotations_names = data.get_annotations(self._data_opts.annotations_varm_key)
 
         informed = annotations is not None and len(annotations) > 0
         valid_n_factors = self._model_opts.n_factors is not None and self._model_opts.n_factors > 0
@@ -696,18 +687,22 @@ class PRISMO:
     def _adjust_options(self, data: dict[dict[AnnData]]):
         # convert input arguments to dictionaries if necessary
         for opt_name, keys in zip(
-            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors", "annotations_varm_key"),
-            (data.view_names, data.group_names, data.view_names, data.group_names, data.view_names),
-            strict=False,
+            ("weight_prior", "factor_prior", "nonnegative_weights", "nonnegative_factors"),
+            (data.view_names, data.group_names, data.view_names, data.group_names),
+            strict=True,
         ):
             val = getattr(self._model_opts, opt_name)
             if not isinstance(val, dict):
                 setattr(self._model_opts, opt_name, {k: val for k in keys})
 
-        for opt_name in ("covariates_obs_key", "covariates_obsm_key"):
+        for opt_name, keys in zip(
+            ("covariates_obs_key", "covariates_obsm_key", "annotations_varm_key"),
+            (data.group_names, data.group_names, data.view_names),
+            strict=True,
+        ):
             val = getattr(self._data_opts, opt_name)
             if isinstance(val, str):
-                setattr(self._data_opts, opt_name, {k: val for k in data.group_names})
+                setattr(self._data_opts, opt_name, {k: val for k in keys})
 
         self._train_opts.device = self._setup_device(self._train_opts.device)
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= data.n_samples_total):

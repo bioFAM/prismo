@@ -35,6 +35,7 @@ dependencies = [
     "plotnine",
     "mizani",
     "tqdm",
+    "platformdirs",
     # for debug logging (referenced from the issue template)
     "session-info",
 ]

@@ -35,7 +35,7 @@ class _MSIGDBDirectoryParser(HTMLParser):
             self._have_img = self._have_link = False
 
 
-def list_msigdb_versions() -> list[str]:
+def msigdb_list_versions() -> list[str]:
     """List available versions of the MSIGDB molecular signature  database."""
     parser = _MSIGDBDirectoryParser("[DIR]")
     with request.urlopen(_url) as resp:
@@ -45,12 +45,12 @@ def list_msigdb_versions() -> list[str]:
     return [v.rstrip("/") for v in parser.contents]
 
 
-def list_msigdb_categories(dbver: str = "2024.1.Hs") -> list[str]:
+def msigdb_list_categories(dbver: str = "2024.1.Hs") -> list[str]:
     """List available MSIGDB categories for the given database version.
 
     Args:
         dbver: Version of the MSIGDB molecular signature database. Can be obtained by
-            calling :func:`list_msigdb_versions`.
+            calling :func:`msigdb_list_versions`.
     """
     parser = _MSIGDBDirectoryParser("[TXT]")
     with request.urlopen(f"{_url}/{dbver}") as resp:
@@ -60,12 +60,12 @@ def list_msigdb_categories(dbver: str = "2024.1.Hs") -> list[str]:
     return sorted({match.groups()[0] for fname in parser.contents if (match := _pattern.match(fname)) is not None})
 
 
-def get_msigdb_features(category: str = "h.all", dbver: str = "2024.1.Hs", entrez: bool = False) -> FeatureSets:
+def msigdb_get_features(category: str = "h.all", dbver: str = "2024.1.Hs", entrez: bool = False) -> FeatureSets:
     """Get gene sets from the MSIGDB molecular signatures database.
 
     Args:
-        category: An MSIGDB category. Can be obtained by calling :func:`list_msigdb_categories`.
-        dbver: MSIGDB version. Can be obtained by calling :func:`list_msigdb_versions`.
+        category: An MSIGDB category. Can be obtained by calling :func:`msigdb_list_categories`.
+        dbver: MSIGDB version. Can be obtained by calling :func:`msigdb_list_versions`.
         entrez: Whether to use Entrez identifiers or common gene names.
     """
     pkgname = __name__[: __name__.find(".")]

@@ -7,6 +7,9 @@ from platformdirs import user_cache_dir
 
 from .._core import FeatureSets
 
+_url = "https://data.broadinstitute.org/gsea-msigdb/msigdb/release"
+_pattern = re.compile(r"(\w.+)\.(v\d.+)\.(entrez|symbols)\.gmt")
+
 
 class _MSIGDBDirectoryParser(HTMLParser):
     def __init__(self, img_alt):
@@ -30,10 +33,6 @@ class _MSIGDBDirectoryParser(HTMLParser):
         if self._have_img and self._have_link:
             self.contents.append(data)
             self._have_img = self._have_link = False
-
-
-_url = "https://data.broadinstitute.org/gsea-msigdb/msigdb/release"
-_pattern = re.compile(r"(\w.+)\.(v\d.+)\.(entrez|symbols)\.gmt")
 
 
 def list_msigdb_versions() -> list[str]:
@@ -81,4 +80,4 @@ def get_msigdb_features(category: str = "h.all", dbver: str = "2024.1.Hs", entre
     if not os.path.isfile(fpath):
         with request.urlopen(f"{_url}/{dbver}/{fname}") as resp, open(fpath, "wb") as cache:
             cache.write(resp.read())
-    return FeatureSets.from_gmt(fpath)
+    return FeatureSets.from_gmt(fpath, name=name)

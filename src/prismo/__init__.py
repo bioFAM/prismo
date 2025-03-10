@@ -1,7 +1,17 @@
 import logging
 
 from . import pl, tl
-from ._core import PRISMO, DataOptions, FeatureSet, FeatureSets, ModelOptions, SmoothOptions, TrainingOptions, settings
+from ._core import (
+    PRISMO,
+    DataOptions,
+    FeatureSet,
+    FeatureSets,
+    ModelOptions,
+    SmoothOptions,
+    TrainingOptions,
+    presets,
+    settings,
+)
 from ._version import __version__, __version_tuple__
 
 _logger = logging.getLogger(__name__)

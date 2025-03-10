@@ -167,9 +167,6 @@ class TrainingOptions(_Options):
     early_stopper_patience: int = 100
     """Number of steps without relevant improvement to stop training."""
 
-    print_every: int = 100
-    """Print loss every n steps."""
-
     save_path: str | None = None
     """Path to save model."""
 

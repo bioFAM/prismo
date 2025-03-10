@@ -11,8 +11,8 @@ from torch.utils.data import BatchSampler, SequentialSampler
 
 from .datasets import PrismoDataset
 
-WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
-FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
+WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
+FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
 Likelihood: TypeAlias = Literal["Normal", "GammaPoisson", "Bernoulli"]
 PossiblySparseArray: TypeAlias = NDArray | spmatrix | sparray
 

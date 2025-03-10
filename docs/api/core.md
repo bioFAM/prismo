@@ -14,7 +14,15 @@
     FeatureSets
 ```
 
-An instance of the {class}`_core.settings.Settings` is available as `prismo.settings` and allows configuring PRISMO.
+## Presets
+
+```{eval-rst}
+.. automodule:: prismo.presets
+```
+
+## Settings
+
+An instance of the [](#_core.settings.Settings) is available as `prismo.settings` and allows configuring PRISMO.
 
 ```{eval-rst}
 .. currentmodule:: prismo

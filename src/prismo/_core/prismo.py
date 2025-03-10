@@ -84,8 +84,8 @@ class DataOptions(_Options):
     """Options for the data."""
 
     group_by: str | list[str] | None = None
-    """Columns of `.obs` in :external:py:class:`MuData<mudata.MuData>` objects to group data by. Ignored if the input data
-    is not a :external:py:class:`MuData<mudata.MuData>` object.
+    """Columns of `.obs` in :class:`MuData<mudata.MuData>` objects to group data by. Ignored if the input data
+    is not a :class:`MuData<mudata.MuData>` object.
     """
 
     scale_per_group: bool = True
@@ -95,16 +95,16 @@ class DataOptions(_Options):
     """Key of .varm attribute of each AnnData object that contains annotation values."""
 
     covariates_obs_key: dict[str, str] | str | None = None
-    """Key of .obs attribute of each :external:py:class:`AnnData<anndata.AnnData>` object that contains covariate values."""
+    """Key of .obs attribute of each :class:`AnnData<anndata.AnnData>` object that contains covariate values."""
 
     covariates_obsm_key: dict[str, str] | str | None = None
-    """Key of .obsm attribute of each :external:py:class:`AnnData<anndata.AnnData>` object that contains covariate values."""
+    """Key of .obsm attribute of each :class:`AnnData<anndata.AnnData>` object that contains covariate values."""
 
     use_obs: Literal["union", "intersection"] | None = "union"
-    """How to align observations across views. Ignored if the data is not a nested dict of :external:py:class:`AnnData<anndata.AnnData>` objects."""
+    """How to align observations across views. Ignored if the data is not a nested dict of :class:`AnnData<anndata.AnnData>` objects."""
 
     use_var: Literal["union", "intersection"] | None = "union"
-    """How to align variables across groups. Ignored if the data is not a nested dict of :external:py:class:`AnnData<anndata.AnnData>` objects"""
+    """How to align variables across groups. Ignored if the data is not a nested dict of :class:`AnnData<anndata.AnnData>` objects"""
 
     plot_data_overview: bool = True
     """Plot data overview."""

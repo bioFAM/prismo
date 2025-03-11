@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from functools import reduce
 from typing import Any, Literal, TypeVar, Union
 
@@ -32,15 +33,17 @@ class AnnDataDictDataset(PrismoDataset):
     # local:            🞓🞓🞓
     #
     # apply() is guaranteed to pass local views of the data to `func`. To achieve this, we compute two aligment maps:
-    # local_to_global = data.get_indexer(global)
-    # global_to_local = global.get_indexer(data)
+    # data_to_global = data.get_indexer(global)
+    # global_to_data = global.get_indexer(data)
     #
-    # A local view of the data is given by data[global_to_local >= 0].
-    # The corresponding nonmissing indices for __getitems__ are available as global_to_local[global_to_local >= 0]
+    # A local view of the data is given by data[global_to_data >= 0].
+    # The corresponding nonmissing indices for __getitems__ are available as global_to_data[global_to_data >= 0]
     #
     # If we get a global index vector in __getitems__, we do need to reorder the data accordingly. The corresponding
-    # view of the data is obtained as data[local_to_global_map[local_to_global_map[global_idx] >= 0]].
-    # The corresponding nonmissing indices are given by nonzero(local_to_global_map[global_idx] >= 0)
+    # view of the data is obtained as data[data_to_global_map[data_to_global_map[global_idx] >= 0]].
+    # The corresponding nonmissing indices are given by nonzero(data_to_global_map[global_idx] >= 0)
+    #
+    # A map from local to global views is given by argsort(global_to_data[global_to_data >= 0])
     def __init__(
         self,
         data: dict[str, dict[str, ad.AnnData]],
@@ -71,14 +74,14 @@ class AnnDataDictDataset(PrismoDataset):
                 caligned = aligned[group_name if attr == "obs" else view_name]
 
                 if caligned.size != vnames.size or not np.all(caligned == vnames):
-                    l2g_map = vnames.get_indexer(caligned)
-                    g2l_map = caligned.get_indexer(vnames)
-                    gmap[view_name] = AlignmentMap(l2g=l2g_map, g2l=g2l_map)
+                    d2g_map = vnames.get_indexer(caligned)
+                    g2d_map = caligned.get_indexer(vnames)
+                    gmap[view_name] = AlignmentMap(d2g=d2g_map, g2d=g2d_map)
             map[group_name] = gmap
         setattr(self, f"_{attr}map", map)
 
     def reindex_samples(self, sample_names: dict[str, NDArray[str]] | None = None):
-        union = lambda x, y: x.union(y)
+        union = lambda x, y: x.union(y, sort=False)
         aligned = {}
         if sample_names is not None:
             self._used_obs = "union"
@@ -182,14 +185,15 @@ class AnnDataDictDataset(PrismoDataset):
             gnonmissing_var = {}
             for view_name, view in self._data[group_name].items():
                 if view_name in gvarmap:
-                    varmap = gvarmap[view_name].g2l
-                    cvarmap = varmap >= 0
-                    cnonmissing_var = varmap[cvarmap]
+                    varmap = gvarmap[view_name].d2g
+                    varidx = varmap >= 0
+                    cvarmap = varmap[varidx]
+                    cnonmissing_var = np.nonzero(varidx)[0]
                 else:
                     cnonmissing_var = cvarmap = slice(None)
 
                 if view_name in gobsmap:
-                    obsmap = gobsmap[view_name].l2g[group_idx]
+                    obsmap = gobsmap[view_name].d2g[group_idx]
                     obsidx = obsmap >= 0
                     cobsmap = obsmap[obsidx]
                     cnonmissing_obs = np.nonzero(obsidx)[0]
@@ -222,6 +226,42 @@ class AnnDataDictDataset(PrismoDataset):
             "nonmissing_features": nonmissing_var,
         }
 
+    def _align_array_to_global(
+        self,
+        arr: NDArray[T],
+        group_name: str,
+        view_name: str,
+        align_to: Literal["samples", "features"],
+        local_indexer: Callable[[AlignmentMap], NDArray[int]],
+        axis: int = 0,
+        fill_value: np.ScalarType = np.nan,
+    ):
+        map = (self._obsmap if align_to == "samples" else self._varmap)[group_name].get(view_name)
+        if map is None:
+            return arr
+
+        outshape = [map.d2g.size]
+        outshape.extend(arr.shape[:axis])
+        outshape.extend(arr.shape[axis + 1 :])
+
+        arr = np.moveaxis(arr, axis, 0)
+        out = np.full(outshape, fill_value=fill_value, dtype=np.promote_types(type(fill_value), arr.dtype), order="C")
+        out[map.d2g >= 0, ...] = arr[local_indexer(map), ...]
+        return np.moveaxis(out, 0, axis)
+
+    def _align_data_array_to_global(
+        self,
+        arr: NDArray[T],
+        group_name: str,
+        view_name: str,
+        align_to: Literal["samples", "features"],
+        axis: int = 0,
+        fill_value: np.ScalarType = np.nan,
+    ):
+        return self._align_array_to_global(
+            arr, group_name, view_name, align_to, lambda map: map.d2g[map.d2g >= 0], axis, fill_value
+        )
+
     def align_local_array_to_global(
         self,
         arr: NDArray[T],
@@ -231,20 +271,9 @@ class AnnDataDictDataset(PrismoDataset):
         axis: int = 0,
         fill_value: np.ScalarType = np.nan,
     ):
-        map = (self._obsmap if align_to == "samples" else self._varmap)[group_name].get(view_name)
-        if map is None:
-            return arr
-
-        map = map.l2g
-        outshape = [map.size]
-        outshape.extend(arr.shape[:axis])
-        outshape.extend(arr.shape[axis + 1 :])
-
-        nnz = map >= 0
-        arr = np.moveaxis(arr, axis, 0)
-        out = np.full(outshape, fill_value=fill_value, dtype=np.promote_types(type(fill_value), arr.dtype), order="C")
-        out[nnz, ...] = arr[map[nnz], ...]
-        return np.moveaxis(out, 0, axis)
+        return self._align_array_to_global(
+            arr, group_name, view_name, align_to, lambda map: np.argsort(map.g2d[map.g2d >= 0]), axis, fill_value
+        )
 
     def align_global_array_to_local(
         self, arr: NDArray[T], group_name: str, view_name: str, align_to: Literal["samples", "features"], axis: int = 0
@@ -252,7 +281,7 @@ class AnnDataDictDataset(PrismoDataset):
         map = (self._obsmap if align_to == "samples" else self._varmap)[group_name].get(view_name)
         if map is None:
             return arr
-        map = map.g2l
+        map = map.g2d
         return np.take(arr, map[map >= 0], axis=axis)
 
     def _get_attr(self, attr: Literal["obs", "var"]) -> dict[str, pd.DataFrame]:
@@ -298,7 +327,7 @@ class AnnDataDictDataset(PrismoDataset):
 
     def get_covariates(
         self, covariates_obs_key: dict[str, str] | None = None, covariates_obsm_key: dict[str, str] | None = None
-    ) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
+    ) -> tuple[dict[str, dict[str, NDArray]], dict[str, NDArray]]:
         covariates, covariates_names = {}, {}
         if covariates_obs_key is None:
             covariates_obs_key = {}
@@ -318,7 +347,7 @@ class AnnDataDictDataset(PrismoDataset):
             if obskey is not None:
                 for view_name, view in group.items():
                     if obskey in view.obs.columns:
-                        ccovs[view_name] = self.align_local_array_to_global(
+                        ccovs[view_name] = self._align_data_array_to_global(
                             view.obs[obskey].to_numpy(), group_name, view_name, "samples"
                         )[:, None]
                 if len(ccovs):
@@ -339,7 +368,7 @@ class AnnDataDictDataset(PrismoDataset):
                         if covar.ndim == 1:
                             covar = covar[..., None]
                         covar_dim.append(covar.shape[1])
-                        ccovs[view_name] = self.align_local_array_to_global(covar, group_name, view_name, "samples")
+                        ccovs[view_name] = self._align_data_array_to_global(covar, group_name, view_name, "samples")
                 if len(set(covar_dim)) > 1:
                     raise ValueError(
                         f"Number of covariate dimensions in group {group_name} must be the same across views."
@@ -380,8 +409,8 @@ class AnnDataDictDataset(PrismoDataset):
                 if vobsmap is not None or vvarmap is not None:
                     if havedask and settings.use_dask:
                         view = anndata_to_dask(view)
-                    obsidx = slice(None) if vobsmap is None else vobsmap.g2l[vobsmap.g2l >= 0]
-                    varidx = slice(None) if vvarmap is None else vvarmap.g2l[vvarmap.g2l >= 0]
+                    obsidx = slice(None) if vobsmap is None else vobsmap.g2d >= 0
+                    varidx = slice(None) if vvarmap is None else vvarmap.g2d >= 0
                     view = view[obsidx, varidx]
 
                 ccret = func(view, group_name, view_name, **kwargs, **gvkwargs[group_name][view_name])
@@ -401,7 +430,7 @@ class AnnDataDictDataset(PrismoDataset):
                 cdata = anndata_to_dask(group[view_name]) if havedask and settings.use_dask else group[view_name]
                 obsmap = self._obsmap[group_name].get(view_name)
                 if obsmap is not None:
-                    cdata = cdata[obsmap.g2l[obsmap.g2l >= 0], :]
+                    cdata = cdata[obsmap.g2d >= 0, :]
                 if cdata.n_vars != self.n_features[view_name]:
                     convert = True
                 data[group_name] = cdata
@@ -414,7 +443,7 @@ class AnnDataDictDataset(PrismoDataset):
                 data,
                 axis="obs",
                 join="inner" if self._used_var == "intersection" else "outer",
-                label="group",
+                label="__group",
                 merge="unique",
                 uns_merge=None,
                 fill_value=np.nan,
@@ -425,7 +454,7 @@ class AnnDataDictDataset(PrismoDataset):
             ):
                 data = data[:, self._aligned_var[view_name]]
 
-            cret = func(data, data.obs["group"].to_numpy(), view_name, **kwargs, **vkwargs[view_name])
+            cret = func(data, data.obs["__group"].to_numpy(), view_name, **kwargs, **vkwargs[view_name])
             ret[view_name] = apply_to_nested(cret, from_dask)
 
         return ret
@@ -443,7 +472,7 @@ class AnnDataDictDataset(PrismoDataset):
                 cdata = anndata_to_dask(view) if havedask and settings.use_dask else view
                 varmap = gvarmap.get(view_name)
                 if varmap is not None:
-                    cdata = cdata[:, varmap.g2l[varmap.g2l >= 0]]
+                    cdata = cdata[:, varmap.g2d >= 0]
                 if cdata.n_obs != self.n_samples[group_name]:
                     convert = True
                 data[view_name] = cdata
@@ -456,7 +485,7 @@ class AnnDataDictDataset(PrismoDataset):
                 data,
                 axis="var",
                 join="inner" if self._used_obs == "intersection" else "outer",
-                label="view",
+                label="__view",
                 merge="unique",
                 uns_merge=None,
                 fill_value=np.nan,
@@ -467,7 +496,7 @@ class AnnDataDictDataset(PrismoDataset):
             ):
                 data = data[self._aligned_obs[group_name], :]
 
-            cret = func(data, group_name, data.var["view"].to_numpy(), **kwargs, **gkwargs[group_name])
+            cret = func(data, group_name, data.var["__view"].to_numpy(), **kwargs, **gkwargs[group_name])
             ret[group_name] = apply_to_nested(cret, from_dask)
 
         return ret

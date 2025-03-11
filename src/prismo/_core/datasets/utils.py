@@ -21,7 +21,7 @@ from scipy.sparse import (
 
 from ..settings import settings
 
-AlignmentMap = namedtuple("AlignmentMap", ["l2g", "g2l"])
+AlignmentMap = namedtuple("AlignmentMap", ["d2g", "g2d"])
 
 
 def have_dask():

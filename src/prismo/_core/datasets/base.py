@@ -278,7 +278,7 @@ class PrismoDataset(Dataset, ABC):
     @abstractmethod
     def get_covariates(
         self, covariates_obs_key: dict[str, str] | None = None, covariates_obsm_key: dict[str, str] | None = None
-    ) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
+    ) -> tuple[dict[str, dict[str, NDArray]], dict[str, NDArray]]:
         """Get the covariates for each group.
 
         Args:

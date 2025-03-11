@@ -288,7 +288,7 @@ class MuDataDataset(PrismoDataset):
 
     def get_covariates(
         self, covariates_obs_key: dict[str, str] | None = None, covariates_obsm_key: dict[str, str] | None = None
-    ) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
+    ) -> tuple[dict[str, dict[str, NDArray]], dict[str, NDArray]]:
         covariates, covariates_names = {}, {}
 
         if covariates_obs_key is None:

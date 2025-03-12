@@ -100,11 +100,10 @@ def test_properties(anndata_dict, use_obs, use_var, dataset):
 
 
 @pytest.mark.parametrize("axis", (0, 1, 2))
-def test_alignment(dataset, rng, axis):
+def test_alignment(anndata_dict, dataset, rng, axis):
     ndim = 3
 
     arr_shape = np.asarray([2] * ndim)
-    nonaligned_axes = tuple(i for i in range(ndim) if i != axis)
 
     for group_name, group_samples in dataset.sample_names.items():
         arr_shape[axis] = group_samples.size
@@ -120,12 +119,17 @@ def test_alignment(dataset, rng, axis):
                 new_global_arr, group_name, view_name, align_to="samples", axis=axis
             )
 
+            assert new_global_arr.shape == global_arr.shape
             assert new_local_arr.shape == local_arr.shape
             assert np.all(new_local_arr == local_arr)
-            assert np.isnan(new_global_arr).sum() == global_arr.size - local_arr.size
 
-            nans_per_row = np.isnan(new_global_arr).sum(axis=nonaligned_axes)
-            assert np.all(nans_per_row[nans_per_row > 0] == np.prod(arr_shape[list(nonaligned_axes)]))
+            local_obsnames = anndata_dict[group_name][view_name].obs_names.intersection(group_samples, sort=False)
+            idx = pd.Index(group_samples).get_indexer(local_obsnames)
+            assert np.all(local_arr == np.take(global_arr, idx, axis=axis))
+
+            idx = np.isin(group_samples, local_obsnames)
+            assert np.all(np.isnan(np.compress(~idx, new_global_arr, axis=axis)))
+            assert np.all(np.compress(idx, new_global_arr, axis=axis) == np.compress(idx, global_arr, axis=axis))
 
     for view_name, view_features in dataset.feature_names.items():
         arr_shape[axis] = view_features.size
@@ -146,8 +150,13 @@ def test_alignment(dataset, rng, axis):
             assert np.all(new_local_arr == local_arr)
             assert np.isnan(new_global_arr).sum() == global_arr.size - local_arr.size
 
-            nans_per_row = np.isnan(new_global_arr).sum(axis=nonaligned_axes)
-            assert np.all(nans_per_row[nans_per_row > 0] == np.prod(arr_shape[list(nonaligned_axes)]))
+            local_varnames = anndata_dict[group_name][view_name].var_names.intersection(view_features, sort=False)
+            idx = pd.Index(view_features).get_indexer(local_varnames)
+            assert np.all(local_arr == np.take(global_arr, idx, axis=axis))
+
+            idx = np.isin(view_features, local_varnames)
+            assert np.all(np.isnan(np.compress(~idx, new_global_arr, axis=axis)))
+            assert np.all(np.compress(idx, new_global_arr, axis=axis) == np.compress(idx, global_arr, axis=axis))
 
 
 def test_getitems(anndata_dict, dataset, rng):

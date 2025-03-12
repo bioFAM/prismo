@@ -255,6 +255,7 @@ class PRISMO:
             self._model_opts.likelihoods,
             self._model_opts.nonnegative_weights,
             self._model_opts.nonnegative_factors,
+            self._data_opts.remove_constant_features,
             self._data_opts.scale_per_group,
         )
         data.preprocessor = preprocessor

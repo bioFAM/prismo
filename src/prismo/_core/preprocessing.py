@@ -24,6 +24,7 @@ class PrismoPreprocessor(Preprocessor):
         nonnegative_weights: dict[str, bool],
         nonnegative_factors: dict[str, bool],
         scale_per_group: bool = True,
+        remove_constant_features: bool = True,
         constant_feature_var_threshold: float = 1e-16,
     ):
         super().__init__()
@@ -34,17 +35,19 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
         view_vars = dataset.apply(lambda adata, group_name, view_name: utils.nanvar(adata.X, axis=0), by_group=False)
-        nonconstantfeatures = {}
-        for view_name, viewvar in view_vars.items():
-            # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
-            # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
-            nonconst = viewvar > constant_feature_var_threshold
-            _logger.debug(f"Removing {nonconst.size - nonconst.sum()} features from view {view_name}.")
-            if issparse(nonconst):
-                nonconst = nonconst.toarray()
-            nonconstantfeatures[view_name] = dataset.feature_names[view_name][nonconst]
 
-        dataset.reindex_features(nonconstantfeatures)
+        if remove_constant_features:
+            nonconstantfeatures = {}
+            for view_name, viewvar in view_vars.items():
+                # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
+                # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.
+                nonconst = viewvar > constant_feature_var_threshold
+                _logger.debug(f"Removing {nonconst.size - nonconst.sum()} features from view {view_name}.")
+                if issparse(nonconst):
+                    nonconst = nonconst.toarray()
+                nonconstantfeatures[view_name] = dataset.feature_names[view_name][nonconst]
+
+            dataset.reindex_features(nonconstantfeatures)
 
         meanfunc = lambda mod, group_name, view_name, axis: utils.nanmean(mod.X, axis=axis)
         self._feature_means = dataset.apply(meanfunc, axis=0)

@@ -9,7 +9,7 @@ from anndata import AnnData
 
 from prismo._core import PrismoDataset, preprocessing
 
-from ..utils import preprocess
+from .utils import preprocess
 
 
 def create_adata(X, var_names=None, obs_names=None):

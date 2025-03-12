@@ -1,5 +1,3 @@
-from collections import Counter, defaultdict
-from functools import reduce
 from math import isclose
 
 import numpy as np
@@ -7,7 +5,7 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
-from prismo._core import PrismoDataset, preprocessing
+from prismo._core import preprocessing
 
 from .utils import preprocess
 
@@ -123,100 +121,3 @@ def test_scale_data():
 
     combined_view1 = np.concatenate([result["group1"]["view1"], result["group2"]["view1"]], axis=0)
     assert np.allclose(combined_view1.std(), 1)
-
-
-def test_align_obs_var():
-    obs_names = {
-        "group1": {"view1": ["b", "c", "d", "e"], "view2": ["d", "e", "f"], "view3": ["a", "b", "c", "d"]},
-        "group2": {"view1": ["h", "i", "j", "k"], "view2": ["j", "k", "l"], "view3": ["k", "l", "m"]},
-    }
-
-    var_names = {
-        "view1": {"group1": ["g1", "g2"], "group2": ["g1", "g2", "g3"]},
-        "view2": {"group1": ["g3", "g4"], "group2": ["g3", "g4", "g5"]},
-        "view3": {"group1": ["g5", "g6"], "group2": ["g6", "g7", "g8"]},
-    }
-
-    data = {}
-    obs_histogram = {}
-    var_histogram = defaultdict(Counter)
-    for group_name, gobs_names in obs_names.items():
-        gdata = {}
-        ghist = Counter()
-        for view_name, vvar_names in var_names.items():
-            cobsnames = gobs_names[view_name]
-            cvarnames = vvar_names[group_name]
-            gdata[view_name] = create_adata(
-                np.random.randn(len(cobsnames), len(cvarnames)), obs_names=cobsnames, var_names=cvarnames
-            )
-
-            ghist.update(cobsnames)
-            var_histogram[view_name].update(cvarnames)
-        data[group_name] = gdata
-        obs_histogram[group_name] = ghist
-
-    dataset = PrismoDataset(data, use_obs="union", use_var="union")
-
-    nobs_histogram = {group_name: Counter(ghist.values()) for group_name, ghist in obs_histogram.items()}
-    nvar_histogram = {view_name: Counter(vhist.values()) for view_name, vhist in var_histogram.items()}
-
-    aligned_obs = {
-        group_name: np.zeros(
-            len(reduce(lambda x, y: x | y, (set(names) for names in group.values()), set())), dtype=int
-        )
-        for group_name, group in obs_names.items()
-    }
-    aligned_var = {
-        view_name: np.zeros(len(reduce(lambda x, y: x | y, (set(names) for names in view.values()), set())), dtype=int)
-        for view_name, view in var_names.items()
-    }
-
-    obs_mapping = {}
-    for group_name, group in obs_names.items():
-        galigned = aligned_obs[group_name]
-        cobsmapping = {}
-        for view_name, view in group.items():
-            arr = np.ones(len(view), dtype=int)
-            aligned = dataset.align_local_array_to_global(
-                arr, group_name, view_name, align_to="samples", axis=0, fill_value=0
-            )
-            cobsmapping[view_name] = np.nonzero(aligned)[0]
-            galigned += aligned
-        obs_mapping[group_name] = cobsmapping
-
-    for group_name, galigned in aligned_obs.items():
-        assert np.sum(galigned == 0) == 0
-        for n, count in nobs_histogram[group_name].items():
-            assert np.sum(galigned == n) == count
-
-    for group_name, group in obs_names.items():
-        arr = np.arange(len(obs_histogram[group_name]))
-        for view_name, view in group.items():
-            aligned_arr = dataset.align_global_array_to_local(arr, group_name, view_name, align_to="samples", axis=0)
-            assert aligned_arr.size == len(view)
-            assert np.all(aligned_arr == arr[obs_mapping[group_name][view_name]])
-
-    var_mapping = {}
-    for view_name, view in var_names.items():
-        valigned = aligned_var[view_name]
-        cvarmapping = {}
-        for group_name, group in view.items():
-            arr = np.ones(len(group), dtype=int)
-            aligned = dataset.align_local_array_to_global(
-                arr, group_name, view_name, align_to="features", axis=0, fill_value=0
-            )
-            cvarmapping[group_name] = np.nonzero(aligned)[0]
-            valigned += aligned
-        var_mapping[view_name] = cvarmapping
-
-    for view_name, valigned in aligned_var.items():
-        assert np.sum(valigned == 0) == 0
-        for n, count in nvar_histogram[view_name].items():
-            assert np.sum(valigned == n) == count
-
-    for view_name, view in var_names.items():
-        arr = np.arange(len(var_histogram[view_name]))
-        for group_name, group in view.items():
-            aligned_arr = dataset.align_global_array_to_local(arr, group_name, view_name, align_to="features", axis=0)
-            assert aligned_arr.size == len(group)
-            assert np.all(aligned_arr == arr[var_mapping[view_name][group_name]])

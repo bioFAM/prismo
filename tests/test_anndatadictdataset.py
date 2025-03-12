@@ -6,10 +6,7 @@ import pandas as pd
 import pytest
 from scipy import sparse
 
-from prismo import settings
 from prismo._core.datasets import AnnDataDictDataset
-
-settings.use_dask = False
 
 
 @pytest.fixture(scope="module")

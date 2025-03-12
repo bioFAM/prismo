@@ -47,14 +47,11 @@ class PrismoBatchSampler(Sampler[dict[str, list[int]]]):
 
 class CovariatesDataset(Dataset):
     def __init__(
-        self,
-        data: PrismoDataset,
-        covariates_obs_key: dict[str, str] | None = None,
-        covariates_obsm_key: dict[str, str] | None = None,
+        self, data: PrismoDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
     ):
         super().__init__()
 
-        self.covariates, self.covariates_names = data.get_covariates(covariates_obs_key, covariates_obsm_key)
+        self.covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
         self.covariates = {
             group_name: np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
             for group_name, group_covars in self.covariates.items()

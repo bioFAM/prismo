@@ -277,13 +277,13 @@ class PrismoDataset(Dataset, ABC):
 
     @abstractmethod
     def get_covariates(
-        self, covariates_obs_key: dict[str, str] | None = None, covariates_obsm_key: dict[str, str] | None = None
+        self, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
     ) -> tuple[dict[str, dict[str, NDArray]], dict[str, NDArray]]:
         """Get the covariates for each group.
 
         Args:
-            covariates_obs_key: Column in `.obs` for each group containing the covariate.
-            covariates_obsm_key: Key in `.obsm` for each group containing the covariates.
+            obs_key: Column in `.obs` for each group containing the covariate.
+            obsm_key: Key in `.obsm` for each group containing the covariates.
 
         Returns:
             A tuple. The first element contains the covariates for each group, the second contains the covariate names for each group.

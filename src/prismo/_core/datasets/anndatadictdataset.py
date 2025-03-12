@@ -326,16 +326,16 @@ class AnnDataDictDataset(PrismoDataset):
         return pd.concat(dfs, axis=0, ignore_index=True)
 
     def get_covariates(
-        self, covariates_obs_key: dict[str, str] | None = None, covariates_obsm_key: dict[str, str] | None = None
+        self, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
     ) -> tuple[dict[str, dict[str, NDArray]], dict[str, NDArray]]:
         covariates, covariates_names = {}, {}
-        if covariates_obs_key is None:
-            covariates_obs_key = {}
-        if covariates_obsm_key is None:
-            covariates_obsm_key = {}
+        if obs_key is None:
+            obs_key = {}
+        if obsm_key is None:
+            obsm_key = {}
         for group_name, group in self._data.items():
-            obskey = covariates_obs_key.get(group_name, None)
-            obsmkey = covariates_obsm_key.get(group_name, None)
+            obskey = obs_key.get(group_name, None)
+            obsmkey = obsm_key.get(group_name, None)
             if obskey is None and obsmkey is None:
                 continue
             if obskey and obsmkey:
@@ -381,15 +381,24 @@ class AnnDataDictDataset(PrismoDataset):
         annotations, annotations_names = {}, {}
         if varm_key is not None:
             for view_name, key in varm_key.items():
-                for group in self._data.values():
+                cannot = []
+                for group_name, group in self._data.items():
                     if key in group[view_name].varm:
                         annot = group[view_name].varm[key]
                         if isinstance(annot, pd.DataFrame):
                             annotations_names[view_name] = annot.columns.to_list()
-                            annotations[view_name] = annot.to_numpy().T
-                        else:
-                            annotations[view_name] = annot.T
-                        break
+                            annot = annot.to_numpy()
+                        fill_value = False if annot.dtype == np.bool else np.nan
+                        cannot.append(
+                            self._align_data_array_to_global(
+                                annot, group_name, view_name, "features", fill_value=fill_value
+                            ).T
+                        )
+                if all(a.dtype == np.bool for a in cannot):
+                    annotations[view_name] = reduce(np.logical_or, cannot)
+                else:
+                    annotations[view_name] = np.nanmean(np.stack(cannot, axis=0), axis=0)
+
         return annotations, annotations_names
 
     def _apply_by_group_view(

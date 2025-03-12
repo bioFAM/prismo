@@ -287,17 +287,17 @@ class MuDataDataset(PrismoDataset):
         return pd.concat(dfs, axis=0, ignore_index=True)
 
     def get_covariates(
-        self, covariates_obs_key: dict[str, str] | None = None, covariates_obsm_key: dict[str, str] | None = None
+        self, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
     ) -> tuple[dict[str, dict[str, NDArray]], dict[str, NDArray]]:
         covariates, covariates_names = {}, {}
 
-        if covariates_obs_key is None:
-            covariates_obs_key = {}
-        if covariates_obsm_key is None:
-            covariates_obsm_key = {}
+        if obs_key is None:
+            obs_key = {}
+        if obsm_key is None:
+            obsm_key = {}
         for group_name, group_idx in self._groups.items():
-            obskey = covariates_obs_key.get(group_name, None)
-            obsmkey = covariates_obsm_key.get(group_name, None)
+            obskey = obs_key.get(group_name, None)
+            obsmkey = obsm_key.get(group_name, None)
             if obskey is None and obsmkey is None:
                 continue
             if obskey and obsmkey:

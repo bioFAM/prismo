@@ -97,7 +97,8 @@ class MuDataDataset(PrismoDataset):
         return df.groupby(
             pd.Categorical(df[self._group_by]).rename_categories(lambda x: str(x))
             if self._group_by is not None
-            else lambda x: "group_1"
+            else lambda x: "group_1",
+            observed=True,
         ).indices
 
     def reindex_features(self, feature_names: dict[str, NDArray[str]] | None = None):
@@ -311,23 +312,24 @@ class MuDataDataset(PrismoDataset):
                 for modname, mod in subdata.mod.items():
                     ccov = None
                     if obskey in mod.obs.columns:
-                        ccov = mod.obs[obskey].to_numpy()
+                        ccov = self._align_array_to_samples(mod.obs[obskey].to_numpy(), modname, subdata)[:, None]
                     elif obskey in subdata.obs.columns:
                         ccov = subdata.obs[obskey].to_numpy()
-
                     if ccov is not None:
-                        ccovs[modname] = self._align_array_to_samples(ccov, modname, subdata)[:, None]
+                        ccovs[modname] = ccov
 
                 if len(ccovs):
                     covariates_names[group_name] = obskey
                 else:
                     _logger.warn(f"No covariate data found in obs attribute for group {group_name}.")
             elif obsmkey is not None:
-                covar_dim = []
+                covar_dim = set()
                 for modname, mod in subdata.mod.items():
                     covar = None
+                    needs_alignment = False
                     if obsmkey in mod.obsm:
                         covar = mod.obsm[obsmkey]
+                        needs_alignment = True
                     elif obsmkey in subdata.obsm:
                         covar = subdata.obsm[obsmkey]
                     if covar is not None:
@@ -341,9 +343,10 @@ class MuDataDataset(PrismoDataset):
                             covar = covar.todense()
                         if covar.ndim == 1:
                             covar = covar[..., None]
-                        covar_dim.append(covar.shape[1])
+                        covar_dim.add(covar.shape[1])
 
-                        ccovs[modname] = self._align_array_to_samples(covar, modname, subdata)
+                        if needs_alignment:
+                            ccovs[modname] = self._align_array_to_samples(covar, modname, subdata)
                 if len(covar_dim) > 1:
                     raise ValueError(
                         f"Number of covariate dimensions in group {group_name} must be the same across views."
@@ -359,16 +362,15 @@ class MuDataDataset(PrismoDataset):
                 if key in self._data[modname].varm:
                     annot = self._data[modname].varm[key]
                     if isinstance(annot, pd.DataFrame):
-                        annotations_names[modname] = annot.columns.to_list()
+                        annotations_names[modname] = annot.columns
                         annotations[modname] = annot.to_numpy().T
                     else:
                         annotations[modname] = annot.T
                 elif key in self._data.varm:
                     annot = self._data.varm[key]
-                    varidx = self._data.varmap[modname]
-                    varidx = varidx[varidx > 0] - 1
+                    varidx = self._data.varmap[modname] > 0
                     if isinstance(annot, pd.DataFrame):
-                        annotations_names[modname] = annot.columns.to_list()
+                        annotations_names[modname] = annot.columns
                         annotations[modname] = annot.iloc[varidx, :].to_numpy().T
                     else:
                         annotations[modname] = annot[varidx].T
@@ -396,14 +398,13 @@ class MuDataDataset(PrismoDataset):
 
     def _apply_by_view(self, func: ApplyCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
         data = self._data
-        if self._sample_selection != slice(None) or self._feature_selection != slice(None):
-            if settings.use_dask:
-                if have_dask():
-                    data = _mudata_to_dask(self._orig_data, with_extra=False)[
-                        self._sample_selection, self._feature_selection
-                    ]
-                else:
-                    _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+        if (self._sample_selection != slice(None) or self._feature_selection != slice(None)) and settings.use_dask:
+            if have_dask():
+                data = _mudata_to_dask(self._orig_data, with_extra=False)[
+                    self._sample_selection, self._feature_selection
+                ]
+            else:
+                _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
         ret = {}
         for modname, mod in data.mod.items():
             groups = np.empty((mod.n_obs,), dtype="O")
@@ -417,6 +418,7 @@ class MuDataDataset(PrismoDataset):
         return ret
 
     def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
+        data = self._data
         if settings.use_dask:
             if have_dask():
                 data = _mudata_to_dask(self._orig_data, with_extra=False)[
@@ -424,26 +426,25 @@ class MuDataDataset(PrismoDataset):
                 ]
             else:
                 _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
-                data = self._data
         ret = {}
         for group_name, group_idx in self._groups.items():
             subdata = data[group_idx, :]
-            data = {}
+            gdata = {}
             convert = False
             for modname, mod in subdata.mod.items():
                 if mod.n_obs != subdata.n_obs:
                     convert = True
-                data[modname] = mod
+                gdata[modname] = mod
             if convert:
-                for modname, mod in data.items():
+                for modname, mod in gdata.items():
                     mod = mod.copy()
                     mod.X = mod.X.astype(np.promote_types(mod.X.dtype, type(np.nan)))
-                    data[modname] = mod
-            data = ad.concat(
-                data, axis="var", join="outer", label="view", merge="unique", uns_merge=None, fill_value=np.nan
+                    gdata[modname] = mod
+            gdata = ad.concat(
+                gdata, axis="var", join="outer", label="__view", merge="unique", uns_merge=None, fill_value=np.nan
             )
-            if (data.obs_names != subdata.obs_names).any():
-                data = data[subdata.obs_names, :]
-            cret = func(data, group_name, data.var["view"].to_numpy(), **kwargs, **gkwargs[group_name])
+            if (gdata.obs_names != subdata.obs_names).any():
+                gdata = gdata[subdata.obs_names, :]
+            cret = func(gdata, group_name, gdata.var["__view"].to_numpy(), **kwargs, **gkwargs[group_name])
             ret[group_name] = apply_to_nested(cret, from_dask)
         return ret

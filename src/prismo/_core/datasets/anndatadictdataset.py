@@ -386,7 +386,7 @@ class AnnDataDictDataset(PrismoDataset):
                     if key in group[view_name].varm:
                         annot = group[view_name].varm[key]
                         if isinstance(annot, pd.DataFrame):
-                            annotations_names[view_name] = annot.columns.to_list()
+                            annotations_names[view_name] = annot.columns
                             annot = annot.to_numpy()
                         fill_value = False if annot.dtype == np.bool else np.nan
                         cannot.append(

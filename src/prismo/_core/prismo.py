@@ -448,7 +448,7 @@ class PRISMO:
             # TODO: annotations need to be processed if not aligned or full
             n_informed_factors = annotations[data.view_names[0]].shape[0]
             if data.view_names[0] in annotations_names:
-                factor_names += annotations_names[data.view_names[0]]
+                factor_names += annotations_names[data.view_names[0]].to_list()
             else:
                 factor_names += [
                     f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)

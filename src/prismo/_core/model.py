@@ -64,8 +64,17 @@ class Generative(PyroModule):
         self.likelihoods = likelihoods
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
-        self.feature_means = feature_means
-        self.sample_means = sample_means
+
+        if sample_means is not None:
+            for group_name, gsample_means in sample_means.items():
+                for view_name, vsample_means in gsample_means.items():
+                    if self.likelihoods[view_name] == "GammaPoisson":
+                        mean = torch.as_tensor(vsample_means)
+                        mean[torch.isnan(mean)] = (
+                            0  # if a sample is missing from a view, all features will be nan, and the mean of that sample will also be nan. This sample will be masked anyway
+                        )
+                        self.register_buffer(f"sample_means_{group_name}_{view_name}", torch.as_tensor(vsample_means))
+
         self.gp = gp
         if self.gp is not None:
             pyro.module("gp", self.gp)
@@ -88,6 +97,9 @@ class Generative(PyroModule):
         self._setup_distributions()
 
         self.sample_dict: dict[str, torch.Tensor] = {}
+
+    def _get_sample_means(self, group_name: str, view_name: str):
+        return getattr(self, f"sample_means_{group_name}_{view_name}", None)
 
     def _get_prior_scale(self, view_name: str):
         return getattr(self, f"prior_scales_{view_name}", None)
@@ -283,12 +295,8 @@ class Generative(PyroModule):
         return dist.Normal(loc, torch.reciprocal(precision + EPS))
 
     def _dist_obs_gamma_poisson(self, loc, group_name, view_name, sample_means, **kwargs):
-        mean = sample_means[group_name][view_name]
         dispersion = self.sample_dict[f"dispersion_{view_name}"]
-        mean[torch.isnan(mean)] = (
-            0  # if a sample is missing from a view, all features will be nan, and the mean of that sample will also be nan. This sample will be masked anyway
-        )
-        rate = self.pos_transform(loc) * mean[None, ...]
+        rate = self.pos_transform(loc) * sample_means[None, ...]
         return dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
 
     def _dist_obs_bernoulli(self, loc, **kwargs):
@@ -299,24 +307,6 @@ class Generative(PyroModule):
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
 
         plates = self._get_plates(subsample=sample_idx)
-
-        sample_means = {}
-        for group_name in data.keys():
-            sample_means[group_name] = {}
-            for view_name in self.view_names:
-                if self.likelihoods[view_name] in ["GammaPoisson"]:
-                    sample_means[group_name][view_name] = torch.tensor(
-                        self.sample_means[group_name][view_name][
-                            sample_idx[group_name][nonmissing_samples[group_name][view_name]]
-                        ]
-                    )
-
-        feature_means = {}
-        for group_name in data.keys():
-            feature_means[group_name] = {}
-            for view_name in self.view_names:
-                if self.likelihoods[view_name] in ["GammaPoisson"]:
-                    feature_means[group_name][view_name] = torch.tensor(self.feature_means[group_name][view_name])
 
         # sample non-GP factors
         for group_name in current_group_names:
@@ -374,13 +364,16 @@ class Generative(PyroModule):
                 obs_mask = ~torch.isnan(obs)
                 obs = torch.nan_to_num(obs, nan=0)
 
+                sample_means = self._get_sample_means(group_name, view_name)
+                if sample_means is not None:
+                    sample_means = sample_means[sample_idx[group_name][nonmissing_samples[group_name][view_name]]]
+
                 dist_parameterized = self.dist_obs[view_name](
                     loc,
                     obs=obs,
                     obs_mask=obs_mask,
                     group_name=group_name,
                     view_name=view_name,
-                    feature_means=feature_means,
                     sample_means=sample_means,
                 )
 

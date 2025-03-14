@@ -31,10 +31,14 @@ def sample_all_data_as_one_batch(data: PrismoDataset) -> dict[str, list[int]]:
 def mean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
     if issparse(arr):
         mean = np.asarray(arr.mean(axis=axis))
-        if not keepdims and axis is not None:
+        if not keepdims and axis is not None and mean.ndim == arr.ndim:
             mean = mean.squeeze(axis)
-        elif keepdims and axis is None:
-            mean = np.expand_dims(mean, tuple(range(arr.ndim)))
+        elif keepdims and mean.ndim < arr.ndim:
+            if axis is None:
+                mean = np.expand_dims(mean, tuple(range(arr.ndim)))
+            else:
+                mean = np.expand_dims(mean, axis=axis)
+
     else:
         mean = arr.mean(axis=axis, keepdims=keepdims)
     return mean
@@ -69,7 +73,7 @@ def _nanmean_cs_nonaligned(arr: csr_array | csr_matrix | csc_array | csc_matrix)
 def nanmean(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
     if issparse(arr):
         if axis is None:
-            mean = np.nanmean(arr.data)
+            mean = np.nansum(arr.data) / (np.prod(arr.shape) - np.sum(np.isnan(arr.data)))
             if keepdims:
                 mean = mean[None, None]
         else:

@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from scipy.sparse import csc_array, csr_array
+from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 
 from prismo._core import utils
 
@@ -26,7 +26,7 @@ def nan_array(rng, array):
     return arr
 
 
-@pytest.fixture(scope="module", params=[csr_array, csc_array])
+@pytest.fixture(scope="module", params=[csr_array, csc_array, csr_matrix, csc_matrix])
 def sparse_nan_array(nan_array, request):
     return request.param(nan_array)
 
@@ -34,7 +34,7 @@ def sparse_nan_array(nan_array, request):
 @pytest.mark.parametrize("axis", [None, 0, 1])
 @pytest.mark.parametrize("keepdims", [False, True])
 @pytest.mark.parametrize("method", ["mean", "var", "min", "max"])
-def test_mean(array, sparse_array, axis, keepdims, method):
+def test_op(array, sparse_array, axis, keepdims, method):
     arr_result = getattr(np, method)(array, axis=axis, keepdims=keepdims)
     utils_result = getattr(utils, method)(array, axis=axis, keepdims=keepdims)
     sparse_result = getattr(utils, method)(sparse_array, axis=axis, keepdims=keepdims)
@@ -49,7 +49,7 @@ def test_mean(array, sparse_array, axis, keepdims, method):
 @pytest.mark.parametrize("axis", [None, 0, 1])
 @pytest.mark.parametrize("keepdims", [False, True])
 @pytest.mark.parametrize("method", ["nanmean", "nanvar", "nanmin", "nanmax"])
-def test_nan_mean(nan_array, sparse_nan_array, axis, keepdims, method):
+def test_nan_op(nan_array, sparse_nan_array, axis, keepdims, method):
     arr_result = getattr(np, method)(nan_array, axis=axis, keepdims=keepdims)
     utils_result = getattr(utils, method)(nan_array, axis=axis, keepdims=keepdims)
     sparse_result = getattr(utils, method)(sparse_nan_array, axis=axis, keepdims=keepdims)

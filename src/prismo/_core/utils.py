@@ -143,8 +143,10 @@ def _minmax(
         res = getattr(np, method)(arr, axis=axis)
     if issparse(res):
         res = res.toarray()
-    if keepdims:
+    if keepdims and res.ndim < arr.ndim:
         res = np.expand_dims(res, axis if axis is not None else tuple(range(arr.ndim)))
+    elif not keepdims and res.ndim == arr.ndim:
+        res = res.squeeze(axis)
     return res
 
 

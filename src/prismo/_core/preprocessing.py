@@ -92,6 +92,8 @@ class PrismoPreprocessor(Preprocessor):
             return None
 
         arr = self._center(adata.X, group_name, view_name)
+        if isinstance(arr, np.matrix):
+            arr = np.asarray(arr)
         arr = utils.nanvar(arr, axis=None)
         xp = array_namespace(arr)
         return xp.sqrt(arr)

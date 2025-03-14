@@ -75,7 +75,7 @@ class MuDataDataset(PrismoDataset):
                         group_sample_names = group_sample_names.intersection(self._orig_data.obs_names[group_idx])
                 else:
                     group_sample_names = self._orig_data.obs_names[group_idx]
-                selection.append(group_sample_names)
+                selection = selection.append(group_sample_names)
             self._data = self._orig_data[selection, self._feature_selection]
             self._sample_selection = selection
         else:
@@ -119,7 +119,7 @@ class MuDataDataset(PrismoDataset):
                         view_feature_names = view_feature_names.intersection(mod.var_names)
                 else:
                     view_feature_names = mod.var_names
-                selection.append(view_feature_names)
+                selection = selection.append(view_feature_names)
             self._data = self._orig_data[self._sample_selection, selection]
             self._feature_selection = selection
         else:

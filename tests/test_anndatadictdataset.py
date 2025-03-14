@@ -6,12 +6,7 @@ import pandas as pd
 import pytest
 from scipy import sparse
 
-from prismo._core.datasets import AnnDataDictDataset
-
-
-@pytest.fixture(scope="module")
-def rng():
-    return np.random.default_rng(42)
+from prismo._core.datasets import AnnDataDictDataset, PrismoDataset
 
 
 @pytest.fixture(scope="module")
@@ -70,7 +65,11 @@ def use_var(request):
 
 @pytest.fixture(scope="module")
 def dataset(big_adata, anndata_dict, use_obs, use_var):
-    return AnnDataDictDataset(anndata_dict, use_obs=use_obs, use_var=use_var, cast_to=np.float32)
+    return PrismoDataset(anndata_dict, use_obs=use_obs, use_var=use_var, cast_to=np.float32)
+
+
+def test_dataset(dataset):
+    assert isinstance(dataset, AnnDataDictDataset)
 
 
 def test_properties(anndata_dict, use_obs, use_var, dataset):
@@ -273,7 +272,7 @@ def test_get_missing_obs(anndata_dict, dataset):
     missing = dataset.get_missing_obs()
     for (group_name, view_name), df in missing.groupby(["group", "view"]):
         view = anndata_dict[group_name][view_name]
-        missing = ~np.isin(dataset.sample_names[group_name], view.obs_names)
+        cmissing = ~np.isin(dataset.sample_names[group_name], view.obs_names)
         df = df.set_index("obs_name")
-        assert np.all(df.loc[dataset.sample_names[group_name], "missing"][missing])
-        assert np.all(~df.loc[dataset.sample_names[group_name], "missing"][~missing])
+        assert np.all(df.loc[dataset.sample_names[group_name], "missing"][cmissing])
+        assert np.all(~df.loc[dataset.sample_names[group_name], "missing"][~cmissing])

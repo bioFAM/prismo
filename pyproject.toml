@@ -69,6 +69,7 @@ doc = [
 test = [
     "pytest",
     "coverage",
+    "packaging",
 ]
 
 [tool.hatch.build.hooks.vcs]

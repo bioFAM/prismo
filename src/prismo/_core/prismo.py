@@ -892,7 +892,7 @@ class PRISMO:
                 sample_idx = slice(None)
             cdata = data.preprocessor(view.X[sample_idx, :], slice(None), slice(None), group_name, view_name)[0]
             if issparse(cdata):
-                cdata = cdata.todense()
+                cdata = cdata.toarray()
 
             try:
                 return self._r2(

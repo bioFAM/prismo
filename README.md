@@ -2,7 +2,7 @@
 
 [![codecov](https://codecov.io/gh/bioFAM/prismo/graph/badge.svg?token=IJP1IA4JEU)](https://codecov.io/gh/bioFAM/prismo)
 
-Factor Analysis Models
+PRISMO is a versatile factor analysis framework designed to streamline the construction and training of complex matrix factorisation models for omics data. PRISMO is a probabilistic programming-based Bayesian factor analysis framework that integrates concepts from multiple existing methods while remaining modular and extensible. It generalises widely used matrix factorisation tools by incorporating flexible prior options (including structured sparsity priors for multi-omics data and covariate-informed priors for spatio-temporal data), non-negativity constraints, and diverse data likelihoods - allowing users to mix and match components to suit their specific needs. Additionally, PRISMO introduces a novel module for integrating prior biological knowledge in the form of gene sets or, more generally, variable sets, enabling the inference of interpretable latent factors linked to specific molecular programs.
 
 ## Getting started
 

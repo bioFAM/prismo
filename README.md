@@ -37,7 +37,7 @@ See the [changelog][changelog].
 
 ## Contact
 
-For questions and help requests, you can reach out in the [scverse discourse][scverse-discourse].
+For questions and help requests, you can reach out in the [discussions][discussions].
 If you found a bug, please use the [issue tracker][issue-tracker].
 
 ## Citation
@@ -45,6 +45,7 @@ If you found a bug, please use the [issue tracker][issue-tracker].
 > t.b.a
 
 [issue-tracker]: https://github.com/bioFAM/prismo/issues
+[discussions]: https://github.com/bioFAM/prismo/discussions
 [changelog]: https://prismo.readthedocs.io/latest/changelog.html
 [link-docs]: https://prismo.readthedocs.io
 [link-api]: https://prismo.readthedocs.io/latest/api.html

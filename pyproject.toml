@@ -10,10 +10,13 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
 authors = [
-    {name = "ABC"},
+    {name = "Ilia Kats", email = "i.kats@dkfz.de"},
+    {name = "Arber Qoku", email = "arber.qoku@dkfz.de"},
+    {name = "Florin Walter", email = "florin.walter@dkfz.de"},
+    {name = "Martin Rohbeck", email = "martin.rohbeck@dkfz.de"},
 ]
 maintainers = [
-    {name = "ABC", email = "abc@dkfz.de"},
+    {name = "Ilia Kats", email = "i.kats@dkfz.de"},
 ]
 urls.Documentation = "https://prismo.readthedocs.io/"
 urls.Source = "https://github.com/bioFAM/prismo"

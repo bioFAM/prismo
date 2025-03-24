@@ -1,105 +1,161 @@
+from functools import reduce
+
 import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 
-from .utils import preprocess
+from prismo._core import PrismoDataset
+from prismo._core.preprocessing import PrismoPreprocessor
+from prismo._core.utils import sample_all_data_as_one_batch
 
 
-@pytest.mark.filterwarnings("ignore:Observation names are not unique.+:UserWarning")
-def test_remove_constant_features_across_groups():
-    X1 = np.array(
-        [
-            [1.0, 2.0, 3.0, 1.0],  # Second, and Last feature is constant
-            [3.0, 2.0, 2.0, 1.0],
-            [2.0, 2.0, 4.0, 1.0],
-        ]
+@pytest.fixture(scope="module", params=[np.asarray, csc_array, csc_matrix, csr_array, csr_matrix])
+def array(rng, request):
+    def make_array(ncols, constant_cols, fill_value=None):
+        arr = rng.poisson(0.5, size=(100, ncols))
+        for col in constant_cols:
+            arr[:, col] = arr[0, col] if fill_value is None else fill_value
+        return request.param(arr)
+
+    return make_array
+
+
+@pytest.fixture(scope="module", params=[0, 1, 2, 3, "all"])
+def array1_n_constant_cols(request):
+    return request.param
+
+
+@pytest.fixture(scope="module", params=[0, 1, 2, 3, "all"])
+def array2_n_constant_cols(request):
+    return request.param
+
+
+@pytest.fixture(scope="module", params=["groups", "views"])
+def arrays_are(request):
+    return request.param
+
+
+@pytest.fixture(scope="module", params=["partial", "full"])
+def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, arrays_are, request):
+    arrays_ncols = rng.integers(30, 60, size=2)
+    genes = np.asarray([f"gene_{i}" for i in range(arrays_ncols.max())])
+
+    array1_genes = pd.Index(rng.choice(genes, size=arrays_ncols[0], replace=False))
+    array2_genes = pd.Index(rng.choice(genes, size=arrays_ncols[1], replace=False))
+
+    genes_intersection = array1_genes.intersection(array2_genes)
+
+    if array1_n_constant_cols == "all":
+        array1_constant_cols = np.arange(genes_intersection.size)
+    elif array1_n_constant_cols > 0:
+        array1_constant_cols = rng.choice(arrays_ncols.min(), size=array1_n_constant_cols, replace=False)
+    else:
+        array1_constant_cols = []
+
+    if array2_n_constant_cols == "all":
+        array2_constant_cols = np.arange(genes_intersection.size)
+    elif array2_n_constant_cols > 0:
+        if request.param == "partial":
+            if len(array1_constant_cols) > 0:
+                choices = np.concatenate(
+                    (
+                        np.arange(array1_constant_cols[0]),
+                        np.arange(array1_constant_cols[0] + 1, genes_intersection.size),
+                    )
+                )
+                array2_constant_cols = np.concatenate(
+                    (array1_constant_cols[:1], rng.choice(choices, size=array2_n_constant_cols - 1, replace=False))
+                )
+            else:
+                array2_constant_cols = rng.choice(genes_intersection.size, size=array2_n_constant_cols, replace=False)
+        else:
+            if len(array1_constant_cols) > 0:
+                if array2_n_constant_cols < len(array1_constant_cols):
+                    array2_constant_cols = array1_constant_cols
+                else:
+                    choices = np.setdiff1d(np.arange(genes_intersection.size), array1_constant_cols)
+                    array2_constant_cols = np.concatenate(
+                        (
+                            array1_constant_cols,
+                            rng.choice(choices, size=array2_n_constant_cols - len(array1_constant_cols), replace=False),
+                        )
+                    )
+            else:
+                array2_constant_cols = rng.choice(genes_intersection.size, size=array2_n_constant_cols, replace=False)
+    else:
+        array2_constant_cols = []
+
+    array1_constant_genes = genes_intersection[array1_constant_cols]
+    array2_constant_genes = genes_intersection[array2_constant_cols]
+
+    array1_constant_cols = [array1_genes.get_loc(gene) for gene in array1_constant_genes]
+    array2_constant_cols = [array2_genes.get_loc(gene) for gene in array2_constant_genes]
+
+    array1 = array(arrays_ncols[0], array1_constant_cols, fill_value=42)
+    array2 = array(arrays_ncols[1], array2_constant_cols, fill_value=42)
+
+    adata1 = ad.AnnData(
+        array1,
+        var=pd.DataFrame(index=array1_genes),
+        obs=pd.DataFrame(index=[f"group_1_obs_{i}" for i in range(array1.shape[0])]),
     )
-    X2 = np.array(
-        [
-            [2.0, 2.0, 1.0, 5.0],  # Second feature is constant
-            [3.0, 2.0, 2.0, 4.0],
-            [1.0, 2.0, 3.0, 6.0],
-        ]
+    adata2 = ad.AnnData(
+        array2,
+        var=pd.DataFrame(index=array2_genes),
+        obs=pd.DataFrame(index=[f"group_2_obs_{i}" for i in range(array2.shape[0])]),
     )
 
-    adata1 = ad.AnnData(X1, var=pd.DataFrame(index=[f"gene{i}" for i in range(4)]))
-    adata2 = ad.AnnData(X2, var=pd.DataFrame(index=[f"gene{i}" for i in range(4)]))
-    data = {"group1": {"view1": adata1}, "group2": {"view1": adata2}}
-    likelihoods = {"view1": "GammaPoisson"}  # turn off scaling
-
-    result = preprocess(data, likelihoods)[1]
-
-    # Test that constant features were removed
-    assert result["group1"]["view1"].shape[1] == 3  # One constant feature should be removed
-    assert result["group2"]["view1"].shape[1] == 3  # One constant feature should be removed
-
-    # Test that the correct features were kept
-    assert not np.allclose(result["group1"]["view1"][:, 0], 1.0)  # Non-constant feature
-    assert not np.allclose(result["group1"]["view1"][:, 1], 2.0)  # Non-constant feature
-    assert not np.allclose(result["group1"]["view1"][:, 2], 3.0)  # Non-constant feature
+    if arrays_are == "groups":
+        adata_dict = {"group1": {"view1": adata1}, "group2": {"view1": adata2}}
+        constgenes = {"group1": array1_constant_genes, "group2": array2_constant_genes}
+    else:
+        adata_dict = {"group1": {"view1": adata1, "view2": adata2}}
+        constgenes = {"view1": array1_constant_genes, "view2": array2_constant_genes}
+    return adata_dict, constgenes
 
 
-def test_remove_constant_features_all_varying():
-    # Test case where no features are constant
-    X = np.array([[1.0, 2.0, 3.0], [2.0, 3.0, 4.0], [3.0, 4.0, 5.0]])
+@pytest.mark.parametrize("likelihood", ["Normal", "GammaPoisson", "Bernoulli"])
+@pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
+@pytest.mark.filterwarnings("ignore:invalid value encountered in (scalar )?divide:RuntimeWarning")
+@pytest.mark.filterwarnings("ignore:Degrees of freedom <= 0 for slice:RuntimeWarning")
+@pytest.mark.filterwarnings("ignore:Mean of empty slice.:RuntimeWarning")
+def test_remove_constant_features(adata_dict, arrays_are, likelihood):
+    adata_dict, constgenes = adata_dict
 
-    adata = ad.AnnData(X, var=pd.DataFrame(index=[f"gene{i}" for i in range(3)]))
-    data = {"group1": {"view1": adata}}
-    likelihoods = {"view1": "GammaPoisson"}  # turn off scaling
+    dataset = PrismoDataset(adata_dict)
+    likelihoods = {view_name: likelihood for view_name in dataset.view_names}
 
-    result = preprocess(data, likelihoods)[1]
-
-    # Test that no features were removed
-    assert result["group1"]["view1"].shape[1] == 3
-    assert np.array_equal(result["group1"]["view1"], X)
-
-
-@pytest.mark.filterwarnings("ignore:Degrees of freedom.+:RuntimeWarning")
-@pytest.mark.filterwarnings("ignore:invalid value encountered in( scalar)? divide:RuntimeWarning")
-def test_remove_constant_features_all_constant():
-    # Test case where all features are constant
-    X = np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
-
-    adata = ad.AnnData(X, var=pd.DataFrame(index=[f"gene{i}" for i in range(3)]))
-    data = {"group1": {"view1": adata}}
-    likelihoods = {"view1": "Normal"}
-
-    result = preprocess(data, likelihoods)[1]
-
-    # Test that all features were removed
-    assert result["group1"]["view1"].shape[1] == 0
-
-
-def test_remove_constant_features_multiple_views():
-    # Test case with multiple views per group
-    X1 = np.array(
-        [
-            [1.0, 2.0],  # First feature constant
-            [1.0, 3.0],
-            [1.0, 4.0],
-        ]
+    preprocessor = PrismoPreprocessor(
+        dataset,
+        likelihoods,
+        {view_name: False for view_name in dataset.view_names},
+        {group_name: False for group_name in dataset.group_names},
+        scale_per_group=True,
+        remove_constant_features=True,
     )
-    X2 = np.array(
-        [
-            [1.0, 2.0],  # Second feature constant
-            [2.0, 2.0],
-            [3.0, 2.0],
-        ]
-    )
+    dataset.preprocessor = preprocessor
+    result = dataset.__getitems__(sample_all_data_as_one_batch(dataset))["data"]
 
-    adata1 = ad.AnnData(X1, var=pd.DataFrame(index=[f"gene{i}" for i in range(2)]))
-    adata2 = ad.AnnData(X2, var=pd.DataFrame(index=[f"gene{i}" for i in range(2)]))
+    if arrays_are == "groups":
+        arr = np.concatenate(
+            [
+                dataset.align_local_array_to_global(group["view1"], group_name, "view1", align_to="features", axis=1)
+                for group_name, group in result.items()
+            ],
+            axis=0,
+        )
+        assert np.all(~np.allclose(np.nanvar(arr, axis=0), 0))
 
-    data = {"group1": {"view1": adata1, "view2": adata2}}
-    likelihoods = {"view1": "GammaPoisson", "view2": "GammaPoisson"}  # turn off scaling
+        constgenes = reduce(lambda x, y: x.intersection(y), constgenes.values())
+        assert np.all(~constgenes.isin(dataset.feature_names["view1"]))
 
-    result = preprocess(data, likelihoods)[1]
-
-    # Test that constant features were removed from each view
-    assert result["group1"]["view1"].shape[1] == 1
-    assert result["group1"]["view2"].shape[1] == 1
-
-    # Test that the correct features were kept
-    assert not np.allclose(result["group1"]["view1"][:, 0], 2.0)
-    assert not np.allclose(result["group1"]["view2"][:, 0], 1.0)
+        allfeatures = adata_dict["group1"]["view1"].var_names.union(adata_dict["group2"]["view1"].var_names)
+        assert arr.shape[1] == allfeatures.size - constgenes.size
+    else:
+        for group_name, group in result.items():
+            for view_name, view in group.items():
+                assert np.all(~np.allclose(np.nanvar(view, axis=0), 0))
+                assert np.all(~constgenes[view_name].isin(dataset.feature_names[view_name]))
+                assert view.shape[1] == adata_dict[group_name][view_name].n_vars - constgenes[view_name].size

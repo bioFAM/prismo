@@ -34,10 +34,11 @@ class PrismoPreprocessor(Preprocessor):
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
-        view_vars = dataset.apply(lambda adata, group_name, view_name: utils.nanvar(adata.X, axis=0), by_group=False)
-
         if remove_constant_features:
             nonconstantfeatures = {}
+            view_vars = dataset.apply(
+                lambda adata, group_name, view_name: utils.nanvar(adata.X, axis=0), by_group=False
+            )
             for view_name, viewvar in view_vars.items():
                 # Storing a boolean mask is probably more memory-efficient than storing indices: indices are int64 (4 bytes), while
                 # booleans are 1 byte. As long as we keep more than 1/ of the features this uses less memory.

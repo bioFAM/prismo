@@ -1,6 +1,5 @@
 from functools import reduce
 
-import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
@@ -38,7 +37,7 @@ def arrays_are(request):
 
 
 @pytest.fixture(scope="module", params=["partial", "full"])
-def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, arrays_are, request):
+def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, arrays_are, create_adata, request):
     arrays_ncols = rng.integers(30, 60, size=2)
     genes = np.asarray([f"gene_{i}" for i in range(arrays_ncols.max())])
 
@@ -96,15 +95,11 @@ def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, array
     array1 = array(arrays_ncols[0], array1_constant_cols, fill_value=42)
     array2 = array(arrays_ncols[1], array2_constant_cols, fill_value=42)
 
-    adata1 = ad.AnnData(
-        array1,
-        var=pd.DataFrame(index=array1_genes),
-        obs=pd.DataFrame(index=[f"group_1_obs_{i}" for i in range(array1.shape[0])]),
+    adata1 = create_adata(
+        array1, var_names=array1_genes, obs_names=[f"group_1_obs_{i}" for i in range(array1.shape[0])]
     )
-    adata2 = ad.AnnData(
-        array2,
-        var=pd.DataFrame(index=array2_genes),
-        obs=pd.DataFrame(index=[f"group_2_obs_{i}" for i in range(array2.shape[0])]),
+    adata2 = create_adata(
+        array2, var_names=array2_genes, obs_names=[f"group_2_obs_{i}" for i in range(array2.shape[0])]
     )
 
     if arrays_are == "groups":

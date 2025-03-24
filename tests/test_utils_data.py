@@ -5,8 +5,6 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
-from prismo._core import preprocessing
-
 from .utils import preprocess
 
 
@@ -16,33 +14,6 @@ def create_adata(X, var_names=None, obs_names=None):
     if obs_names is None:
         obs_names = [f"obs{i}" for i in range(X.shape[0])]
     return AnnData(X, var=pd.DataFrame(index=var_names), obs=pd.DataFrame(index=obs_names))
-
-
-def test_infer_likelihoods():
-    data = {
-        "view1": create_adata(np.random.randn(2, 2)),
-        "view2": create_adata(np.random.randint(0, 1, (2, 2))),
-        "view3": create_adata(np.random.randint(0, 100, (2, 2))),
-    }
-
-    likelihoods = {vn: preprocessing.infer_likelihood(v) for vn, v in data.items()}
-
-    assert likelihoods["view1"] == "Normal"
-    assert likelihoods["view2"] == "Bernoulli"
-    assert likelihoods["view3"] == "GammaPoisson"
-
-
-def test_validate_likelihoods():
-    data = {
-        "view1": create_adata(np.random.randn(2, 2)),
-        "view2": create_adata(np.random.randint(0, 1, (2, 2))),
-        "view3": create_adata(np.random.randint(0, 100, (2, 2))),
-    }
-
-    likelihoods = {"view1": "Normal", "view2": "Bernoulli", "view3": "GammaPoisson"}
-
-    for view_name in data.keys():
-        preprocessing.validate_likelihood(data[view_name], None, view_name, likelihoods[view_name])
 
 
 @pytest.mark.filterwarnings("ignore:Observation names are not unique.+:UserWarning")

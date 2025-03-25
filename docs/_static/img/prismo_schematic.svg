@@ -7,7 +7,7 @@
    xml:space="preserve"
    style="clip-rule:evenodd;fill-rule:evenodd;stroke-linecap:round;stroke-miterlimit:1.5"
    id="svg183"
-   sodipodi:docname="prismo_schematic_v2_subfigure.svg"
+   sodipodi:docname="prismo_schematic.svg"
    inkscape:version="1.4 (e7c3feb100, 2024-10-09)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -21,7 +21,13 @@
    inkscape:pageopacity="0"
    inkscape:pagecheckerboard="0"
    inkscape:deskcolor="#d1d1d1"
-   inkscape:current-layer="svg183" /><path
+   inkscape:current-layer="svg183" /><rect
+   style="fill:#ffffff;stroke:#000000;stroke-width:2;stroke-linecap:square;stroke-miterlimit:2;stroke-dashoffset:4.2"
+   id="rect1"
+   width="2068.0698"
+   height="1149.462"
+   x="-57.713577"
+   y="-33.666252" /><path
    d="m 1776.4827,117.88048 c 0,-16.50545 -13.4069,-29.910624 -29.9116,-29.910624 h -538.432 c -16.5087,0 -29.9126,13.405174 -29.9126,29.910624 v 668.50751 c 0,16.50545 13.4039,29.91307 29.9126,29.91307 h 538.432 c 16.5047,0 29.9116,-13.40762 29.9116,-29.91307 z"
    style="fill:#808080;fill-opacity:0.5;stroke:#000000;stroke-width:4;stroke-dasharray:none"
    id="path9" /><path

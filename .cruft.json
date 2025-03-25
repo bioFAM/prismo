@@ -9,8 +9,8 @@
       "project_description": "Factor Analysis Models",
       "author_full_name": "ABC",
       "author_email": "abc@dkfz.de",
-      "github_user": "martinrohbeck",
-      "project_repo": "https://github.com/bioFAM/prismo",
+      "github_user": "bioFAM",
+      "project_repo": "prismo",
       "license": "BSD 3-Clause License",
       "_copy_without_render": [
         ".github/workflows/build.yaml",

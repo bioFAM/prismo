@@ -1,8 +1,10 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v?*.*.*"
+  workflow_dispatch:
 
 # Use "trusted publishing", see https://docs.pypi.org/trusted-publishers/
 jobs:

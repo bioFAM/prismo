@@ -12,7 +12,7 @@ def likelihood(request):
 
 @pytest.fixture(scope="module", params=[np.asarray, csc_array, csc_matrix, csr_array, csr_matrix])
 def adata(rng, create_adata, likelihood, random_array, request):
-    return create_adata(request.param(random_array(likelihood)))
+    return create_adata(request.param(random_array(likelihood, (20, 5))))
 
 
 def test_infer_likelihoods(adata, likelihood):

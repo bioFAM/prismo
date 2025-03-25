@@ -35,7 +35,7 @@ Methods table
 {% block attributes_documentation %}
 {% if attributes %}
 Attributes
-~~~~~~~~~~~
+~~~~~~~~~~
 
 {% for item in attributes %}
 

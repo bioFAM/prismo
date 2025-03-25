@@ -1,17 +1,18 @@
 {
   "template": "https://github.com/scverse/cookiecutter-scverse",
-  "commit": "75c74be1a7c2ed7e5503510af0c535a3e105ab37",
+  "commit": "61c18506e651f13ede870826c03eea8b706a454b",
   "checkout": null,
   "context": {
     "cookiecutter": {
       "project_name": "prismo",
       "package_name": "prismo",
-      "project_description": "Factor Analysis Models",
+      "project_description": "PRISMO",
       "author_full_name": "ABC",
       "author_email": "abc@dkfz.de",
       "github_user": "bioFAM",
-      "project_repo": "prismo",
+      "github_repo": "prismo",
       "license": "BSD 3-Clause License",
+      "ide_integration": true,
       "_copy_without_render": [
         ".github/workflows/build.yaml",
         ".github/workflows/test.yaml",
@@ -22,7 +23,8 @@
         "lstrip_blocks": true,
         "trim_blocks": true
       },
-      "_template": "https://github.com/scverse/cookiecutter-scverse"
+      "_template": "https://github.com/scverse/cookiecutter-scverse",
+      "_commit": "61c18506e651f13ede870826c03eea8b706a454b"
     }
   },
   "directory": null

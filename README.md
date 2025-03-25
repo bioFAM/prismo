@@ -1,6 +1,13 @@
 # PRISMO
 
-[![codecov](https://codecov.io/gh/bioFAM/prismo/graph/badge.svg?token=IJP1IA4JEU)](https://codecov.io/gh/bioFAM/prismo)
+[![Tests][badge-tests]][tests]
+[![codecov][badge-codecov]][codecov]
+[![Documentation][badge-docs]][documentation]
+
+[badge-tests]: https://img.shields.io/github/actions/workflow/status/bioFAM/prismo/test.yaml?branch=main
+[badge-codecov]: https://codecov.io/gh/bioFAM/prismo/graph/badge.svg?token=IJP1IA4JEU
+[badge-docs]: https://img.shields.io/readthedocs/prismo
+
 
 ![graphical abstract](https://raw.githubusercontent.com/bioFAM/prismo/main/docs/_static/img/prismo_schematic.svg)
 
@@ -8,19 +15,19 @@ PRISMO is a versatile factor analysis framework designed to streamline the const
 
 ## Getting started
 
-Please refer to the [documentation][link-docs]. In particular, the
+Please refer to the [documentation][]. In particular, the
 
-- [API documentation][link-api].
+- [API documentation][].
 
 ## Installation
 
-You need to have Python 3.10 or newer installed on your system. If you don't have
+You need to have Python 3.11 or newer installed on your system. If you don't have
 Python installed, we recommend installing [Micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html).
 
 There are several alternative options to install prismo:
 
 <!--
-1) Install the latest release of `prismo` from [PyPI][link-pypi]:
+1) Install the latest release of `prismo` from [PyPI][]:
 
 ```bash
 pip install prismo
@@ -35,20 +42,22 @@ pip install git+https://github.com/bioFAM/prismo.git@main
 
 ## Release notes
 
-See the [changelog][changelog].
+See the [changelog][].
 
 ## Contact
 
-For questions and help requests, you can reach out in the [discussions][discussions].
-If you found a bug, please use the [issue tracker][issue-tracker].
+For questions and help requests, you can reach out in the [discussions][].
+If you found a bug, please use the [issue tracker][].
 
 ## Citation
 
 > t.b.a
 
-[issue-tracker]: https://github.com/bioFAM/prismo/issues
+[issue tracker]: https://github.com/bioFAM/prismo/issues
+[tests]: https://github.com/bioFAM/prismo/actions/workflows/test.yaml
+[codecov]: https://codecov.io/gh/bioFAM/prismo
+[documentation]: https://prismo.readthedocs.io
 [discussions]: https://github.com/bioFAM/prismo/discussions
 [changelog]: https://prismo.readthedocs.io/latest/changelog.html
-[link-docs]: https://prismo.readthedocs.io
-[link-api]: https://prismo.readthedocs.io/latest/api.html
-[link-pypi]: https://pypi.org/project/prismo
+[api documentation]: https://prismo.readthedocs.io/en/latest/api.htm
+[pypi]: https://pypi.org/project/prismo

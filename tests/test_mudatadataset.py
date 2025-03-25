@@ -187,7 +187,7 @@ def test_apply_by_view(mdata, dataset):
 
 
 @pytest.mark.xfail(
-    Version(ad.__version__) < Version("0.12"), reason="anndata bug: https://github.com/scverse/anndata/pull/1911"
+    Version(ad.__version__) < Version("0.11.4"), reason="anndata bug: https://github.com/scverse/anndata/pull/1911"
 )
 def test_apply_by_group(mdata, dataset):
     def applyfun(adata, group_name, view_name):

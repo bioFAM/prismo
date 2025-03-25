@@ -13,14 +13,11 @@ from numpy.typing import NDArray
 
 class BasicKernel(Kernel):
     """A kernel that does not model group correlations.
-    
-    This kernel should be used when covariates are not aligned across groups."""
 
-    def __init__(
-        self,
-        base_kernel: Kernel | None,
-        n_groups: int,
-    ):
+    This kernel should be used when covariates are not aligned across groups.
+    """
+
+    def __init__(self, base_kernel: Kernel | None, n_groups: int):
         super().__init__()
 
         self.base_kernel = base_kernel
@@ -34,7 +31,7 @@ class BasicKernel(Kernel):
     @property
     def group_corr(self):
         return torch.eye(self.n_groups)[None, ...].expand(self.base_kernel.batch_shape[0], -1, -1)
-    
+
 
 class MefistoKernel(Kernel):
     """A kernel that combines a base kernel with group-specific correlations.
@@ -184,6 +181,7 @@ class GP(ApproximateGP):
         setup_inducing_points(
             covariates, self._inducing_points_idx, self._n_inducing, out=self.variational_strategy.inducing_points
         )
+
 
 def get_inducing_points_idx(
     covariates: Iterable[torch.Tensor], n_inducing: int, n_factors: int

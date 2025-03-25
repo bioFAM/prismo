@@ -13,7 +13,7 @@ def array(rng):
     return arr
 
 
-@pytest.fixture(scope="module", params=[csr_array, csc_array])
+@pytest.fixture(scope="module", params=[csr_array, csc_array, csr_matrix, csc_matrix])
 def sparse_array(array, request):
     return request.param(array)
 

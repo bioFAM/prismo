@@ -9,6 +9,21 @@ def rng():
     return np.random.default_rng(42)
 
 
+@pytest.fixture(scope="module")
+def random_array(rng):
+    def _arr(likelihood, shape):
+        match likelihood:
+            case "Normal":
+                arr = rng.normal(size=(100, 30))
+            case "Bernoulli":
+                arr = rng.binomial(1, 0.5, size=(100, 30))
+            case "GammaPoisson":
+                arr = rng.negative_binomial(10, 0.9, size=(100, 30))
+        return arr
+
+    return _arr
+
+
 @pytest.fixture(scope="session")
 def create_adata():
     def _adata(X, var_names=None, obs_names=None):

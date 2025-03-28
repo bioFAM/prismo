@@ -50,7 +50,7 @@ def test_save_load_model(setup_teardown):
     # Create and train the PRISMO model for a single epoch
     model = PRISMO(
         data,
-        DataOptions(scale_per_group=False),
+        DataOptions(scale_per_group=False, plot_data_overview=False),
         ModelOptions(
             n_factors=2,
             likelihoods={"view1": "Normal", "view2": "Normal"},

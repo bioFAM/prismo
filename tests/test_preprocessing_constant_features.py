@@ -141,7 +141,10 @@ def test_remove_constant_features(adata_dict, arrays_are, likelihood):
             ],
             axis=0,
         )
-        assert np.all(~np.allclose(np.nanvar(arr, axis=0), 0))
+        if arr.shape[1] > 0:
+            assert not np.allclose(np.nanvar(arr, axis=0), 0)
+        else:
+            assert np.nanvar(arr, axis=0).shape[0] == 0
 
         constgenes = reduce(lambda x, y: x.intersection(y), constgenes.values())
         assert np.all(~constgenes.isin(dataset.feature_names["view1"]))
@@ -151,6 +154,9 @@ def test_remove_constant_features(adata_dict, arrays_are, likelihood):
     else:
         for group_name, group in result.items():
             for view_name, view in group.items():
-                assert np.all(~np.allclose(np.nanvar(view, axis=0), 0))
+                if view.shape[1] > 0:
+                    assert not np.allclose(np.nanvar(view, axis=0), 0)
+                else:
+                    assert np.nanvar(view, axis=0).shape[0] == 0
                 assert np.all(~constgenes[view_name].isin(dataset.feature_names[view_name]))
                 assert view.shape[1] == adata_dict[group_name][view_name].n_vars - constgenes[view_name].size

@@ -42,14 +42,16 @@ _no_axis_ticks_y = {"axis_ticks_length_major_y": 0, "axis_ticks_length_minor_y":
 
 def factors_scatter(
     model: PRISMO,
-    x: int,
-    y: int,
-    group: str | None = None,
+    x: int | str,
+    y: int | str,
+    groups: str | Sequence[str] | None = None,
     color: str | None = None,
     shape: str | None = None,
     size: float = 2,
     alpha: float = 1,
-    figsize: tuple[float, float] = (6, 6),
+    figsize: tuple[float, float] | None = None,
+    nrow: int | None = None,
+    ncol: int | None = None,
 ) -> p9.ggplot:
     """Plot two factors against each other and color by covariates.
 
@@ -57,23 +59,38 @@ def factors_scatter(
         model: A PRISMO model.
         x: The factor to plot on the x-axis.
         y: The factor to plot on the y-axis.
-        group: The name of the group. If None, we use the first group.
+        groups: The groups to plot. If `None`, all groups are shown.
         color: The covariate name to color by.
         shape: The covariate name to shape by.
         size: Size of the data points.
         alpha: Transparency of the data points.
         figsize: Figure size in inches.
+        nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
     """
-    if group is None:
-        group = model.group_names[0]
+    if isinstance(groups, str):
+        groups = [groups]
+    elif groups is None:
+        groups = model.group_names
+    if figsize is None:
+        figsize = (5 * len(groups), 5)
 
-    if x < 0 or y < 0:
-        raise ValueError("Factors x and y must be non-negative.")
-    if x >= model.n_factors or y >= model.n_factors:
-        raise ValueError("Factors x and y must be in range of the number of factors.")
+    if isinstance(x, int):
+        if x < 1 or x > model.n_factors:
+            raise ValueError("Factor x must be in range of the number of factors.")
+        else:
+            x = model.factor_names[x - 1]
+    if isinstance(y, int):
+        if y < 1 or y > model.n_factors:
+            raise ValueError("Factor y must be in range of the number of factors.")
+        else:
+            y = model.factor_names[y - 1]
 
-    facs = model.get_factors(return_type="anndata")[group]
-    df_factors = pd.concat([facs.to_df(), facs.obs], axis=1)
+    facs = model.get_factors(return_type="anndata")
+    df_factors = []
+    for group in groups:
+        df_factors.append(pd.concat([facs[group].to_df(), facs[group].obs], axis=1).assign(group=group))
+    df_factors = pd.concat(df_factors, axis=0)
 
     if color is not None and color not in df_factors.columns:
         raise ValueError(f"Color variable {color} not found in the data.")
@@ -87,10 +104,11 @@ def factors_scatter(
         aes_kwargs["shape"] = shape
 
     plot = (
-        p9.ggplot(df_factors, p9.aes(x=f"Factor {x}", y=f"Factor {y}", **aes_kwargs))
+        p9.ggplot(df_factors, p9.aes(x=x, y=y, **aes_kwargs))
         + p9.geom_hline(yintercept=0, linetype="dashed", color="black")
         + p9.geom_vline(xintercept=0, linetype="dashed", color="black")
         + p9.geom_point(size=size, alpha=alpha, stroke=0)
+        + p9.facet_wrap("group", ncol=ncol, nrow=nrow)
         + p9.theme(figure_size=figsize)
     )
 
@@ -99,11 +117,12 @@ def factors_scatter(
 
 def covariates_factor_scatter(
     model: PRISMO,
-    factor: int,
-    group: str | None = None,
-    covariate_dims: list[int] | None = None,
-    color: str | None = None,
+    factor: int | str,
+    groups: str | Sequence[str] | None = None,
+    covariate_dims: int | str | Sequence[int] | Sequence[str] | None = None,
+    color: int | str | None = None,
     shape: str | None = None,
+    size: float = 1,
     figsize: tuple[float, float] = (6, 6),
 ) -> p9.ggplot:
     """Plot a factor against one or two covariate dimensions.
@@ -111,64 +130,87 @@ def covariates_factor_scatter(
     Args:
         model: A PRISMO model.
         factor: The factor to plot.
-        group: The name of the group. If None, we use the first group with a covariate.
+        groups: The groups to plot. If `None`, all groups with covariates are shown.
         covariate_dims: The dimensions of the covariates to plot against. If a list of length 1, plot covariate
             on the x-axis and factor on the y-axis. If a list of length 2, plot the first covariate on the x-axis,
             the second covariate on the y-axis, and factor as color. If None, use all dimensions.
-        color: The covariate name to color by. Only used when one covariate dimension is plotted.
+        color: The factor or covariate to color by. Only used when one covariate dimension is plotted.
         shape: The covariate name to shape by.
+        size: Size of the data points.
         figsize: Figure size in inches.
     """
+    if isinstance(factor, int):
+        if factor not in range(1, model.n_factors + 1):
+            raise ValueError(f"Factors must be between 1 and {model.n_factors}.")
+        else:
+            factor = model.factor_names[factor - 1]
+
+    if isinstance(groups, str):
+        groups = [groups]
+    elif groups is None:
+        groups = [group_name for group_name in model.group_names if group_name in model.covariates]
+    if figsize is None:
+        figsize = (5 * len(groups), 5)
+
+    facs = model.get_factors(return_type="anndata")
+    df_factors = []
+    df_covariates = []
+    for group in groups:
+        df_factors.append(pd.concat([facs[group].to_df(), facs[group].obs], axis=1).assign(group=group))
+
+        covnames = (
+            model.covariates_names[group]
+            if group in model.covariates_names
+            else [f"Covariate {i}" for i in range(model.covariates[group].shape[1])]
+        )
+        df_covariates.append(pd.DataFrame(model.covariates[group], index=df_factors[-1].index, columns=covnames))
+    df_factors = pd.concat(df_factors, axis=0)
+    df_covariates = pd.concat(df_covariates, axis=0)
+
+    if isinstance(covariate_dims, int | str):
+        covariate_dims = [covariate_dims]
+
+    if covariate_dims is None:
+        covariate_dims = df_covariates.columns
+    else:
+        covariate_dims = [df_covariates.columns[d] if isinstance(d, int) else d for d in covariate_dims]
+
     if len(covariate_dims) == 2 and color is not None:
         raise ValueError("Cannot specify a color variable when plotting two covariate dimensions.")
-    if factor not in range(1, model.n_factors + 1):
-        raise ValueError(f"Factors must be between 1 and {model.n_factors}.")
-    if len(covariate_dims) not in (1, 2):
-        raise ValueError("Covariate dimensions must be a list of length 1 or 2.")
+    elif len(covariate_dims) not in (1, 2):
+        raise ValueError("Can only plot 1 or 2 covariate dimensions.")
 
-    if group is None:
-        for group_name in model.group_names:
-            if group_name in model.covariates:
-                group = group_name
-                break
-
-    # create factor DataFrame
-    facs = model.get_factors(return_type="anndata")[group]
-    df_factors = pd.concat([facs.to_df(), facs.obs], axis=1)
-
-    if color is not None and color not in df_factors.columns:
-        raise ValueError(f"Color variable {color} not found in the data.")
+    if color is not None:
+        if isinstance(color, int):
+            color = model.factor_names[color]
+        if color not in df_factors.columns:
+            raise ValueError(f"Color variable {color} not found in the data.")
     if shape is not None and shape not in df_factors.columns:
         raise ValueError(f"Shape variable {shape} not found in the data.")
 
-    covnames = (
-        model.covariates_names[group]
-        if group in model.covariates_names
-        else [f"Covariate {i}" for i in range(model.covariates[group].shape[1])]
-    )
-
-    # create covariate DataFrame
-    df_covariates = pd.DataFrame(model.covariates[group], index=df_factors.index, columns=covnames)
-
-    # combine factor and covariate DataFrames
     df = pd.concat([df_factors, df_covariates], axis=1)
 
     aes_kwargs = {}
     if len(covariate_dims) == 1:
-        x = df_covariates.columns[covariate_dims[0]]
-        y = f"Factor {factor}"
+        x = covariate_dims[0]
+        y = factor
         if color is not None:
             aes_kwargs["color"] = color
 
     elif len(covariate_dims) == 2:
-        x = df_covariates.columns[covariate_dims[0]]
-        y = df_covariates.columns[covariate_dims[1]]
-        aes_kwargs["color"] = f"Factor {factor}"
+        x = covariate_dims[0]
+        y = covariate_dims[1]
+        aes_kwargs["color"] = factor
 
     if shape is not None:
         aes_kwargs["shape"] = shape
 
-    plot = p9.ggplot(df, p9.aes(x=x, y=y, **aes_kwargs)) + p9.geom_point(size=0.1) + p9.theme(figure_size=figsize)
+    plot = (
+        p9.ggplot(df, p9.aes(x=x, y=y, **aes_kwargs))
+        + p9.geom_point(size=size)
+        + p9.facet_wrap("group")
+        + p9.theme(figure_size=figsize)
+    )
 
     return plot
 
@@ -359,6 +401,7 @@ def variance_explained(
 
 def all_weights(
     model: PRISMO,
+    views: str | Sequence[str] | None = None,
     clip: tuple[float, float] | None = (-1, 1),
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,
@@ -367,19 +410,23 @@ def all_weights(
 
     Args:
         model: The PRISMO model.
+        views: The views to consider in the ranking. If `None`, plot all views.
         clip: Weight value range to clip to.
         show_featurenames: Whether to show the feature names on the Y axis.
         figsize: Figure size in inches.
     """
+    if isinstance(views, str):
+        views = [views]
     weights = model.get_weights()
     if figsize is None:
         figsize = (3 * len(weights), 5)
     dfs = []
     for k, df in weights.items():
-        df.reset_index(names="factor", inplace=True)
-        df = df.melt("factor", var_name="feature", value_name="weight")
-        df["view"] = k
-        dfs.append(df)
+        if views is None or k in views:
+            df.reset_index(names="factor", inplace=True)
+            df = df.melt("factor", var_name="feature", value_name="weight")
+            df["view"] = k
+            dfs.append(df)
 
     df = pd.concat(dfs, axis=0, ignore_index=True).assign(
         factor=lambda x: pd.Categorical(x.factor, categories=x.factor.unique())
@@ -393,7 +440,7 @@ def all_weights(
         + p9.geom_tile()
         + _scale_fill_zerosymmetric_diverging(name="Weight", **scale_kwargs)
         + p9.theme(figure_size=figsize, axis_text_x=p9.element_text(rotation=90))
-        + p9.facet_wrap("view")
+        + p9.facet_wrap("view", scales="free_y")
         + p9.labs(x="", y="")
     )
     if not show_featurenames:
@@ -461,6 +508,7 @@ def _plot_factors_covariate(
     covariate1: str | int,
     covariate2: str | int | None = None,
     gp: bool = False,
+    size: int = 1,
     figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
     """Plot every factor against one or two covariates.
@@ -471,6 +519,7 @@ def _plot_factors_covariate(
         covariate2: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
             If `None`, only one covariate will be plotted.
         gp: If `False`, plot the estimated factor values. If `True`, plot the GP predictions.
+        size: The point size.
         figsize: Figure size in inches.
     """
     factors = model.get_factors() if not gp else model.get_gps()
@@ -515,9 +564,9 @@ def _plot_factors_covariate(
 
     plt = (
         p9.ggplot(df, p9.aes("cov1", yaes, color="value"))
-        + p9.geom_point()
+        + p9.geom_point(size=size)
         + _scale_color_zerosymmetric_diverging()
-        + p9.labs(x=covnames[0], y=ylab)
+        + p9.labs(x=covnames[0], y=ylab, color="Factor value")
         + p9.facet_grid("group", "factor")
         + p9.theme(figure_size=figsize)
     )
@@ -530,6 +579,7 @@ def factors_covariate(
     model: PRISMO,
     covariate1: str | int,
     covariate2: str | int | None = None,
+    size: int = 1,
     figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
     """Plot every factor against one or two covariates.
@@ -539,9 +589,10 @@ def factors_covariate(
         covariate1: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
         covariate2: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
             If `None`, only one covariate will be plotted.
+        size: The point size.
         figsize: Figure size in inches.
     """
-    return _plot_factors_covariate(model, covariate1, covariate2, gp=False, figsize=figsize)
+    return _plot_factors_covariate(model, covariate1, covariate2, gp=False, size=size, figsize=figsize)
 
 
 def gp_covariate(
@@ -549,6 +600,7 @@ def gp_covariate(
     ci_opacity: float = 0.3,
     group: Literal["facet", "color"] = "facet",
     color: str = "black",
+    size: int = 1,
     figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
     """Plot the GP posterior mean for each factor in each group at the data covariate locations.
@@ -561,6 +613,7 @@ def gp_covariate(
         ci_opacity: Opacity of the 95% CI band. Only relevant for 1D covariates.
         group: Whether to encode the sample groups by color or by faceting. Only relevant for 1D covariates.
         color: Color of the line and CI and. Only relevant for 1D covariates and `group="facet"`.
+        size: The point size. Only relevant for 2D covariates.
         figsize: Figure size in inches.
     """
     covariates = model.covariates
@@ -581,7 +634,9 @@ def gp_covariate(
             else:
                 covnames[i] = covname[0]
     if covdim[0] == 2:
-        return _plot_factors_covariate(model, 0, 1, gp=True, figsize=figsize) + p9.labs(x=covnames[0], y=covnames[1])
+        return _plot_factors_covariate(model, 0, 1, gp=True, size=size, figsize=figsize) + p9.labs(
+            x=covnames[0], y=covnames[1]
+        )
 
     gp_means = model.get_gps()
     gp_stds = model.get_gps(moment="std")
@@ -656,7 +711,7 @@ def _prepare_weights_df(
     model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
-    factors: int | Sequence[int] | None = None,
+    factors: int | str | Sequence[int] | Sequence[str] | None = None,
 ):
     weights = model.get_weights(ordered=False)
     annotations = model.get_annotations(ordered=False)
@@ -692,7 +747,7 @@ def _prepare_weights_df(
                 how="left",
                 on=["factor", "feature"],
             )
-            cdf["annotation"].fillna(False, inplace=True)
+            cdf.fillna({"annotation": False}, inplace=True)
             have_annot = True
         else:
             cdf = cdf.assign(annotation=False)
@@ -700,7 +755,9 @@ def _prepare_weights_df(
             cdf.assign(
                 view=view,
                 weightabs=lambda x: x.weight.abs(),
-                factor=lambda x: pd.Categorical(x.factor, categories=model.factor_names),
+                factor=lambda x: pd.Categorical(
+                    x.factor, categories=model.factor_names
+                ).remove_unused_categories(),  # need categorical for proper ordering of factors in the plot, need to remove unused categories due to https://github.com/has2k1/plotnine/issues/930
                 inferred=lambda x: ~x.annotation & x.weightabs > 0,
             )
         )
@@ -718,10 +775,10 @@ def top_weights(
     model: PRISMO,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
-    factors: int | Sequence[int] | None = None,
+    factors: int | str | Sequence[int] | Sequence[str] | None = None,
     figsize: tuple[int, int] = (5, 5),
-    nrows: int | None = None,
-    ncols: int | None = None,
+    nrow: int | None = None,
+    ncol: int | None = None,
 ) -> p9.ggplot:
     """Plot the top weights for a given factor and view.
 
@@ -731,19 +788,22 @@ def top_weights(
         views: The views to consider in the ranking. If `None`, plot all views.
         factors: The factors to plot. If `None`, plot all factors.
         figsize: Figure size in inches.
-        nrows: Number of rows in the faceted plot. If None, plotnine will determine automatically.
-        ncols: Number of columns in the faceted plot. If None, plotnine will determine automatically.
+        nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
+        ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     df = (
-        df.groupby("factor")
+        df.groupby("factor", observed=True)
         .apply(lambda x: x.iloc[x.weightabs.argsort()[-n_features:], :], include_groups=False)
         .reset_index(0)
         .reset_index(drop=True)
         .assign(weightsgn=lambda x: x.weight >= 0)
         .sort_values(["factor", "weightabs"], ascending=True)
     )
-    if len(views) > 1 and (df.groupby("factor")["feature"].aggregate(lambda x: x.duplicated().sum()) > 0).any():
+    if (
+        len(views) > 1
+        and (df.groupby("factor", observed=True)["feature"].aggregate(lambda x: x.duplicated().sum()) > 0).any()
+    ):
         df = df.assign(feature=lambda x: x.feature.str + "_" + x.view.str)
     df = df.assign(feature=lambda x: pd.Categorical(x.feature, categories=x.feature.unique()))
 
@@ -762,13 +822,7 @@ def top_weights(
         + p9.theme(figure_size=figsize, **_no_axis_ticks_y)
     )
 
-    facet_kwargs = {"scales": "free"}
-    if nrows is not None:
-        facet_kwargs["nrow"] = nrows
-    if ncols is not None:
-        facet_kwargs["ncol"] = ncols
-
-    plot += p9.facet_wrap("factor", **facet_kwargs)
+    plot += p9.facet_wrap("factor", scales="free", nrow=nrow, ncol=ncol)
 
     return plot
 
@@ -802,7 +856,7 @@ def weights(
         if p9.options.limitsize:
             figsize = (min(figsize[0], 25), min(figsize[1], 25))
 
-    grp = df.groupby(["factor", "view"])
+    grp = df.groupby(["factor", "view"], observed=True)
     df["rank"] = grp["weight"].rank(ascending=False, method="min")
     df["absrank"] = grp["weightabs"].rank(ascending=False, method="min")
     df["annotate"] = df["absrank"] <= n_features
@@ -852,10 +906,7 @@ def weights(
     )
 
     if nrow is not None or ncol is not None:
-        df["facet"] = df["view"] + " - " + df["factor"].astype(str)
-        labeled_data["facet"] = labeled_data["view"] + " - " + labeled_data["factor"].astype(str)
-
-        plot += p9.facet_wrap("facet", scales="free_y", nrow=nrow, ncol=ncol)
+        plot += p9.facet_wrap(["view", "factor"], scales="free_y", nrow=nrow, ncol=ncol)
     else:
         plot += p9.facet_grid("view", "factor", scales="free_y")
 

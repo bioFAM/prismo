@@ -84,7 +84,7 @@ class FeatureSet:
         Args:
             features: Features to subset.
         """
-        return FeatureSet(self.features & features, name=self.name)
+        return FeatureSet(self.features & set(features), name=self.name)
 
 
 class FeatureSets:
@@ -132,7 +132,7 @@ class FeatureSets:
     @property
     def features(self) -> frozenset:
         """Return the union of all features in the feature sets."""
-        return frozenset.union(*[fs.features for fs in self.feature_sets])
+        return frozenset().union(*(fs.features for fs in self.feature_sets))
 
     @property
     def feature_set_by_name(self) -> dict:
@@ -211,7 +211,7 @@ class FeatureSets:
             {
                 feature_set
                 for feature_set in self.feature_sets
-                if min_count <= len(feature_set.features) <= (max_count or len(feature_set.features))
+                if min_count <= len(feature_set) <= (max_count or len(feature_set))
             },
             name=self.name,
         )
@@ -261,11 +261,11 @@ class FeatureSets:
             count = len(intersection)
             fraction = count / len(feature_set)
             if count >= min_count and fraction >= min_fraction and (max_count is None or count <= max_count):
+                if subset:
+                    feature_set = feature_set.subset(features)
                 feature_set_subset.add(feature_set)
 
         filtered_feature_sets = FeatureSets(feature_set_subset, name=self.name)
-        if subset:
-            filtered_feature_sets = filtered_feature_sets.subset(features)
         return filtered_feature_sets
 
     def to_mask(self, features: Iterable[str] | None = None, sort: bool = True) -> pd.DataFrame:
@@ -319,7 +319,7 @@ class FeatureSets:
         )
 
     def similarity_to_observations(self, observations: pd.DataFrame) -> pd.DataFrame:
-        """Compute similarity matrix between feature sets.
+        """Compute similarity matrix between feature sets using observations as a reference.
 
         Args:
             observations: Dataframe of observations.
@@ -329,17 +329,16 @@ class FeatureSets:
         """
         obs_mean = observations.mean(axis=1)
 
-        dist_to_mean_dict = {}
+        mean_dists = pd.DataFrame(index=observations.index)
         for feature_set in self.feature_sets:
-            col_subset = [col for col in observations.columns if col in feature_set.features]
-            if len(col_subset) == 0:
-                dist_to_mean_dict[feature_set.name] = pd.Series(np.nan, index=observations.index)
-                continue
-            dist_to_mean_dict[feature_set.name] = observations.loc[:, col_subset].mean(axis=1) - obs_mean
+            col_subset = observations.columns[observations.columns.isin(feature_set.features)]
+            mean_dists[feature_set.name] = (
+                np.nan if len(col_subset) == 0 else observations.loc[:, col_subset].mean(axis=1) - obs_mean
+            )
 
-        return pd.DataFrame(dist_to_mean_dict).corr()
+        return mean_dists.corr()
 
-    def _find_similar_pairs(self, sim_matrix: pd.DataFrame, similarity_threshold: float) -> set[tuple[str, str]]:
+    def _find_similar_pairs(self, sim_matrix: pd.DataFrame, similarity_threshold: float) -> set[tuple[str, str, float]]:
         """Find similar pairs of feature sets.
 
         Args:
@@ -370,7 +369,7 @@ class FeatureSets:
 
     def find_similar_pairs(
         self, observations: pd.DataFrame = None, metric: str | None = None, similarity_threshold: float = 0.8
-    ) -> set[tuple[str, str]]:
+    ) -> set[tuple[str, str, float]]:
         """Find similar pairs of feature sets.
 
         Args:

@@ -120,13 +120,13 @@ def test_remove_constant_features(adata_dict, arrays_are, likelihood):
     adata_dict, constgenes = adata_dict
 
     dataset = PrismoDataset(adata_dict)
-    likelihoods = {view_name: likelihood for view_name in dataset.view_names}
+    likelihoods = dict.fromkeys(dataset.view_names, likelihood)
 
     preprocessor = PrismoPreprocessor(
         dataset,
         likelihoods,
-        {view_name: False for view_name in dataset.view_names},
-        {group_name: False for group_name in dataset.group_names},
+        dict.fromkeys(dataset.view_names, False),
+        dict.fromkeys(dataset.group_names, False),
         scale_per_group=True,
         remove_constant_features=True,
     )

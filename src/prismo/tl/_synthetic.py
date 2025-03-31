@@ -188,10 +188,10 @@ class DataGenerator:
 
     def _generate_view_factor_mask(self, rng=None, all_combs=False):
         if all_combs and self.n_views == 1:
-            logger.warning("Single view dataset, " "cannot generate factor combinations for a single view.")
+            logger.warning("Single view dataset, cannot generate factor combinations for a single view.")
             all_combs = False
         if all_combs:
-            logger.warning("Generating all possible binary combinations of " f"{self.n_views} variables.")
+            logger.warning(f"Generating all possible binary combinations of {self.n_views} variables.")
             self.n_fully_shared_factors = 1
             self.n_private_factors = self.n_views
             self.n_partially_shared_factors = 2**self.n_views - 2 - self.n_private_factors
@@ -261,7 +261,7 @@ class DataGenerator:
         rng = np.random.default_rng(seed)
 
         if self._ys is not None and not overwrite:
-            raise ValueError("Data has already been generated, " "to generate new data please set `overwrite` to True.")
+            raise ValueError("Data has already been generated, to generate new data please set `overwrite` to True.")
 
         view_factor_mask = self._generate_view_factor_mask(rng, all_combs)
 
@@ -389,14 +389,14 @@ class DataGenerator:
         rng = np.random.default_rng(seed)
 
         if informed_view_indices is None:
-            logger.warning("Parameter `informed_view_indices` set to None, " "adding noise to all views.")
+            logger.warning("Parameter `informed_view_indices` set to None, adding noise to all views.")
             informed_view_indices = list(range(self.n_views))
 
         noisy_w_masks = [mask.copy() for mask in self._w_masks]
 
         if len(informed_view_indices) == 0:
             logger.warning(
-                "Parameter `informed_view_indices` " "set to an empty list, removing information from all views."
+                "Parameter `informed_view_indices` set to an empty list, removing information from all views."
             )
             self._noisy_w_masks = [np.ones_like(mask) for mask in noisy_w_masks]
             return self._noisy_w_masks

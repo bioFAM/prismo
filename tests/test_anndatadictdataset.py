@@ -224,7 +224,7 @@ def test_apply_by_group(anndata_dict, dataset):
 
 
 def test_get_covariates_from_obs(anndata_dict, dataset):
-    covars, covar_names = dataset.get_covariates(obs_key={group_name: "covar" for group_name in dataset.group_names})
+    covars, covar_names = dataset.get_covariates(obs_key=dict.fromkeys(dataset.group_names, "covar"))
 
     for group_name, group in anndata_dict.items():
         assert covar_names[group_name] == "covar"
@@ -239,7 +239,7 @@ def test_get_covariates_from_obs(anndata_dict, dataset):
 
 
 def test_get_covariates_from_obsm(anndata_dict, dataset):
-    covars, covar_names = dataset.get_covariates(obsm_key={group_name: "covar" for group_name in dataset.group_names})
+    covars, covar_names = dataset.get_covariates(obsm_key=dict.fromkeys(dataset.group_names, "covar"))
 
     for group_name, group in anndata_dict.items():
         assert np.all(covar_names[group_name] == ["a", "b", "c"])
@@ -254,7 +254,7 @@ def test_get_covariates_from_obsm(anndata_dict, dataset):
 
 
 def test_get_annotations(anndata_dict, dataset):
-    annot, annot_names = dataset.get_annotations(varm_key={view_name: "annot" for view_name in dataset.view_names})
+    annot, annot_names = dataset.get_annotations(varm_key=dict.fromkeys(dataset.view_names, "annot"))
 
     for view_name in dataset.view_names:
         assert np.all(annot_names[view_name] == [f"annot_{i}" for i in range(10)])

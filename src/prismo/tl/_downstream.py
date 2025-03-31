@@ -61,7 +61,7 @@ def _test_single_view(
         logger.warning("No feature sets provided, extracting feature sets from prior mask.")
         feature_sets = model.get_annotations("pandas")[view_name]
         if not feature_sets.any(axis=None):
-            raise ValueError(f"Empty `feature_sets`, view `{view_name}` " "has not been informed prior to training.")
+            raise ValueError(f"Empty `feature_sets`, view `{view_name}` has not been informed prior to training.")
 
     feature_sets = feature_sets.astype(bool)
     if not feature_sets.any(axis=None):
@@ -69,11 +69,11 @@ def _test_single_view(
     feature_sets = feature_sets.loc[feature_sets.sum(axis=1) >= min_size, :]
 
     if not feature_sets.any(axis=None):
-        raise ValueError("Empty `feature_sets` after filtering feature sets " f"of fewer than {min_size} features.")
+        raise ValueError(f"Empty `feature_sets` after filtering feature sets of fewer than {min_size} features.")
 
     feature_sets = feature_sets.loc[~(feature_sets.all(axis=1)), feature_sets.any()]
     if not feature_sets.any(axis=None):
-        raise ValueError("Empty `feature_sets` after filtering feature sets " f"of fewer than {min_size} features.")
+        raise ValueError(f"Empty `feature_sets` after filtering feature sets of fewer than {min_size} features.")
 
     # subset available features only
     feature_intersection = feature_sets.columns.intersection(model.feature_names[view_name])

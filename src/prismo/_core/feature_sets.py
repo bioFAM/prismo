@@ -304,7 +304,7 @@ class FeatureSets:
         """
         if metric not in ["jaccard", "cosine"]:
             logger.warning(
-                f"Similarity matrix for `{metric}` might be negative. " "Recommended metrics are `jaccard` or `cosine`."
+                f"Similarity matrix for `{metric}` might be negative. Recommended metrics are `jaccard` or `cosine`."
             )
 
         self_mask = self.to_mask()
@@ -382,7 +382,7 @@ class FeatureSets:
             Similar pairs of feature sets.
         """
         if observations is None and metric is None:
-            logger.warning("Neither observations nor metric is provided," " using `metric=jaccard` as default.")
+            logger.warning("Neither observations nor metric is provided, using `metric=jaccard` as default.")
             metric = "jaccard"
 
         sim_matrix = []

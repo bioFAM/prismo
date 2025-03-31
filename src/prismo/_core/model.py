@@ -38,19 +38,19 @@ class Generative(PyroModule):
         self.view_names = tuple(n_features.keys())
 
         if isinstance(factor_prior, str):
-            factor_prior = {group_name: factor_prior for group_name in self.group_names}
+            factor_prior = dict.fromkeys(self.group_names, factor_prior)
 
         if isinstance(weight_prior, str):
-            weight_prior = {view_name: weight_prior for view_name in self.view_names}
+            weight_prior = dict.fromkeys(self.view_names, weight_prior)
 
         if isinstance(likelihoods, str):
-            likelihoods = {view_name: likelihoods for view_name in self.view_names}
+            likelihoods = dict.fromkeys(self.view_names, likelihoods)
 
         if isinstance(nonnegative_weights, bool):
-            nonnegative_weights = {view_name: nonnegative_weights for view_name in self.view_names}
+            nonnegative_weights = dict.fromkeys(self.view_names, nonnegative_weights)
 
         if isinstance(nonnegative_factors, bool):
-            nonnegative_factors = {group_name: nonnegative_factors for group_name in self.group_names}
+            nonnegative_factors = dict.fromkeys(self.group_names, nonnegative_factors)
 
         if isinstance(prior_scales, dict) and len(prior_scales):
             for vn, ps in prior_scales.items():
@@ -87,7 +87,7 @@ class Generative(PyroModule):
 
         self.scale_elbo = True
         n_views = len(self.view_names)
-        self.view_scales = {view_name: 1.0 for view_name in self.view_names}
+        self.view_scales = dict.fromkeys(self.view_names, 1.0)
         if self.scale_elbo and n_views > 1:
             for view_name, view_n_features in n_features.items():
                 self.view_scales[view_name] = (n_views / (n_views - 1)) * (

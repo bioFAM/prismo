@@ -407,9 +407,7 @@ class PRISMO:
             _logger.info("No likelihoods provided. Using inferred likelihoods: " + "; ".join(msg))
         else:
             if isinstance(self._model_opts.likelihoods, str):
-                self._model_opts.likelihoods = {
-                    view_name: self._model_opts.likelihoods for view_name in data.view_names
-                }
+                self._model_opts.likelihoods = dict.fromkeys(data.view_names, self._model_opts.likelihoods)
 
             if isinstance(self._model_opts.likelihoods, dict):
                 data.apply(
@@ -692,7 +690,7 @@ class PRISMO:
         ):
             val = getattr(self._model_opts, opt_name)
             if not isinstance(val, dict):
-                setattr(self._model_opts, opt_name, {k: val for k in keys})
+                setattr(self._model_opts, opt_name, dict.fromkeys(keys, val))
 
         for opt_name, keys in zip(
             ("covariates_obs_key", "covariates_obsm_key", "annotations_varm_key"),
@@ -701,7 +699,7 @@ class PRISMO:
         ):
             val = getattr(self._data_opts, opt_name)
             if isinstance(val, str):
-                setattr(self._data_opts, opt_name, {k: val for k in keys})
+                setattr(self._data_opts, opt_name, dict.fromkeys(keys, val))
 
         self._train_opts.device = self._setup_device(self._train_opts.device)
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= data.n_samples_total):

@@ -198,7 +198,7 @@ def test_apply_by_group(mdata, dataset):
 
 
 def test_get_covariates_from_obs(mdata, dataset):
-    covars, covar_names = dataset.get_covariates(obs_key={group_name: "covar" for group_name in dataset.group_names})
+    covars, covar_names = dataset.get_covariates(obs_key=dict.fromkeys(dataset.group_names, "covar"))
 
     for group_name, group_covar in covars.items():
         sample_names = pd.Index(dataset.sample_names[group_name])
@@ -219,7 +219,7 @@ def test_get_covariates_from_obs(mdata, dataset):
 
 
 def test_get_covariates_from_obsm(mdata, dataset):
-    covars, covar_names = dataset.get_covariates(obsm_key={group_name: "covar" for group_name in dataset.group_names})
+    covars, covar_names = dataset.get_covariates(obsm_key=dict.fromkeys(dataset.group_names, "covar"))
 
     for group_name, group_covar in covars.items():
         assert np.all(covar_names[group_name] == ["a", "b", "c"])
@@ -241,7 +241,7 @@ def test_get_covariates_from_obsm(mdata, dataset):
 
 
 def test_get_annotations(mdata, dataset):
-    annot, annot_names = dataset.get_annotations(varm_key={view_name: "annot" for view_name in dataset.view_names})
+    annot, annot_names = dataset.get_annotations(varm_key=dict.fromkeys(dataset.view_names, "annot"))
 
     for view_name in dataset.view_names:
         if view_name != "view_2":

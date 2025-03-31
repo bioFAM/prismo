@@ -33,6 +33,7 @@ dependencies = [
   "mizani",
   "mudata @ git+https://github.com/scverse/mudata", # need mudata > 0.3.1
   "numpy",
+  "packaging",
   "pandas",
   "platformdirs",
   "plotnine",
@@ -72,7 +73,6 @@ optional-dependencies.lazy = [
 ]
 optional-dependencies.test = [
   "coverage",
-  "packaging",
   "pytest",
 ]
 urls.Documentation = "https://prismo.readthedocs.io/"

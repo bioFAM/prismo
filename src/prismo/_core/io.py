@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import torch
 from numpy.typing import NDArray
+from packaging.version import Version
 from scipy.sparse import issparse
 
 from .datasets import PrismoDataset
@@ -22,6 +23,13 @@ if TYPE_CHECKING:
 
 
 MOFACompatOption = Literal["full", "modelonly"] | bool
+
+
+def _save_mofa_data(adata, group_name, view_name, data_grp, dset_kwargs):
+    arr = adata.X if not issparse(adata.X) else adata.X.toarray()
+    arr = align_local_array_to_global(arr, group_name, view_name, align_to="samples", axis=0, fill_value=np.nan)  # noqa F821
+    arr = align_local_array_to_global(arr, group_name, view_name, align_to="features", axis=1, fill_value=np.nan)  # noqa F821
+    data_grp.create_dataset(f"{view_name}/{group_name}", data=arr, **dset_kwargs)
 
 
 def save_model(
@@ -62,8 +70,11 @@ def save_model(
         prismogrp = f.create_group("prismo")
         with ad.settings.override(allow_write_nullable_strings=True):
             ad.io.write_elem(
-                prismogrp, "state", model_state
-            )  # turn on compression when https://github.com/h5py/h5py/issues/2525 is fixed
+                prismogrp,
+                "state",
+                model_state,
+                dataset_kwargs={} if Version(ad.__version__) < Version("0.11.2") else dset_kwargs,
+            )  # https://github.com/h5py/h5py/issues/2525
 
         pkl = BytesIO()
         torch.save(model_topickle, pkl)
@@ -134,11 +145,7 @@ def save_model(
                         cgrp.create_dataset(group_name, data=intercept, **dset_kwargs)
 
                 data_grp = f.create_group("data")
-                data.apply(
-                    lambda adata, group_name, view_name: data_grp.create_dataset(
-                        f"{view_name}/{group_name}", data=adata.X if not issparse(adata.X) else adata.X.toarray()
-                    )
-                )
+                data.apply(_save_mofa_data, data_grp=data_grp, dset_kwargs=dset_kwargs)
 
             exp_grp = f.create_group("expectations")
             factor_grp = exp_grp.create_group("Z")

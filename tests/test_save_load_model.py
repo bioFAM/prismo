@@ -62,6 +62,7 @@ def test_save_load_model(setup_teardown):
             lr=0.001,
             max_epochs=1,  # Train for a single epoch
             save_path=temp_file,
+            mofa_compat="full",
         ),
     )
 

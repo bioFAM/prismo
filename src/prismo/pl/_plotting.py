@@ -465,10 +465,14 @@ def factor(
     factors = model.get_factors(ordered=False)
     if figsize is None:
         figsize = (5, 3 * len(factors))
-    df = []
-    for group_name, facs in factors.items():
-        df.append(facs.iloc[:, [factor - 1]].reset_index(names="sample").assign(group=group_name))
-    df = pd.concat(df, axis=0, ignore_index=True)
+    df = pd.concat(
+        [
+            facs.iloc[:, [factor - 1]].reset_index(names="sample").assign(group=group_name)
+            for group_name, facs in factors.items()
+        ],
+        axis=0,
+        ignore_index=True,
+    )
     colname = df.columns[1]
 
     plt = (
@@ -836,6 +840,9 @@ def weights(
     figsize: tuple[int, int] | None = None,
     nrow: int | None = None,
     ncol: int | None = None,
+    prettify: bool | dict[str, str] = True,
+    abbreviation_length: int = 40,
+    end_with_database: bool = True,
 ) -> p9.ggplot:
     """Plot the weights for a given factor and view.
 
@@ -849,6 +856,13 @@ def weights(
         figsize: Figure size in inches.
         nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
         ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
+        prettify: Whether to prettify the feature names. if `True` replace underscores with whitespace.
+            If `False`, do not prettify. If a dictionary, use the keys as the original names
+            and the values as the prettified names.
+        abbreviation_length: The length to abbreviate the feature names to. Only relevant if
+            `prettify` is `True`.
+        end_with_database: Whether to end the feature names with the database name. Only relevant if
+            `prettify` is `True`.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
@@ -885,6 +899,24 @@ def weights(
     labeled_data = pd.concat(labeled_groups, axis=0, ignore_index=True)
 
     labeled_data["x_text_pos"] = df["rank"].max() / 2
+
+    if prettify:
+        if isinstance(prettify, bool):
+            df["factor"] = _prettify_factor_names(
+                df["factor"],
+                replacements=None,
+                abbreviation_length=abbreviation_length,
+                end_with_database=end_with_database,
+            )
+        elif isinstance(prettify, dict):
+            df["factor"] = _prettify_factor_names(
+                df["factor"],
+                replacements=prettify,
+                abbreviation_length=abbreviation_length,
+                end_with_database=end_with_database,
+            )
+        else:
+            raise ValueError("`prettify` must be a bool or a dict.")
 
     plot = (
         p9.ggplot(df, p9.aes("rank", "weight", label="feature", **aes_kwargs))
@@ -965,3 +997,39 @@ def factor_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = 
     return _plot_sparse_probabilities_histogram(
         model.get_sparse_factor_probabilities("numpy"), bins=bins, nrow=nrow, ncol=ncol
     )
+
+
+def _prettify_factor_names(
+    factors: pd.Series,
+    replacements: dict[str, str] = None,
+    abbreviation_length: int = 40,
+    end_with_database: bool = True,
+) -> pd.Series:
+    """Prettify factor names.
+
+    Replace underscores with spaces. If `replacements` is not empty, replace the keys with the values.
+    Shorten the labels to `abbreviation_length` characters.
+
+    Args:
+        factors: The factor names to prettify.
+        replacements: A dictionary of replacements to make.
+        abbreviation_length: The maximum length of the labels.
+        end_with_database: Whether to end the labels with the database name.
+    """
+    if not isinstance(abbreviation_length, int) or abbreviation_length <= 0:
+        raise ValueError("`abbreviation_length` must be a positive integer.")
+
+    # Replace whitespace
+    factors = factors.str.replace("_", " ", regex=False)
+    # Replace dict values
+    if replacements is not None:
+        for key, value in replacements.items():
+            factors = factors.str.replace(key, value, regex=False)
+    # Shorten string length
+    factors = factors.str.slice(0, abbreviation_length)
+    # Put database name in the end
+    if end_with_database:
+        # Turn `[X] ABC` into `ABC [X]`
+        factors = factors.str.replace(r"(\[.*\]) (.*)", r"\2 \1", regex=True)
+
+    return factors

@@ -1005,7 +1005,7 @@ def _prettify_factor_names(
     put the database name in square brackets at the end of the label.
 
     Example:
-    `Reactome ABC` becomes `ABC [R]`, if `replacements` is `{"Reactome": "R"}` and `end_with_database` is `True`.
+    `Reactome ABC` becomes `ABC [R]`, if `replacements` is `{"Reactome": "[R]"}` and `end_with_database` is `True`.
 
     Args:
         factors: The factor names to prettify.
@@ -1023,11 +1023,11 @@ def _prettify_factor_names(
     if replacements is not None:
         for key, value in replacements.items():
             factors = factors.str.replace(key, value, regex=False)
-    # Shorten string length and put `...` at the end if abbreviation is needed
-    factors = factors.apply(lambda x: x[:abbreviation_length] + "..." if len(x) > abbreviation_length else x)
+    # Shorten string length and put `…` at the end if abbreviation is needed
+    factors = factors.apply(lambda x: x[:abbreviation_length] + "…" if len(x) > abbreviation_length else x)
     # Put database name in the end
     if end_with_database:
         # Turn `[X] ABC` into `ABC [X]`
-        factors = factors.str.replace(r"(\[.*\]) (.*)", r"\2 \1", regex=True)
+        factors = factors.str.replace(r"^(\[.*\]) (.*)", r"\2 \1", regex=True)
 
     return factors

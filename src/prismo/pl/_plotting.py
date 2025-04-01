@@ -870,6 +870,17 @@ def weights(
         if p9.options.limitsize:
             figsize = (min(figsize[0], 25), min(figsize[1], 25))
 
+    if prettify:
+        if isinstance(prettify, bool) | isinstance(prettify, dict):
+            df["factor"] = _prettify_factor_names(
+                df["factor"],
+                replacements=None if isinstance(prettify, bool) else prettify,
+                abbreviation_length=abbreviation_length,
+                end_with_database=end_with_database,
+            )
+        else:
+            raise ValueError("`prettify` must be a bool or a dict.")
+
     grp = df.groupby(["factor", "view"], observed=True)
     df["rank"] = grp["weight"].rank(ascending=False, method="min")
     df["absrank"] = grp["weightabs"].rank(ascending=False, method="min")
@@ -899,24 +910,6 @@ def weights(
     labeled_data = pd.concat(labeled_groups, axis=0, ignore_index=True)
 
     labeled_data["x_text_pos"] = df["rank"].max() / 2
-
-    if prettify:
-        if isinstance(prettify, bool):
-            df["factor"] = _prettify_factor_names(
-                df["factor"],
-                replacements=None,
-                abbreviation_length=abbreviation_length,
-                end_with_database=end_with_database,
-            )
-        elif isinstance(prettify, dict):
-            df["factor"] = _prettify_factor_names(
-                df["factor"],
-                replacements=prettify,
-                abbreviation_length=abbreviation_length,
-                end_with_database=end_with_database,
-            )
-        else:
-            raise ValueError("`prettify` must be a bool or a dict.")
 
     plot = (
         p9.ggplot(df, p9.aes("rank", "weight", label="feature", **aes_kwargs))
@@ -1008,13 +1001,18 @@ def _prettify_factor_names(
     """Prettify factor names.
 
     Replace underscores with spaces. If `replacements` is not empty, replace the keys with the values.
-    Shorten the labels to `abbreviation_length` characters.
+    Shorten the labels to `abbreviation_length` characters. If `end_with_database` is `True`,
+    put the database name in square brackets at the end of the label.
+
+    Example:
+    `Reactome ABC` becomes `ABC [R]`, if `replacements` is `{"Reactome": "R"}` and `end_with_database` is `True`.
 
     Args:
         factors: The factor names to prettify.
         replacements: A dictionary of replacements to make.
         abbreviation_length: The maximum length of the labels.
-        end_with_database: Whether to end the labels with the database name.
+        end_with_database: Whether to end the labels with the database name. The database name is
+            assumed to be in square brackets in the beginning of the label.
     """
     if not isinstance(abbreviation_length, int) or abbreviation_length <= 0:
         raise ValueError("`abbreviation_length` must be a positive integer.")
@@ -1025,8 +1023,8 @@ def _prettify_factor_names(
     if replacements is not None:
         for key, value in replacements.items():
             factors = factors.str.replace(key, value, regex=False)
-    # Shorten string length
-    factors = factors.str.slice(0, abbreviation_length)
+    # Shorten string length and put `...` at the end if abbreviation is needed
+    factors = factors.apply(lambda x: x[:abbreviation_length] + "..." if len(x) > abbreviation_length else x)
     # Put database name in the end
     if end_with_database:
         # Turn `[X] ABC` into `ABC [X]`

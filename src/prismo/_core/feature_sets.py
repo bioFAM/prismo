@@ -279,8 +279,8 @@ class FeatureSets:
             Binary mask of features.
         """
         features = features or self.features
-        features_list = list(features)
-        feature_sets_list = list(self.feature_sets)
+        features_list = sorted(features)
+        feature_sets_list = sorted(self.feature_sets, key=lambda x: x.name)
         if sort:
             feature_sets_list = sorted(feature_sets_list, key=lambda fs: fs.name)
         return pd.DataFrame(

@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -9,30 +10,37 @@ from scipy.stats import pearsonr
 from statsmodels.stats import multitest
 from tqdm import tqdm
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from .._core import PRISMO, PrismoDataset
+
+_logger = logging.getLogger(__name__)
 
 Index = int | str | list[int] | list[str] | np.ndarray | pd.Index
 
 
 def _test_single_view(
-    model,
+    model: PRISMO,
+    data: PrismoDataset,
     view_name: str,
     feature_sets: pd.DataFrame = None,
     sign: str = "all",
     corr_adjust: bool = True,
     p_adj_method: str = "fdr_bh",
     min_size: int = 10,
+    subsample: int = 0,
 ):
     """Perform significance test of factor loadings against feature sets.
 
     Args:
         model: A PRISMO model instance.
+        data: A PRISMO dataset.
         view_name: Name of the view to test.
         feature_sets: Boolean dataframe with feature sets in each row. If None, uses model annotations.
         sign: Test direction - "all" for two-sided, "neg" or "pos" for one-sided tests.
         corr_adjust: Whether to adjust for correlations between features.
         p_adj_method: Method for multiple testing adjustment (e.g. "fdr_bh").
         min_size: Minimum size threshold for feature sets.
+        subsample: Work with a random subsample of the data to speed up testing, 0 means no subsampling.
 
     Returns:
         dict: Test results containing:
@@ -45,10 +53,13 @@ def _test_single_view(
 
     if not isinstance(view_name, str):
         raise IndexError(f"Invalid `view_name`, `{view_name}` must be a string.")
+
     if view_name not in model.view_names:
         raise IndexError(f"`{view_name}` not found in the view names.")
 
-    informed = model.annotations is not None and len(model.annotations) > 0
+    annotations = model.get_annotations()
+
+    informed = annotations is not None and len(annotations) > 0
     if use_prior_mask and not informed:
         raise ValueError("`feature_sets` is None, no feature sets provided for uninformed model.")
 
@@ -57,9 +68,12 @@ def _test_single_view(
     if sign not in allowed_signs:
         raise ValueError(f"sign `{sign}` must be one of `{', '.join(allowed_signs)}`.")
 
+    if model._model_opts.nonnegative_weights[view_name] and sign == "neg":
+        raise ValueError("Cannot test negative weights for nonnegative views.")
+
     if use_prior_mask:
-        logger.warning("No feature sets provided, extracting feature sets from prior mask.")
-        feature_sets = model.get_annotations("pandas")[view_name]
+        _logger.warning("No feature sets provided, extracting feature sets from prior mask.")
+        feature_sets = annotations[view_name]
         if not feature_sets.any(axis=None):
             raise ValueError(f"Empty `feature_sets`, view `{view_name}` has not been informed prior to training.")
 
@@ -81,11 +95,11 @@ def _test_single_view(
 
     if not feature_sets.any(axis=None):
         raise ValueError("Empty `feature_sets` after feature intersection with the observations.")
-
     y = pd.concat(
-        [group_data[view_name].to_df().loc[:, feature_intersection].copy() for _, group_data in model.data.items()],
-        axis=0,
+        [group_data[view_name].to_df().loc[:, feature_intersection].copy() for _, group_data in data.items()], axis=0
     )
+    if subsample is not None:
+        y = y.sample(subsample, replace=False)
     factor_loadings = model.get_weights(return_type="anndata")[view_name].to_df().loc[:, feature_intersection].copy()
     factor_loadings /= np.max(np.abs(factor_loadings.to_numpy()))
 
@@ -152,16 +166,24 @@ def _test_single_view(
 
 
 def test(
-    model, feature_sets: pd.DataFrame = None, corr_adjust: bool = True, p_adj_method: str = "fdr_bh", min_size: int = 10
+    model: PRISMO,
+    data: PrismoDataset,
+    feature_sets: pd.DataFrame = None,
+    corr_adjust: bool = True,
+    p_adj_method: str = "fdr_bh",
+    min_size: int = 10,
+    subsample: int = 0,
 ):
     """Perform significance testing across multiple views and sign directions.
 
     Args:
         model: A PRISMO model instance.
+        data: A PRISMO dataset.
         feature_sets: Boolean dataframe with feature sets in each row. If None, uses model annotations.
         corr_adjust: Whether to adjust for correlations between features.
         p_adj_method: Method for multiple testing adjustment.
         min_size: Minimum size threshold for feature sets.
+        subsample: Work with a random subsample of the data to speed up testing.
 
     Returns:
         dict: Nested dictionary with structure:
@@ -170,7 +192,7 @@ def test(
     """
     use_prior_mask = feature_sets is None
     if use_prior_mask:
-        view_names = [vi for vi in model.view_names if vi in model.annotations]
+        view_names = [vi for vi in model.view_names if vi in model.get_annotations()]
 
     if len(view_names) == 0:
         if use_prior_mask:
@@ -187,15 +209,17 @@ def test(
             try:
                 results[sign][view_name] = _test_single_view(
                     model,
+                    data=data,
                     view_name=view_name,
                     feature_sets=feature_sets,
                     sign=sign,
                     corr_adjust=corr_adjust,
                     p_adj_method=p_adj_method,
                     min_size=min_size,
+                    subsample=subsample,
                 )
             except ValueError as e:
-                logger.warning(e)
+                _logger.warning(e)
                 results[sign][view_name] = {"t": pd.DataFrame(), "p": pd.DataFrame()}
                 if p_adj_method is not None:
                     results[sign][view_name]["p_adj"] = pd.DataFrame()

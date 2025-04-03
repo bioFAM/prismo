@@ -126,8 +126,8 @@ def _test_single_view(
     return result
 
 
-def test(
-    data: PrismoDataset,
+def pcgse_test(
+    data: PrismoDataset | None,
     nonnegative_weights: dict[str, bool],
     annotations: dict[str, pd.DataFrame],
     weights: dict[str, pd.DataFrame],
@@ -149,9 +149,8 @@ def test(
         subsample: Work with a random subsample of the data to speed up testing.
 
     Returns:
-        dict: Nested dictionary with structure:
-            {sign: {view_name: test_results}}
-            where test_results contains t-statistics, p-values, and adjusted p-values.
+        Test results for each view, where test results contain t-statistics, p-values, and adjusted p-values
+            separately for each side of a one-sided test.
     """
     results = {}
 
@@ -185,7 +184,7 @@ def test(
             for view_name in data.view_names
         }
 
-    for view_name in data.view_names:
+    for view_name, loadings in weights.items():
         if view_name in annotations:
             view_results = []
             for sign in ["neg", "pos"]:
@@ -193,8 +192,8 @@ def test(
                     view_name=view_name,
                     nonnegative_weights=nonnegative_weights[view_name],
                     feature_sets=annotations[view_name],
-                    factor_loadings=weights[view_name],
-                    y=y[view_name],
+                    factor_loadings=loadings,
+                    y=y[view_name] if y is not None else None,
                     sign=sign,
                     corr_adjust=corr_adjust,
                     p_adj_method=p_adj_method,
@@ -203,9 +202,9 @@ def test(
                 )
                 if cresult is not None:
                     dfs = [
-                        df.melt(var_name="factor2", value_name=name, ignore_index=False)
-                        .rename_axis(index="factor1")
-                        .set_index("factor2", append=True)
+                        df.melt(var_name="annotation", value_name=name, ignore_index=False)
+                        .rename_axis(index="factor")
+                        .set_index("annotation", append=True)
                         for name, df in cresult.items()
                     ]
                     view_results.append(pd.concat(dfs, axis=1).reset_index(drop=False).assign(sign=sign))

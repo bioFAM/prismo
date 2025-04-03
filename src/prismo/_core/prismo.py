@@ -30,7 +30,7 @@ from . import gp, preprocessing
 from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
 from .io import MOFACompatOption, load_model, save_model
 from .model import Generative, Variational
-from .pcgse import test
+from .pcgse import pcgse_test
 from .training import EarlyStopper
 from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute, sample_all_data_as_one_batch
 
@@ -240,9 +240,7 @@ class PRISMO:
 
     def __init__(self, data: MuData | dict[str, dict[str, AnnData]], *args: _Options):
         self._preprocess_options(*args)
-        data = PrismoDataset(
-            data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
-        )
+        data = self._make_dataset(data)
         self._adjust_options(data)
 
         if self._data_opts.plot_data_overview:
@@ -251,6 +249,22 @@ class PRISMO:
         self._setup_likelihoods(data)
         self._setup_annotations(data)
 
+        preprocessor = self._make_preprocessor(data)
+
+        self._metadata = data.get_obs()
+        self._view_names = data.view_names
+        self._group_names = data.group_names
+        self._sample_names = data.sample_names
+        self._feature_names = data.feature_names
+
+        self._fit(data, preprocessor)
+
+    def _make_dataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
+        return PrismoDataset(
+            data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
+        )
+
+    def _make_preprocessor(self, data: PrismoDataset) -> preprocessing.PrismoPreprocessor:
         preprocessor = preprocessing.PrismoPreprocessor(
             data,
             self._model_opts.likelihoods,
@@ -260,14 +274,11 @@ class PRISMO:
             self._data_opts.scale_per_group,
         )
         data.preprocessor = preprocessor
+        return preprocessor
 
-        self._metadata = data.get_obs()
-        self._view_names = data.view_names
-        self._group_names = data.group_names
-        self._sample_names = data.sample_names
-        self._feature_names = data.feature_names
-
-        self._fit(data, preprocessor)
+    def _prismodataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
+        data = self._make_dataset(data)
+        self._make_preprocessor(data)
 
     @property
     def group_names(self) -> npt.NDArray[str]:
@@ -577,7 +588,7 @@ class PRISMO:
         )
 
         if len(self._annotations) > 0:
-            self._pcgse = test(
+            self._pcgse = pcgse_test(
                 data,
                 self._model_opts.nonnegative_weights,
                 self.get_annotations("pandas"),
@@ -1042,7 +1053,7 @@ class PRISMO:
         as a diagnostic plot to find factors that are mismatched to their annotations.
 
         Returns:
-            PCGSE results for each view or `None` if the model does not have prior annotations..
+            PCGSE results for each view or `None` if the model does not have prior annotations.
         """
         return self._pcgse
 

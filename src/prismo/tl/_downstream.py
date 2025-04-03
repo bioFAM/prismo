@@ -3,10 +3,67 @@ import logging
 import numpy as np
 import pandas as pd
 import torch
+from anndata import AnnData
+from mudata import MuData
 from scipy.optimize import linear_sum_assignment
 from scipy.stats import pearsonr
 
+from .._core import PRISMO, PrismoDataset, pcgse_test
+
 _logger = logging.getLogger(__name__)
+
+
+def test_annotation_significance(
+    model: PRISMO,
+    annotations: dict[str, pd.DataFrame],
+    data: MuData | dict[str, dict[str, AnnData]] | PrismoDataset | None = None,
+    corr_adjust: bool = True,
+    p_adj_method: str = "fdr_bh",
+    min_size: int = 10,
+    subsample: int = 1000,
+) -> dict[str, pd.DataFrame]:
+    """Test feature sets for significant associations with model factors.
+
+    This is an implementation of PCGSE :cite:p:`pmid26300978`.
+
+    Args:
+        model: The PRISMo model.
+        annotations: Boolean dataframe with feature sets in each row for each view.
+        data: The data that the model was trained on. Only required if `corr_adjust=True`.
+        corr_adjust: Whether to adjust for correlations between features.
+        p_adj_method: Method for multiple testing adjustment.
+        min_size: Minimum size threshold for feature sets.
+        subsample: Work with a random subsample of the data to speed up testing. Set to 0 to use
+            all data (may use excessive amounts of memory). Only relevant if `corr_adjust=True`.
+
+    Returns:
+        PCGSE results for each view.
+    """
+    if corr_adjust and data is None:
+        raise ValueError("`data` cannot be `None` if `corr_adjust=True`.")
+
+    if data is not None and not isinstance(data, PrismoDataset):
+        data = model._prismodataset(data)
+    annotations = {
+        view_name: annot.loc[:, features].astype(bool)
+        for view_name, annot in annotations.items()
+        if view_name in model.view_names
+        and (features := annot.columns.intersection(model.feature_names[view_name])).size > 0
+    }
+
+    if len(annotations) > 0:
+        return pcgse_test(
+            data,
+            model._model_opts.nonnegative_weights,
+            annotations,
+            model.get_weights("pandas"),
+            corr_adjust=corr_adjust,
+            p_adj_method=p_adj_method,
+            min_size=min_size,
+            subsample=subsample,
+        )
+    else:
+        return {}
 
 
 def match(

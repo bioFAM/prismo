@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 import scipy
-import torch
+from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 from scipy.stats import pearsonr
 from statsmodels.stats import multitest
@@ -203,47 +203,33 @@ def test(
     return results
 
 
-def match(
-    reference: torch.Tensor | np.ndarray, permutable: torch.Tensor | np.ndarray, dim: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Find optimal permutation and signs to match two tensors along specified dimension.
+def match(reference: NDArray, permutable: NDArray, axis: int) -> tuple[NDArray[int], NDArray[int]]:
+    """Find optimal permutation and signs to match two tensors along specified axis.
 
-    Finds the permutation and sign of permutable along one dimension to maximize
+    Finds the permutation and sign of permutable along one axis to maximize
     correlation with reference. Useful for comparing ground truth factor scores/loadings
     with inferred values where factor order and sign is arbitrary.
 
     Args:
-        reference: Reference tensor to match against.
-        permutable: Tensor to be permuted and sign-adjusted.
-        dim: Dimension along which to perform matching.
+        reference: Reference array to match against.
+        permutable: Array to be permuted and sign-adjusted.
+        axis: Axis along which to perform matching.
 
     Returns:
-        tuple:
-            - np.ndarray: Optimal permutation indices
-            - np.ndarray: Optimal signs (+1 or -1) for each permuted element
+        A tuple with optimal permutation indices and optimal signs (+1 or -1) for each
+        permuted element.
 
     Notes:
-        - Handles various input types (torch.Tensor, np.ndarray, pd.DataFrame)
-        - Special handling for non-negative tensors
+        - Special handling for non-negative arrays
         - Uses linear sum assignment to find optimal matching
     """
-    # convert all tensors to numpy arrays
-    if isinstance(reference, torch.Tensor):
-        reference = reference.numpy()
-    if isinstance(permutable, torch.Tensor):
-        permutable = permutable.numpy()
-    if isinstance(reference, pd.DataFrame):
-        reference = reference.to_numpy()
-    if isinstance(permutable, pd.DataFrame):
-        permutable = permutable.to_numpy()
-
     nonnegative = False
     if np.all(reference >= 0) and np.all(permutable >= 0):
         nonnegative = True
 
     # move the assignment dimension to the end
-    reference = np.moveaxis(reference, dim, -1)
-    permutable = np.moveaxis(permutable, dim, -1)
+    reference = np.moveaxis(reference, axis, -1)
+    permutable = np.moveaxis(permutable, axis, -1)
 
     # compute the correlation matrix between reference and permutable
     correlation = np.zeros([reference.shape[-1], permutable.shape[-1]])

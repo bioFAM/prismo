@@ -5,7 +5,7 @@ import pandas as pd
 import scipy
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
-from scipy.stats import pearsonr
+from scipy.spatial.distance import cdist
 from statsmodels.stats import multitest
 from tqdm import tqdm
 
@@ -203,7 +203,7 @@ def test(
     return results
 
 
-def match(reference: NDArray, permutable: NDArray, axis: int) -> tuple[NDArray[int], NDArray[int]]:
+def match(reference: NDArray, permutable: NDArray, axis: int) -> tuple[NDArray[int], NDArray[int], NDArray[np.uint8]]:
     """Find optimal permutation and signs to match two tensors along specified axis.
 
     Finds the permutation and sign of permutable along one axis to maximize
@@ -223,28 +223,25 @@ def match(reference: NDArray, permutable: NDArray, axis: int) -> tuple[NDArray[i
         - Special handling for non-negative arrays
         - Uses linear sum assignment to find optimal matching
     """
-    nonnegative = False
-    if np.all(reference >= 0) and np.all(permutable >= 0):
-        nonnegative = True
+    nonnegative = np.all(reference >= 0) and np.all(permutable >= 0)
+    one_d = reference.ndim == 1 or np.all(np.delete(reference.shape, axis) == 1)
 
-    # move the assignment dimension to the end
-    reference = np.moveaxis(reference, axis, -1)
-    permutable = np.moveaxis(permutable, axis, -1)
+    reference = np.moveaxis(reference, axis, -1).reshape(-1, reference.shape[axis]).T
+    permutable = np.moveaxis(permutable, axis, -1).reshape(-1, permutable.shape[axis]).T
 
-    # compute the correlation matrix between reference and permutable
-    correlation = np.zeros([reference.shape[-1], permutable.shape[-1]])
-    for i in range(reference.shape[-1]):
-        for j in range(permutable.shape[-1]):
-            correlation[i, j] = pearsonr(reference[..., i].flatten(), permutable[..., j].flatten())[0]
-    correlation = np.nan_to_num(correlation, 0)
+    signs = np.ones(shape=permutable.shape[0], dtype=np.int8)
+    if not one_d:
+        correlation = 1 - cdist(reference, permutable, metric="correlation")
+        correlation = np.nan_to_num(correlation, 0)
 
-    # find the permutation that maximizes the correlation
-    reference_ind, permutable_ind = linear_sum_assignment(-1 * np.abs(correlation))
-    signs = np.ones_like(permutable_ind)
+        reference_ind, permutable_ind = linear_sum_assignment(-1 * np.abs(correlation))
 
-    # if correlation is negative, flip the sign of the corresponding column
-    for k in range(signs.shape[0]):
-        if correlation[reference_ind, permutable_ind][k] < 0 and not nonnegative:
-            signs[k] *= -1
+        # if correlation is negative, flip the sign of the corresponding column
+        for k in range(signs.shape[0]):
+            if correlation[reference_ind, permutable_ind][k] < 0 and not nonnegative:
+                signs[k] *= -1
+    else:
+        difference = cdist(reference, permutable, metric="euclidean")
+        reference_ind, permutable_ind = linear_sum_assignment(difference)
 
     return reference_ind, permutable_ind, signs

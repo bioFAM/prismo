@@ -30,6 +30,7 @@ from . import gp, preprocessing
 from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
 from .io import MOFACompatOption, load_model, save_model
 from .model import Generative, Variational
+from .pcgse import test
 from .training import EarlyStopper
 from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute, sample_all_data_as_one_batch
 
@@ -575,6 +576,17 @@ class PRISMO:
             factors=self.get_factors(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
         )
 
+        if len(self._annotations) > 0:
+            self._pcgse = test(
+                data,
+                self._model_opts.nonnegative_weights,
+                self.get_annotations("pandas"),
+                self.get_weights("pandas"),
+                subsample=1000,
+            )
+        else:
+            self._pcgse = None
+
         if self._train_opts.save_path is not False:
             if self._train_opts.save_path is None:
                 self._train_opts.save_path = f"prismo_{time.strftime('%Y%m%d_%H%M%S')}.h5"
@@ -1022,6 +1034,18 @@ class PRISMO:
                 for group_name, df in self._df_r2_factors.items()
             }
 
+    def get_significant_factor_annotations(self) -> dict[str, pd.DataFrame] | None:
+        """Get the results of significance testing of annotations against factors.
+
+        The significance testing is an implementation of PCGSE :cite:p:`pmid26300978`. While
+        originally intended to assign annotations to uninformed factors, here it is used
+        as a diagnostic plot to find factors that are mismatched to their annotations.
+
+        Returns:
+            PCGSE results for each view or `None` if the model does not have prior annotations..
+        """
+        return self._pcgse
+
     def get_weights(
         self,
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
@@ -1242,6 +1266,7 @@ class PRISMO:
             "covariates_names": self._covariates_names,
             "df_r2_full": self._df_r2_full,
             "df_r2_factors": self._df_r2_factors,
+            "pcgse": self._pcgse,
             "n_dense_factors": self._n_dense_factors,
             "n_informed_factors": self._n_informed_factors,
             "factor_names": self._factor_names,
@@ -1297,6 +1322,7 @@ class PRISMO:
         model._covariates_names = state.get("covariates_names")
         model._df_r2_full = state["df_r2_full"]
         model._df_r2_factors = state["df_r2_factors"]
+        model._pcgse = state.get("pcgse")
         model._n_dense_factors = state["n_dense_factors"]
         model._n_informed_factors = state["n_informed_factors"]
         model._factor_names = state["factor_names"]

@@ -50,9 +50,11 @@ class PrismoPreprocessor(Preprocessor):
 
             dataset.reindex_features(nonconstantfeatures)
 
-        meanfunc = lambda mod, group_name, view_name, axis: utils.nanmean(mod.X, axis=axis)
-        self._feature_means = dataset.apply(meanfunc, axis=0)
-        self._sample_means = dataset.apply(meanfunc, axis=1)
+        meanfunc = lambda mod, group_name, view_name, axis, what: align_local_array_to_global(  # noqa F821
+            utils.nanmean(mod.X, axis=axis), group_name, view_name, align_to=what
+        )
+        self._feature_means = dataset.apply(meanfunc, axis=0, what="features")
+        self._sample_means = dataset.apply(meanfunc, axis=1, what="samples")
 
         self._viewstats = dataset.apply(
             lambda adata, group_name, view_name: ViewStatistics(

@@ -399,31 +399,35 @@ def variance_explained(
     return combined_heatmap
 
 
-def factors_overview(
+def factor_significance(
     model: PRISMO,
+    n_factors: int | None = None,
     views: str | Sequence[str] | None = None,
     annotated_only: bool = True,
     alpha: float = 0.05,
     figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
-    """Plot an overview of the factors summarizing the variance explained per factor along with the PCGSE results in each view.
+    """Plot an overview of the factors summarizing the PCGSE results along with the variance explained per factor.
 
     Args:
         model: The PRISMO model.
+        n_factors: Number of top factors to plot. If `None`, plot all factors (ordered).
         views: The views to consider in the ranking. If `None`, plot all views.
         annotated_only: Whether to only show the factors that are annotated.
         alpha: Significance threshold.
         figsize: Figure size in inches.
     """
     # TODO: technically we can show everything up to pcgse results
-    if model._pcgse is None:
+    pcgse_results = model.get_significant_factor_annotations()
+    if pcgse_results is None:
         raise ValueError("PCGSE results not available.")
 
     if isinstance(views, str):
         views = [views]
 
     if views is None:
-        views = model.view_names
+        # TODO: I'd prefer we plot even without pcgse results, simply to show variance explained (?)
+        views = [view for view in model.view_names if view in pcgse_results]
     if isinstance(views, str):
         views = [views]
 
@@ -432,12 +436,14 @@ def factors_overview(
 
     combined_df = []
     for view in views:
-        view_meta = model._pcgse[view].loc[(model._pcgse[view]["factor"] == model._pcgse[view]["annotation"]), :].copy()
+        view_meta = (
+            pcgse_results[view].loc[(pcgse_results[view]["factor"] == pcgse_results[view]["annotation"]), :].copy()
+        )
         view_meta = view_meta.loc[view_meta.groupby("factor")["padj"].idxmin()].reset_index(drop=True)
         # this needs to be done after deciding which direction is significant
         view_meta.index = view_meta["annotation"].values
         # TODO: needs to be generalized to multi-group
-        view_r2 = model.get_r2()["group_1"]
+        view_r2 = model.get_r2()["group_1"][[view]].copy()
         view_r2.columns = ["r2"]
         if annotated_only:
             view_r2 = view_r2.loc[view_meta.index, "r2"].copy()
@@ -464,11 +470,11 @@ def factors_overview(
         # name suffix depending on significance direction
         view_meta["suffix"] = view_meta["sign"].map({"pos": " (+)", "neg": " (-)", np.nan: ""})
         view_meta["factor"] = view_meta["factor"].astype(str) + view_meta["suffix"].astype(str)
-        # not sure how to order differently for plotnine...
-        # view_meta["factor"] = pd.Categorical(view_meta["factor"], categories=view_meta["factor"], ordered=True)
 
         # facet wrap
         view_meta["view"] = view
+        if n_factors is not None:
+            view_meta = view_meta.iloc[:n_factors]
         combined_df.append(view_meta)
 
     combined_df = pd.concat(combined_df, ignore_index=True).assign(

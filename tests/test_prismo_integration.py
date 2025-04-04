@@ -74,7 +74,11 @@ def anndata_dict(random_adata, rng):
     ],
 )
 def test_prismo(anndata_dict, tmp_path, attrname, attrvalue):
-    opts = (DataOptions(plot_data_overview=False), ModelOptions(n_factors=5), TrainingOptions(max_epochs=2, seed=42))
+    opts = (
+        DataOptions(plot_data_overview=False, annotations_varm_key="annot"),
+        ModelOptions(n_factors=5),
+        TrainingOptions(max_epochs=2, seed=42),
+    )
     if attrname == "save_path" and isinstance(attrvalue, str):
         attrvalue = str(tmp_path / attrvalue)
     for opt in opts:

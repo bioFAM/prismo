@@ -1,8 +1,9 @@
-import pytest
 from pathlib import Path
 
+import pytest
+
 import prismo as pr
-from prismo._core.pcgse import pcgse_test, _test_single_view
+from prismo._core.pcgse import _test_single_view, pcgse_test
 
 
 @pytest.fixture(scope="module")
@@ -13,26 +14,18 @@ def mousebrain_model():
 def test_test_annotation_significance_data_None_corr_True(mousebrain_model):
     with pytest.raises(ValueError):
         pr.tl.test_annotation_significance(
-            mousebrain_model,
-            mousebrain_model.get_annotations(),
-            data=None,
-            corr_adjust=True,
+            mousebrain_model, mousebrain_model.get_annotations(), data=None, corr_adjust=True
         )
 
 
 def test_test_annotation_significance_annotations_empty(mousebrain_model):
-    results = pr.tl.test_annotation_significance(
-        mousebrain_model, {}, corr_adjust=False
-    )
+    results = pr.tl.test_annotation_significance(mousebrain_model, {}, corr_adjust=False)
     assert results == {}
 
 
 def test_test_annotation_significance(mousebrain_model):
     results = pr.tl.test_annotation_significance(
-        mousebrain_model,
-        mousebrain_model.get_annotations(),
-        data=None,
-        corr_adjust=False,
+        mousebrain_model, mousebrain_model.get_annotations(), data=None, corr_adjust=False
     )
 
     assert isinstance(results, dict)
@@ -43,7 +36,6 @@ def test_test_annotation_significance(mousebrain_model):
 
 
 def test_pcgse_test(mousebrain_model):
-
     results = pcgse_test(
         data=None,
         nonnegative_weights={"view_1": True},
@@ -58,7 +50,6 @@ def test_pcgse_test(mousebrain_model):
 
 
 def test_test_single_view_nonnegative(mousebrain_model):
-
     assert (
         _test_single_view(
             "view_1",
@@ -74,7 +65,6 @@ def test_test_single_view_nonnegative(mousebrain_model):
 
 
 def test_test_single_view_empty(mousebrain_model):
-
     feature_sets_empty = mousebrain_model.get_annotations()["view_1"] & False
 
     assert (
@@ -93,7 +83,6 @@ def test_test_single_view_empty(mousebrain_model):
 
 @pytest.mark.parametrize("sign", ("pos", "neg", "all"))
 def test_test_single_view(mousebrain_model, sign):
-
     results = _test_single_view(
         "view_1",
         nonnegative_weights=False,

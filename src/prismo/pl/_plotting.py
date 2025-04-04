@@ -399,6 +399,94 @@ def variance_explained(
     return combined_heatmap
 
 
+def factors_overview(
+    model: PRISMO,
+    views: str | Sequence[str] | None = None,
+    annotated_only: bool = True,
+    alpha: float = 0.05,
+    figsize: tuple[float, float] | None = None,
+) -> p9.ggplot:
+    """Plot an overview of the factors summarizing the variance explained per factor along with the PCGSE results in each view.
+
+    Args:
+        model: The PRISMO model.
+        views: The views to consider in the ranking. If `None`, plot all views.
+        annotated_only: Whether to only show the factors that are annotated.
+        alpha: Significance threshold.
+        figsize: Figure size in inches.
+    """
+    # TODO: technically we can show everything up to pcgse results
+    if model._pcgse is None:
+        raise ValueError("PCGSE results not available.")
+
+    if isinstance(views, str):
+        views = [views]
+
+    if views is None:
+        views = model.view_names
+    if isinstance(views, str):
+        views = [views]
+
+    if figsize is None:
+        figsize = (8 * len(views), 5)
+
+    combined_df = []
+    for view in views:
+        view_meta = model._pcgse[view].loc[(model._pcgse[view]["factor"] == model._pcgse[view]["annotation"]), :].copy()
+        view_meta = view_meta.loc[view_meta.groupby("factor")["padj"].idxmin()].reset_index(drop=True)
+        # this needs to be done after deciding which direction is significant
+        view_meta.index = view_meta["annotation"].values
+        # TODO: needs to be generalized to multi-group
+        view_r2 = model.get_r2()["group_1"]
+        view_r2.columns = ["r2"]
+        if annotated_only:
+            view_r2 = view_r2.loc[view_meta.index, "r2"].copy()
+        view_meta = pd.concat([view_meta, view_r2], axis=1)
+        # fill missing values
+        view_meta["t"] = view_meta["t"].fillna(0.0)
+        view_meta["p"] = view_meta["p"].fillna(1.0)
+        view_meta["padj"] = view_meta["padj"].fillna(1.0)
+        # clip for better plotting (colormap)
+        view_meta["p"] = view_meta["p"].clip(1e-10, 1.0)
+        view_meta["padj"] = view_meta["padj"].clip(1e-10, 1.0)
+
+        view_meta["$-\\log_{10}(FDR)$"] = -np.log10(view_meta["padj"])
+
+        # remove NaNs from factor and annotation columns
+        view_meta["factor"] = view_meta.index.copy()
+        view_meta["annotation"] = view_meta.index.copy()
+
+        # add feature set size
+        view_meta["Size"] = model.get_annotations()[view].sum(axis=1).loc[view_meta.index]
+        view_meta.loc[view_meta["Size"] == model.n_features[view], "Size"] = 1
+        view_meta = view_meta.sort_values("r2", ascending=False).copy()
+
+        # name suffix depending on significance direction
+        view_meta["suffix"] = view_meta["sign"].map({"pos": " (+)", "neg": " (-)", np.nan: ""})
+        view_meta["factor"] = view_meta["factor"].astype(str) + view_meta["suffix"].astype(str)
+        # not sure how to order differently for plotnine...
+        # view_meta["factor"] = pd.Categorical(view_meta["factor"], categories=view_meta["factor"], ordered=True)
+
+        # facet wrap
+        view_meta["view"] = view
+        combined_df.append(view_meta)
+
+    combined_df = pd.concat(combined_df, ignore_index=True).assign(
+        factor=lambda x: pd.Categorical(x.factor, categories=x.factor.unique())
+    )
+
+    combined_scatter = (
+        p9.ggplot(combined_df, p9.aes(x="r2", y="factor", fill="$-\\log_{10}(FDR)$", size="Size"))
+        + p9.geom_point()
+        + p9.scale_fill_distiller(palette="OrRd", limits=(0, None))
+        + p9.labs(x="$R^2$", y="Factor", title=rf"Overview top factors at $\alpha = {alpha}$")
+        + p9.theme(figure_size=figsize, **_no_axis_ticks_x, **_no_axis_ticks_y)
+        + p9.facet_wrap("view")
+    )
+
+    return combined_scatter
+
+
 def all_weights(
     model: PRISMO,
     views: str | Sequence[str] | None = None,

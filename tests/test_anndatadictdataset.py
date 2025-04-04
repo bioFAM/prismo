@@ -1,6 +1,5 @@
 from functools import reduce
 
-import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
@@ -10,24 +9,8 @@ from prismo._core.datasets import AnnDataDictDataset, PrismoDataset
 
 
 @pytest.fixture(scope="module")
-def big_adata(rng):
-    nobs = 500
-    nvar = 100
-
-    adata = ad.AnnData(
-        X=rng.poisson(0.5, size=(nobs, nvar)),
-        obs=pd.DataFrame({"covar": rng.random(size=nobs)}, index=[f"cell_{i}" for i in range(nobs)]),
-        var=pd.DataFrame(index=[f"gene_{i}" for i in range(nvar)]),
-    )
-    adata.obsm["covar"] = pd.DataFrame(rng.random(size=(nobs, 3)), columns=["a", "b", "c"], index=adata.obs_names)
-    adata.varm["annot"] = pd.DataFrame(
-        rng.random(size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
-    )
-    return adata
-
-
-@pytest.fixture(scope="module")
-def anndata_dict(big_adata, rng):
+def anndata_dict(random_adata, rng):
+    big_adata = random_adata("Normal", 500, 100)
     permuted = rng.permutation(range(500))
     group1_size = rng.choice(500)
     group_idxs = (permuted[:group1_size], permuted[group1_size:])
@@ -64,7 +47,7 @@ def use_var(request):
 
 
 @pytest.fixture(scope="module")
-def dataset(big_adata, anndata_dict, use_obs, use_var):
+def dataset(anndata_dict, use_obs, use_var):
     return PrismoDataset(anndata_dict, use_obs=use_obs, use_var=use_var, cast_to=np.float32)
 
 

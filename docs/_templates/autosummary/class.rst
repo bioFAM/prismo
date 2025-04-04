@@ -9,7 +9,7 @@
 {% block attributes %}
 {% if attributes %}
 Attributes table
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 
 .. autosummary::
 {% for item in attributes %}

@@ -2,11 +2,11 @@ import logging
 
 import numpy as np
 import pandas as pd
-import torch
+from numpy.typing import NDArray
 from anndata import AnnData
 from mudata import MuData
 from scipy.optimize import linear_sum_assignment
-from scipy.stats import pearsonr
+from scipy.spatial.distance import cdist
 
 from .._core import PRISMO, PrismoDataset, pcgse_test
 
@@ -66,62 +66,45 @@ def test_annotation_significance(
         return {}
 
 
-def match(
-    reference: torch.Tensor | np.ndarray, permutable: torch.Tensor | np.ndarray, dim: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Find optimal permutation and signs to match two tensors along specified dimension.
+def match(reference: NDArray, permutable: NDArray, axis: int) -> tuple[NDArray[int], NDArray[int], NDArray[np.uint8]]:
+    """Find optimal permutation and signs to match two tensors along specified axis.
 
-    Finds the permutation and sign of permutable along one dimension to maximize
+    Finds the permutation and sign of permutable along one axis to maximize
     correlation with reference. Useful for comparing ground truth factor scores/loadings
     with inferred values where factor order and sign is arbitrary.
 
     Args:
-        reference: Reference tensor to match against.
-        permutable: Tensor to be permuted and sign-adjusted.
-        dim: Dimension along which to perform matching.
+        reference: Reference array to match against.
+        permutable: Array to be permuted and sign-adjusted.
+        axis: Axis along which to perform matching.
 
     Returns:
-        tuple:
-            - np.ndarray: Optimal permutation indices
-            - np.ndarray: Optimal signs (+1 or -1) for each permuted element
+        A tuple with optimal permutation indices and optimal signs (+1 or -1) for each
+        permuted element.
 
     Notes:
-        - Handles various input types (torch.Tensor, np.ndarray, pd.DataFrame)
-        - Special handling for non-negative tensors
+        - Special handling for non-negative arrays
         - Uses linear sum assignment to find optimal matching
     """
-    # convert all tensors to numpy arrays
-    if isinstance(reference, torch.Tensor):
-        reference = reference.numpy()
-    if isinstance(permutable, torch.Tensor):
-        permutable = permutable.numpy()
-    if isinstance(reference, pd.DataFrame):
-        reference = reference.to_numpy()
-    if isinstance(permutable, pd.DataFrame):
-        permutable = permutable.to_numpy()
+    nonnegative = np.all(reference >= 0) and np.all(permutable >= 0)
+    one_d = reference.ndim == 1 or np.all(np.delete(reference.shape, axis) == 1)
 
-    nonnegative = False
-    if np.all(reference >= 0) and np.all(permutable >= 0):
-        nonnegative = True
+    reference = np.moveaxis(reference, axis, -1).reshape(-1, reference.shape[axis]).T
+    permutable = np.moveaxis(permutable, axis, -1).reshape(-1, permutable.shape[axis]).T
 
-    # move the assignment dimension to the end
-    reference = np.moveaxis(reference, dim, -1)
-    permutable = np.moveaxis(permutable, dim, -1)
+    signs = np.ones(shape=permutable.shape[0], dtype=np.int8)
+    if not one_d:
+        correlation = 1 - cdist(reference, permutable, metric="correlation")
+        correlation = np.nan_to_num(correlation, 0)
 
-    # compute the correlation matrix between reference and permutable
-    correlation = np.zeros([reference.shape[-1], permutable.shape[-1]])
-    for i in range(reference.shape[-1]):
-        for j in range(permutable.shape[-1]):
-            correlation[i, j] = pearsonr(reference[..., i].flatten(), permutable[..., j].flatten())[0]
-    correlation = np.nan_to_num(correlation, 0)
+        reference_ind, permutable_ind = linear_sum_assignment(-1 * np.abs(correlation))
 
-    # find the permutation that maximizes the correlation
-    reference_ind, permutable_ind = linear_sum_assignment(-1 * np.abs(correlation))
-    signs = np.ones_like(permutable_ind)
-
-    # if correlation is negative, flip the sign of the corresponding column
-    for k in range(signs.shape[0]):
-        if correlation[reference_ind, permutable_ind][k] < 0 and not nonnegative:
-            signs[k] *= -1
+        # if correlation is negative, flip the sign of the corresponding column
+        for k in range(signs.shape[0]):
+            if correlation[reference_ind, permutable_ind][k] < 0 and not nonnegative:
+                signs[k] *= -1
+    else:
+        difference = cdist(reference, permutable, metric="euclidean")
+        reference_ind, permutable_ind = linear_sum_assignment(difference)
 
     return reference_ind, permutable_ind, signs

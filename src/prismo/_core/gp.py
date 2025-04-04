@@ -139,7 +139,7 @@ class GP(ApproximateGP):
 
         if kernel == "RBF":
             base_kernel = RBFKernel(batch_shape=batch_shape, lengthscale_constraint=Interval(max_dist / 20, max_dist))
-        if kernel == "Matern":
+        elif kernel == "Matern":
             base_kernel = MaternKernel(
                 batch_shape=batch_shape,
                 lengthscale_constraint=Interval(max_dist / 20, max_dist),

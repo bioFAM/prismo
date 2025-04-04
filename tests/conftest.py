@@ -14,11 +14,11 @@ def random_array(rng):
     def _arr(likelihood, shape):
         match likelihood:
             case "Normal":
-                arr = rng.normal(size=(100, 30))
+                arr = rng.normal(size=shape)
             case "Bernoulli":
-                arr = rng.binomial(1, 0.5, size=(100, 30))
+                arr = rng.binomial(1, 0.5, size=shape)
             case "GammaPoisson":
-                arr = rng.negative_binomial(10, 0.9, size=(100, 30))
+                arr = rng.negative_binomial(10, 0.9, size=shape)
         return arr
 
     return _arr
@@ -32,5 +32,25 @@ def create_adata():
         if obs_names is None:
             obs_names = [f"obs{i}" for i in range(X.shape[0])]
         return AnnData(X, var=pd.DataFrame(index=var_names), obs=pd.DataFrame(index=obs_names))
+
+    return _adata
+
+
+@pytest.fixture(scope="module")
+def random_adata(rng, random_array):
+    def _adata(likelihood, nobs, nvar, var_names=None, obs_names=None):
+        adata = AnnData(
+            X=random_array(likelihood, (nobs, nvar)).astype(np.float32),
+            obs=pd.DataFrame(
+                {"covar": rng.random(size=nobs)},
+                index=obs_names if obs_names is not None else [f"cell_{i}" for i in range(nobs)],
+            ),
+            var=pd.DataFrame(index=var_names if var_names is not None else [f"gene_{i}" for i in range(nvar)]),
+        )
+        adata.obsm["covar"] = pd.DataFrame(rng.random(size=(nobs, 3)), columns=["a", "b", "c"], index=adata.obs_names)
+        adata.varm["annot"] = pd.DataFrame(
+            rng.random(size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
+        )
+        return adata
 
     return _adata

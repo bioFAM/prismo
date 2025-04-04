@@ -45,9 +45,7 @@ dependencies = [
   "torch",
   "tqdm",
 ]
-
 optional-dependencies.dev = [
-  "coverage",
   "pre-commit",
   "twine>=4.0.2",
 ]
@@ -75,6 +73,7 @@ optional-dependencies.test = [
   "coverage",
   "pytest",
 ]
+# https://docs.pypi.org/project_metadata/#project-urls
 urls.Documentation = "https://prismo.readthedocs.io/"
 urls.Home-page = "https://github.com/bioFAM/prismo"
 urls.Source = "https://github.com/bioFAM/prismo"
@@ -88,6 +87,19 @@ source = "vcs"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.envs.default]
+installer = "uv"
+features = [ "dev" ]
+
+[tool.hatch.envs.docs]
+features = [ "doc" ]
+scripts.build = "sphinx-build -M html docs docs/_build {args}"
+scripts.open = "python -m webbrowser -t docs/_build/html/index.html"
+scripts.clean = "git clean -fdX -- {args:docs}"
+
+[tool.hatch.envs.hatch-test]
+features = [ "test" ]
+
 [tool.ruff]
 line-length = 120
 src = [ "src" ]
@@ -96,6 +108,7 @@ extend-include = [ "*.ipynb" ]
 format.skip-magic-trailing-comma = true
 format.exclude = [ "*.ipynb" ]
 format.docstring-code-format = true
+
 lint.select = [
   "B",      # flake8-bugbear
   "BLE",    # flake8-blind-except

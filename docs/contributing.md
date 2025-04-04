@@ -69,12 +69,15 @@ While the [pre-commit.ci][] is useful, we strongly encourage installing and runn
 Finally, most editors have an _autoformat on save_ feature.
 Consider enabling this option for [ruff][ruff-editors] and [biome][biome-editors].
 
+[pre-commit]: https://pre-commit.com/
+[pre-commit.ci]: https://pre-commit.ci/
 [ruff-editors]: https://docs.astral.sh/ruff/integrations/
-[biome-editors]: https://biomejs.dev/guides/integrate-in-editor
+[biome-editors]: https://biomejs.dev/guides/integrate-in-editor/
 
 (writing-tests)=
 
 ## Writing tests
+
 This package uses [pytest][] for automated testing.
 Please write {doc}`scanpy:dev/testing` for every function added to the package.
 
@@ -96,13 +99,16 @@ hatch test  # test with the highest supported Python version
 # or
 hatch test --all  # test with all supported Python versions
 ```
+
 ::::
 
 ::::{group-tab} Pip
+
 ```bash
 source .venv/bin/activate
 pytest
 ```
+
 ::::
 :::::
 
@@ -111,6 +117,9 @@ in the root of the repository.
 [pytest]: https://docs.pytest.org/
 
 ### Continuous integration
+
+Continuous integration will automatically run the tests on all pull requests and test
+against the minimum and maximum supported Python version.
 
 Additionally, there's a CI job that tests against pre-releases of all dependencies (if there are any).
 The purpose of this check is to detect incompatibilities of new package versions early on and
@@ -133,17 +142,20 @@ Please adhere to [Semantic Versioning][semver], in brief
 
 Once you are done, commit your changes and tag the commit as `vX.X.X`.
 Push the tag.
-This will automatically release to PyPI.
+This will automatically release to [PyPI][].
+
+[semver]: https://semver.org/
+[pypi]: https://pypi.org/
 
 ## Writing documentation
 
 Please write documentation for new or changed features and use-cases.
 This project uses [sphinx][] with the following features:
 
-- the [myst][] extension allows to write documentation in markdown/Markedly Structured Text
-- [Google-style docstrings][googledoc] (through the [napoleon][numpydoc-napoleon] extension).
+- The [myst][] extension allows to write documentation in markdown/Markedly Structured Text
+- [Numpy-style docstrings][numpydoc] (through the [napoloen][numpydoc-napoleon] extension).
 - Jupyter notebooks as tutorials through [myst-nb][] (See [Tutorials with myst-nb](#tutorials-with-myst-nb-and-jupyter-notebooks))
-- [Sphinx autodoc typehints][], to automatically reference annotated input and output types
+- [sphinx-autodoc-typehints][], to automatically reference annotated input and output types
 - Citations (like {cite:p}`Virshup_2023`) can be included with [sphinxcontrib-bibtex](https://sphinxcontrib-bibtex.readthedocs.io/)
 
 See scanpy’s {doc}`scanpy:dev/documentation` for more information on how to write your own.
@@ -193,7 +205,7 @@ hatch run docs:open
 source .venv/bin/activate
 cd docs
 make html
-xdg-open _build/html/index.html
+(xdg-)open _build/html/index.html
 ```
 
 ::::

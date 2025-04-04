@@ -290,12 +290,10 @@ class Generative(PyroModule):
         with plates[f"features_{view_name}"]:
             return pyro.sample(f"dispersion_{view_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
 
-    def _dist_obs_normal(self, loc, view_name, **kwargs):
-        precision = self.sample_dict[f"dispersion_{view_name}"]
-        return dist.Normal(loc, torch.reciprocal(precision + EPS))
+    def _dist_obs_normal(self, loc, dispersion, **kwargs):
+        return dist.Normal(loc, torch.reciprocal(dispersion + EPS))
 
-    def _dist_obs_gamma_poisson(self, loc, group_name, view_name, sample_means, **kwargs):
-        dispersion = self.sample_dict[f"dispersion_{view_name}"]
+    def _dist_obs_gamma_poisson(self, loc, dispersion, sample_means, **kwargs):
         rate = self.pos_transform(loc) * sample_means[None, ...]
         return dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
 
@@ -352,6 +350,9 @@ class Generative(PyroModule):
             gnonmissing_samples = nonmissing_samples[group_name]
             gnonmissing_features = nonmissing_features[group_name]
             for view_name, view_obs in group.items():
+                if view_obs.numel() == 0:  # can occur in the last batch of an epoch if the batch is small
+                    continue
+
                 vnonmissing_samples = gnonmissing_samples[view_name]
                 vnonmissing_features = gnonmissing_features[view_name]
 
@@ -367,15 +368,11 @@ class Generative(PyroModule):
                 sample_means = self._get_sample_means(group_name, view_name)
                 if sample_means is not None:
                     sample_means = sample_means[sample_idx[group_name][nonmissing_samples[group_name][view_name]]]
+                dispersion = self.sample_dict.get(f"dispersion_{view_name}")
+                if dispersion is not None:
+                    dispersion = dispersion[nonmissing_features[group_name][view_name]]
 
-                dist_parameterized = self.dist_obs[view_name](
-                    loc,
-                    obs=obs,
-                    obs_mask=obs_mask,
-                    group_name=group_name,
-                    view_name=view_name,
-                    sample_means=sample_means,
-                )
+                dist_parameterized = self.dist_obs[view_name](loc, dispersion=dispersion, sample_means=sample_means)
 
                 with (
                     pyro.poutine.mask(mask=obs_mask),
@@ -553,6 +550,22 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.scales,
                     f"local_scale_z_{group_name}",
+                    PyroParam(
+                        self.init_scale * torch.ones((n_factors, 1, n_samples[group_name])),
+                        constraint=constraints.softplus_positive,
+                    ),
+                )
+
+                deep_setattr(
+                    self.locs,
+                    f"caux_z_{group_name}",
+                    PyroParam(
+                        self.init_loc * torch.ones((n_factors, 1, n_samples[group_name])), constraint=constraints.real
+                    ),
+                )
+                deep_setattr(
+                    self.scales,
+                    f"caux_z_{group_name}",
                     PyroParam(
                         self.init_scale * torch.ones((n_factors, 1, n_samples[group_name])),
                         constraint=constraints.softplus_positive,
@@ -829,7 +842,7 @@ class Variational(PyroModule):
                 z_scale = z_scale.index_select(-1, index)
             return pyro.sample(f"z_{group_name}", dist.Laplace(z_loc, z_scale))
 
-    def _sample_factors_horseshoe(self, group_name, plates, **kwargs):
+    def _sample_factors_horseshoe(self, group_name, plates, regularized=True, **kwargs):
         global_scale_loc, global_scale_scale = self._get_loc_and_scale(f"global_scale_z_{group_name}")
         pyro.sample(f"global_scale_z_{group_name}", dist.LogNormal(global_scale_loc, global_scale_scale))
 
@@ -844,10 +857,11 @@ class Variational(PyroModule):
                     local_scale_scale = local_scale_scale.index_select(-1, index)
                 pyro.sample(f"local_scale_z_{group_name}", dist.LogNormal(local_scale_loc, local_scale_scale))
 
-                z_loc, z_scale = self._get_loc_and_scale(f"z_{group_name}")
-                if index is not None:
-                    z_loc = z_loc.index_select(-1, index)
-                    z_scale = z_scale.index_select(-1, index)
+                if regularized:
+                    caux_loc, caux_scale = (arr[..., index] for arr in self._get_loc_and_scale(f"caux_z_{group_name}"))
+                    pyro.sample(f"caux_z_{group_name}", dist.LogNormal(caux_loc, caux_scale))
+
+                z_loc, z_scale = (arr[..., index] for arr in self._get_loc_and_scale(f"z_{group_name}"))
                 return pyro.sample(f"z_{group_name}", dist.Normal(z_loc, z_scale))
 
     def _sample_factors_sns(self, group_name, plates, **kwargs):

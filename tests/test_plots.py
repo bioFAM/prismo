@@ -145,7 +145,7 @@ def test_top_weights_annotations(mousebrain_model):
     return pr.pl.top_weights(mousebrain_model, figsize=(20, 20))
 
 
-@plotnine_comparison(baseline_images=["weights_annotations"])
+@plotnine_comparison(baseline_images=["weights_annotations", "weights_annotations_pretty"])
 def test_weights_annotations(mousebrain_model):
     return pr.pl.weights(
         mousebrain_model, factors=["Factor 1", "Factor 2", "Astrocytes", "Interneurons"], prettify=False

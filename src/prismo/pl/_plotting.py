@@ -843,6 +843,7 @@ def weights(
     prettify: bool | dict[str, str] = True,
     abbreviation_length: int = 40,
     end_with_database: bool = True,
+    upper_case: bool = True,
 ) -> p9.ggplot:
     """Plot the weights for a given factor and view.
 
@@ -863,6 +864,8 @@ def weights(
             `prettify` is `True`.
         end_with_database: Whether to end the feature names with the database name. Only relevant if
             `prettify` is `True`.
+        upper_case: Whether to convert the feature names to upper case. Only relevant if
+            `prettify` is `True`.
     """
     views, factors, df, have_annot = _prepare_weights_df(model, n_features, views, factors)
     if figsize is None:
@@ -877,6 +880,7 @@ def weights(
                 replacements=None if isinstance(prettify, bool) else prettify,
                 abbreviation_length=abbreviation_length,
                 end_with_database=end_with_database,
+                upper_case=upper_case,
             )
         else:
             raise ValueError("`prettify` must be a bool or a dict.")
@@ -997,6 +1001,7 @@ def _prettify_factor_names(
     replacements: dict[str, str] = None,
     abbreviation_length: int = 40,
     end_with_database: bool = True,
+    upper_case: bool = True,
 ) -> pd.Series:
     """Prettify factor names.
 
@@ -1005,7 +1010,8 @@ def _prettify_factor_names(
     put the database name in square brackets at the end of the label.
 
     Example:
-    `Reactome ABC` becomes `ABC [R]`, if `replacements` is `{"Reactome": "[R]"}` and `end_with_database` is `True`.
+    `Reactome Abc` becomes `ABC [R]`, if `replacements` is `{"Reactome": "[R]"}` and `end_with_database` is `True`
+    and `upper_case` is `True`.
 
     Args:
         factors: The factor names to prettify.
@@ -1013,6 +1019,7 @@ def _prettify_factor_names(
         abbreviation_length: The maximum length of the labels.
         end_with_database: Whether to end the labels with the database name. The database name is
             assumed to be in square brackets in the beginning of the label.
+        upper_case: Whether to convert the labels to upper case.
     """
     if not isinstance(abbreviation_length, int) or abbreviation_length <= 0:
         raise ValueError("`abbreviation_length` must be a positive integer.")
@@ -1029,5 +1036,7 @@ def _prettify_factor_names(
     if end_with_database:
         # Turn `[X] ABC` into `ABC [X]`
         factors = factors.str.replace(r"^(\[.*\]) (.*)", r"\2 \1", regex=True)
+    if upper_case:
+        factors = factors.str.upper()
 
     return factors

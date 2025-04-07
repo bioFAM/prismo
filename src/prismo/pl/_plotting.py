@@ -440,7 +440,8 @@ def factor_significance(
 
     combined_df = []
     for group in groups:
-        r2_df = model.get_r2()[group]
+        r2_df = model.get_r2(ordered=True)[group]
+        factor_order = r2_df.index
         for view in views:
             view_pcgse = (
                 pcgse_results[view].loc[(pcgse_results[view]["factor"] == pcgse_results[view]["annotation"]), :].copy()
@@ -451,8 +452,8 @@ def factor_significance(
             # TODO: needs to be generalized to multi-group
             view_r2 = r2_df[[view]].copy()
             view_r2.columns = ["r2"]
-            factor_order = [fn for fn in view_r2.index if fn in view_pcgse.index]
-            view_pcgse = pd.concat([view_pcgse.loc[factor_order, :], view_r2], axis=1)
+            view_pcgse = pd.concat([view_pcgse, view_r2], axis=1)
+            print(view_pcgse)
             # fill missing values
             view_pcgse["t"] = view_pcgse["t"].fillna(0.0)
             view_pcgse["p"] = view_pcgse["p"].fillna(1.0)
@@ -470,8 +471,6 @@ def factor_significance(
             # add feature set size
             view_pcgse["Size"] = model.get_annotations()[view].sum(axis=1).loc[view_pcgse.index]
             view_pcgse.loc[view_pcgse["Size"] == model.n_features[view], "Size"] = 1
-            # view_pcgse = view_pcgse.sort_values("r2", ascending=False).copy()
-            view_pcgse = view_pcgse.loc[model.factor_names, :].copy()
 
             # name suffix depending on significance direction
             view_pcgse["suffix"] = view_pcgse["sign"].map({"pos": " (+)", "neg": " (-)", np.nan: ""})
@@ -480,6 +479,7 @@ def factor_significance(
             # facet wrap
             view_pcgse["view"] = view
             view_pcgse["group"] = group
+            view_pcgse = view_pcgse.loc[factor_order, :]
             if n_factors is not None:
                 view_pcgse = view_pcgse.iloc[:n_factors]
             combined_df.append(view_pcgse)
@@ -494,9 +494,20 @@ def factor_significance(
         + p9.scale_fill_distiller(palette="OrRd", limits=(0, None))
         + p9.labs(x="$R^2$", y="Factor", title=rf"Overview top factors at $\alpha = {alpha}$")
         + p9.theme(figure_size=figsize, **_no_axis_ticks_x, **_no_axis_ticks_y)
-        # + p9.facet_wrap("view")
-        + p9.facet_grid("group ~ view")
     )
+
+    facet = (
+        p9.facet_grid("group ~ view")
+        if len(groups) > 1 and len(views) > 1
+        else p9.facet_wrap("group")
+        if len(groups) > 1
+        else p9.facet_wrap("view")
+        if len(views) > 1
+        else None
+    )
+
+    if facet is not None:
+        combined_scatter += facet
 
     return combined_scatter
 

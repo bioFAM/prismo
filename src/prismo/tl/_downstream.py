@@ -2,9 +2,9 @@ import logging
 
 import numpy as np
 import pandas as pd
-from numpy.typing import NDArray
 from anndata import AnnData
 from mudata import MuData
+from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 

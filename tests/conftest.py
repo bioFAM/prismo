@@ -71,9 +71,9 @@ def cll_data():
 
 @pytest.fixture(scope="session")
 def cll_model():
-    return pr.PRISMO.load(Path(__file__).parent / "data" / "cll_model.h5")
+    return pr.PRISMO.load(Path(__file__).parent / "data" / "cll_model.h5", map_location="cpu")
 
 
 @pytest.fixture(scope="session")
 def mousebrain_model():
-    return pr.PRISMO.load(Path(__file__).parent / "data" / "mousebrain_model.h5")
+    return pr.PRISMO.load(Path(__file__).parent / "data" / "mousebrain_model.h5", map_location="cpu")

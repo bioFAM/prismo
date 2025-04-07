@@ -1,9 +1,6 @@
-import warnings
 from functools import partial, wraps
-from pathlib import Path
 
 import matplotlib.pyplot as plt
-import mudata as md
 import plotnine
 import pytest
 from matplotlib.testing.decorators import image_comparison as mpl_image_comparison
@@ -15,23 +12,6 @@ image_comparison = partial(
     mpl_image_comparison, extensions=["png"], tol=0.5
 )  # tolerance for differences in text rendering
 plotnine.options.base_family = "DejaVu Sans"  # bundled with Matplotlib
-
-
-@pytest.fixture(scope="module")
-def cll_data():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=FutureWarning)
-        return md.read_h5mu(Path(__file__).parent / "plots" / "cll.h5mu")
-
-
-@pytest.fixture(scope="module")
-def cll_model():
-    return pr.PRISMO.load(Path(__file__).parent / "plots" / "cll_model.h5")
-
-
-@pytest.fixture(scope="module")
-def mousebrain_model():
-    return pr.PRISMO.load(Path(__file__).parent / "plots" / "mousebrain_model.h5")
 
 
 def plotnine_comparison(*decorator_args, **decorator_kwargs):

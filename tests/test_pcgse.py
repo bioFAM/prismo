@@ -1,14 +1,7 @@
-from pathlib import Path
-
 import pytest
 
 import prismo as pr
 from prismo._core.pcgse import _test_single_view, pcgse_test
-
-
-@pytest.fixture(scope="module")
-def mousebrain_model():
-    return pr.PRISMO.load(Path(__file__).parent / "plots" / "mousebrain_model.h5")
 
 
 def test_test_annotation_significance_data_None_corr_True(mousebrain_model):

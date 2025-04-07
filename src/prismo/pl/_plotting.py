@@ -404,18 +404,21 @@ def factor_significance(
     n_factors: int | None = None,
     views: str | Sequence[str] | None = None,
     groups: str | Sequence[str] | None = None,
+    alpha: float = 0.05,
     figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
     """Plot an overview of the factors summarizing the PCGSE results along with the variance explained per factor.
 
     This is a diagnostic plot showing only the results of testing a factor against its matching annotation.  Of the
-    two one-sided tests, only the most significant one is shown.
+    two one-sided tests, only the most significant one is shown. The factor names of the factors significant at
+    `alpha` FDR will be annotated with the direction of the test.
 
     Args:
         model: The PRISMO model.
         n_factors: Number of top factors to plot. If `None`, plot all factors (ordered).
         views: The views to consider in the ranking. If `None`, plot all views.
         groups: The groups to consider in the ranking. If `None`, plot all groups.
+        alpha: False discovery rate threshold.
         figsize: Figure size in inches.
     """
     pcgse_results = model.get_significant_factor_annotations()
@@ -455,11 +458,12 @@ def factor_significance(
                 .set_index("annotation", drop=False)
                 .assign(r2=r2_df[[view_name]])
             )
+            view_pcgse.loc[view_pcgse["padj"] > alpha, "sign"] = pd.NA
 
             view_pcgse["annotation_size"] = annotations[view_name].sum(axis=1)
-
-            view_pcgse["factor"] = view_pcgse["factor"] + view_pcgse["sign"].map({"pos": " (+)", "neg": " (-)"})
-
+            view_pcgse["factor"] = view_pcgse["factor"] + view_pcgse["sign"].map(
+                {"pos": " (+)", "neg": " (-)", pd.NA: ""}
+            )
             view_pcgse["view"] = view_name
             view_pcgse["group"] = group
 

@@ -71,9 +71,15 @@ def test_variance_explained(cll_model):
     return pr.pl.variance_explained(cll_model)
 
 
-@plotnine_comparison(baseline_images=["factor_significance"])
+@plotnine_comparison(
+    baseline_images=["factor_significance", "factor_significance_nfactors-5", "factor_significance_alpha-0-8"]
+)
 def test_factor_significance(mousebrain_model):
-    return pr.pl.factor_significance(mousebrain_model, figsize=(8, 5))
+    return (
+        pr.pl.factor_significance(mousebrain_model, figsize=(8, 5)),
+        pr.pl.factor_significance(mousebrain_model, n_factors=5, figsize=(8, 5)),
+        pr.pl.factor_significance(mousebrain_model, alpha=0.8, figsize=(8, 5)),
+    )
 
 
 @plotnine_comparison(baseline_images=["all_weights", "all_weights_Mutations", "all_weights_Mutations_mRNA"])

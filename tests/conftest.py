@@ -55,7 +55,7 @@ def random_adata(rng, random_array):
         )
         adata.obsm["covar"] = pd.DataFrame(rng.random(size=(nobs, 3)), columns=["a", "b", "c"], index=adata.obs_names)
         adata.varm["annot"] = pd.DataFrame(
-            rng.random(size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
+            rng.choice([False, True], size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
         )
         return adata
 

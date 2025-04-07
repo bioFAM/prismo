@@ -247,9 +247,10 @@ class PRISMO:
             pl.overview(data).show()
 
         self._setup_likelihoods(data)
-        self._setup_annotations(data)
-
         preprocessor = self._make_preprocessor(data)
+
+        # this needs to be after preprocessor, since preprocessor may filter out features with zero variance
+        self._setup_annotations(data)
 
         self._metadata = data.get_obs()
         self._view_names = data.view_names

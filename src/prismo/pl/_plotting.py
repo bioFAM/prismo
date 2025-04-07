@@ -404,7 +404,6 @@ def factor_significance(
     n_factors: int | None = None,
     views: str | Sequence[str] | None = None,
     groups: str | Sequence[str] | None = None,
-    alpha: float = 0.05,
     figsize: tuple[float, float] | None = None,
 ) -> p9.ggplot:
     """Plot an overview of the factors summarizing the PCGSE results along with the variance explained per factor.
@@ -417,7 +416,6 @@ def factor_significance(
         n_factors: Number of top factors to plot. If `None`, plot all factors (ordered).
         views: The views to consider in the ranking. If `None`, plot all views.
         groups: The groups to consider in the ranking. If `None`, plot all groups.
-        alpha: False discovery rate threshold.
         figsize: Figure size in inches.
     """
     pcgse_results = model.get_significant_factor_annotations()

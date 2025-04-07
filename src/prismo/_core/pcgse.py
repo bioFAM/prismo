@@ -57,6 +57,7 @@ def _test_single_view(
     feature_sets = feature_sets.loc[~(feature_sets.all(axis=1)), feature_sets.any()]
     if not feature_sets.any(axis=None):
         _logger.warning(f"No feature sets with unique annotations for view {view_name}, skipping view.")
+        return None
 
     factor_loadings = factor_loadings / np.max(np.abs(factor_loadings.to_numpy()))
 

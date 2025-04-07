@@ -417,7 +417,6 @@ def factor_significance(
         alpha: Significance threshold.
         figsize: Figure size in inches.
     """
-    # TODO: technically we can show everything up to pcgse results
     pcgse_results = model.get_significant_factor_annotations()
     if pcgse_results is None:
         raise ValueError("PCGSE results not available.")
@@ -449,7 +448,6 @@ def factor_significance(
             view_pcgse = view_pcgse.loc[view_pcgse.groupby("factor")["padj"].idxmin()].reset_index(drop=True)
             # this needs to be done after deciding which direction is significant
             view_pcgse.index = view_pcgse["annotation"].values
-            # TODO: needs to be generalized to multi-group
             view_r2 = r2_df[[view]].copy()
             view_r2.columns = ["r2"]
             view_pcgse = pd.concat([view_pcgse, view_r2], axis=1)

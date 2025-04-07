@@ -278,8 +278,7 @@ class FeatureSets:
         Returns:
             Binary mask of features.
         """
-        features = features or self.features
-        features_list = sorted(features)
+        features_list = sorted(self.features) if features is None else list(features)
         feature_sets_list = sorted(self.feature_sets, key=lambda x: x.name)
         if sort:
             feature_sets_list = sorted(feature_sets_list, key=lambda fs: fs.name)

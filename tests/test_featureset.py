@@ -196,6 +196,16 @@ def test_to_mask(featuresets1):
     assert np.all(mask.sum(axis=0) == 1)
 
 
+def test_to_mask_with_given_features(featuresets1, rng):
+    allfeatures = list(featuresets1.features)
+    features = rng.choice(allfeatures, size=int(0.2 * len(allfeatures)), replace=False)
+
+    mask = featuresets1.to_mask(features)
+    assert mask.shape[0] == len(featuresets1)
+    assert mask.shape[1] == len(features)
+    assert np.all(mask.columns == features)
+
+
 def test_similarity_to_feature_sets(featurelist1, featuresets1):
     sim = featuresets1.similarity_to_feature_sets(featuresets1).to_numpy()
     assert np.all(sim == np.eye(sim.shape[0], dtype=sim.dtype))

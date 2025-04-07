@@ -34,6 +34,11 @@ def mousebrain_model():
     return pr.PRISMO.load(Path(__file__).parent / "plots" / "mousebrain_model.h5")
 
 
+@pytest.fixture(scope="module")
+def mousebrain_model_informed():
+    return pr.PRISMO.load(Path(__file__).parent / "plots" / "mousebrain_model_informed.h5")
+
+
 def plotnine_comparison(*decorator_args, **decorator_kwargs):
     def wrapper(func):
         @wraps(func)
@@ -69,6 +74,11 @@ def test_factor_correlation(cll_model):
 @plotnine_comparison(baseline_images=["variance_explained"])
 def test_variance_explained(cll_model):
     return pr.pl.variance_explained(cll_model)
+
+
+@plotnine_comparison(baseline_images=["factor_significance"])
+def test_factor_significance(mousebrain_model_informed):
+    return pr.pl.factor_significance(mousebrain_model_informed)
 
 
 @plotnine_comparison(baseline_images=["all_weights", "all_weights_Mutations", "all_weights_Mutations_mRNA"])

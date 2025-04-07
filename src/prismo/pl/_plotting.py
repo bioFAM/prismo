@@ -453,7 +453,6 @@ def factor_significance(
             view_r2 = r2_df[[view]].copy()
             view_r2.columns = ["r2"]
             view_pcgse = pd.concat([view_pcgse, view_r2], axis=1)
-            print(view_pcgse)
             # fill missing values
             view_pcgse["t"] = view_pcgse["t"].fillna(0.0)
             view_pcgse["p"] = view_pcgse["p"].fillna(1.0)

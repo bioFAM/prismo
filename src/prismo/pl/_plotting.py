@@ -409,12 +409,15 @@ def factor_significance(
 ) -> p9.ggplot:
     """Plot an overview of the factors summarizing the PCGSE results along with the variance explained per factor.
 
+    This is a diagnostic plot showing only the results of testing a factor against its matching annotation.  Of the
+    two one-sided tests, only the most significant one is shown.
+
     Args:
         model: The PRISMO model.
         n_factors: Number of top factors to plot. If `None`, plot all factors (ordered).
         views: The views to consider in the ranking. If `None`, plot all views.
         groups: The groups to consider in the ranking. If `None`, plot all groups.
-        alpha: Significance threshold.
+        alpha: False discovery rate threshold.
         figsize: Figure size in inches.
     """
     pcgse_results = model.get_significant_factor_annotations()
@@ -424,61 +427,48 @@ def factor_significance(
     if views is None:
         # TODO: I'd prefer we plot even without pcgse results, simply to show variance explained (?)
         views = [view for view in model.view_names if view in pcgse_results]
-
-    if isinstance(views, str):
+    elif isinstance(views, str):
         views = [views]
 
     if groups is None:
         groups = model.group_names
-
-    if isinstance(groups, str):
+    elif isinstance(groups, str):
         groups = [groups]
 
     if figsize is None:
         figsize = (6 * len(views), 4 * len(groups))
 
+    pcgse_results = {
+        view_name: pcgse_results[view_name].loc[
+            (pcgse_results[view_name]["factor"] == pcgse_results[view_name]["annotation"]), :
+        ]
+        for view_name in views
+    }
+    r2 = model.get_r2()
+    annotations = model.get_annotations()
+    factor_order = model.factor_names[model.factor_order]
+
     combined_df = []
     for group in groups:
-        r2_df = model.get_r2(ordered=True)[group]
-        factor_order = r2_df.index
-        for view in views:
+        r2_df = r2[group]
+        for view_name, view_pcgse in pcgse_results.items():
             view_pcgse = (
-                pcgse_results[view].loc[(pcgse_results[view]["factor"] == pcgse_results[view]["annotation"]), :].copy()
+                view_pcgse.loc[view_pcgse.groupby("factor")["padj"].idxmin()]
+                .set_index("annotation", drop=False)
+                .assign(r2=r2_df[[view_name]])
             )
-            view_pcgse = view_pcgse.loc[view_pcgse.groupby("factor")["padj"].idxmin()].reset_index(drop=True)
-            # this needs to be done after deciding which direction is significant
-            view_pcgse.index = view_pcgse["annotation"].values
-            view_r2 = r2_df[[view]].copy()
-            view_r2.columns = ["r2"]
-            view_pcgse = pd.concat([view_pcgse, view_r2], axis=1)
-            # fill missing values
-            view_pcgse["t"] = view_pcgse["t"].fillna(0.0)
-            view_pcgse["p"] = view_pcgse["p"].fillna(1.0)
-            view_pcgse["padj"] = view_pcgse["padj"].fillna(1.0)
-            # clip for better plotting (colormap)
-            view_pcgse["p"] = view_pcgse["p"].clip(1e-10, 1.0)
-            view_pcgse["padj"] = view_pcgse["padj"].clip(1e-10, 1.0)
 
-            view_pcgse["$-\\log_{10}(FDR)$"] = -np.log10(view_pcgse["padj"])
+            view_pcgse["annotation_size"] = annotations[view_name].sum(axis=1)
 
-            # remove NaNs from factor and annotation columns
-            view_pcgse["factor"] = view_pcgse.index.copy()
-            view_pcgse["annotation"] = view_pcgse.index.copy()
+            view_pcgse["factor"] = view_pcgse["factor"] + view_pcgse["sign"].map({"pos": " (+)", "neg": " (-)"})
 
-            # add feature set size
-            view_pcgse["Size"] = model.get_annotations()[view].sum(axis=1).loc[view_pcgse.index]
-            view_pcgse.loc[view_pcgse["Size"] == model.n_features[view], "Size"] = 1
-
-            # name suffix depending on significance direction
-            view_pcgse["suffix"] = view_pcgse["sign"].map({"pos": " (+)", "neg": " (-)", np.nan: ""})
-            view_pcgse["factor"] = view_pcgse["factor"].astype(str) + view_pcgse["suffix"].astype(str)
-
-            # facet wrap
-            view_pcgse["view"] = view
+            view_pcgse["view"] = view_name
             view_pcgse["group"] = group
-            view_pcgse = view_pcgse.loc[factor_order, :]
-            if n_factors is not None:
-                view_pcgse = view_pcgse.iloc[:n_factors]
+
+            view_factor_order = factor_order[np.isin(factor_order, view_pcgse.index)]
+            view_pcgse = view_pcgse.loc[
+                view_factor_order[slice(n_factors) if n_factors is not None else slice(None)], :
+            ]
             combined_df.append(view_pcgse)
 
     combined_df = pd.concat(combined_df, ignore_index=True).assign(
@@ -486,15 +476,15 @@ def factor_significance(
     )
 
     combined_scatter = (
-        p9.ggplot(combined_df, p9.aes(x="r2", y="factor", fill="$-\\log_{10}(FDR)$", size="Size"))
+        p9.ggplot(combined_df, p9.aes(x="r2", y="factor", fill="-np.log10(padj)", size="annotation_size"))
         + p9.geom_point()
-        + p9.scale_fill_distiller(palette="OrRd", limits=(0, None))
-        + p9.labs(x="$R^2$", y="Factor", title=rf"Overview top factors at $\alpha = {alpha}$")
-        + p9.theme(figure_size=figsize, **_no_axis_ticks_x, **_no_axis_ticks_y)
+        + p9.scale_fill_distiller(palette="OrRd", limits=(0, 10), oob=bounds.squish)
+        + p9.labs(x="$R^2$", y="Factor", fill="$-\\log_{10}(\\text{FDR})$", size="No. features\nin annotation")
+        + p9.theme(figure_size=figsize)
     )
 
     facet = (
-        p9.facet_grid("group ~ view")
+        p9.facet_grid("group", "view")
         if len(groups) > 1 and len(views) > 1
         else p9.facet_wrap("group")
         if len(groups) > 1

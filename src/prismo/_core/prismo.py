@@ -593,6 +593,7 @@ class PRISMO:
                 self._model_opts.nonnegative_weights,
                 self.get_annotations("pandas"),
                 self.get_weights("pandas"),
+                min_size=1,
                 subsample=1000,
             )
         else:

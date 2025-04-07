@@ -30,6 +30,7 @@ from . import gp, preprocessing
 from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
 from .io import MOFACompatOption, load_model, save_model
 from .model import Generative, Variational
+from .pcgse import pcgse_test
 from .training import EarlyStopper
 from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute, sample_all_data_as_one_batch
 
@@ -239,17 +240,32 @@ class PRISMO:
 
     def __init__(self, data: MuData | dict[str, dict[str, AnnData]], *args: _Options):
         self._preprocess_options(*args)
-        data = PrismoDataset(
-            data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
-        )
+        data = self._make_dataset(data)
         self._adjust_options(data)
 
         if self._data_opts.plot_data_overview:
             pl.overview(data).show()
 
         self._setup_likelihoods(data)
+        preprocessor = self._make_preprocessor(data)
+
+        # this needs to be after preprocessor, since preprocessor may filter out features with zero variance
         self._setup_annotations(data)
 
+        self._metadata = data.get_obs()
+        self._view_names = data.view_names
+        self._group_names = data.group_names
+        self._sample_names = data.sample_names
+        self._feature_names = data.feature_names
+
+        self._fit(data, preprocessor)
+
+    def _make_dataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
+        return PrismoDataset(
+            data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
+        )
+
+    def _make_preprocessor(self, data: PrismoDataset) -> preprocessing.PrismoPreprocessor:
         preprocessor = preprocessing.PrismoPreprocessor(
             data,
             self._model_opts.likelihoods,
@@ -259,14 +275,11 @@ class PRISMO:
             self._data_opts.scale_per_group,
         )
         data.preprocessor = preprocessor
+        return preprocessor
 
-        self._metadata = data.get_obs()
-        self._view_names = data.view_names
-        self._group_names = data.group_names
-        self._sample_names = data.sample_names
-        self._feature_names = data.feature_names
-
-        self._fit(data, preprocessor)
+    def _prismodataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
+        data = self._make_dataset(data)
+        self._make_preprocessor(data)
 
     @property
     def group_names(self) -> npt.NDArray[str]:
@@ -574,6 +587,18 @@ class PRISMO:
             weights=self.get_weights(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
             factors=self.get_factors(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
         )
+
+        if len(self._annotations) > 0:
+            self._pcgse = pcgse_test(
+                data,
+                self._model_opts.nonnegative_weights,
+                self.get_annotations("pandas"),
+                self.get_weights("pandas"),
+                min_size=1,
+                subsample=1000,
+            )
+        else:
+            self._pcgse = None
 
         if self._train_opts.save_path is not False:
             if self._train_opts.save_path is None:
@@ -1029,6 +1054,18 @@ class PRISMO:
                 for group_name, df in self._df_r2_factors.items()
             }
 
+    def get_significant_factor_annotations(self) -> dict[str, pd.DataFrame] | None:
+        """Get the results of significance testing of annotations against factors.
+
+        The significance testing is an implementation of PCGSE :cite:p:`pmid26300978`. While
+        originally intended to assign annotations to uninformed factors, here it is used
+        as a diagnostic plot to find factors that are mismatched to their annotations.
+
+        Returns:
+            PCGSE results for each view or `None` if the model does not have prior annotations.
+        """
+        return self._pcgse
+
     def get_weights(
         self,
         return_type: Literal["pandas", "anndata", "numpy"] = "pandas",
@@ -1249,6 +1286,7 @@ class PRISMO:
             "covariates_names": self._covariates_names,
             "df_r2_full": self._df_r2_full,
             "df_r2_factors": self._df_r2_factors,
+            "pcgse": self._pcgse,
             "n_dense_factors": self._n_dense_factors,
             "n_informed_factors": self._n_informed_factors,
             "factor_names": self._factor_names,
@@ -1304,6 +1342,7 @@ class PRISMO:
         model._covariates_names = state.get("covariates_names")
         model._df_r2_full = state["df_r2_full"]
         model._df_r2_factors = state["df_r2_factors"]
+        model._pcgse = state.get("pcgse")
         model._n_dense_factors = state["n_dense_factors"]
         model._n_informed_factors = state["n_informed_factors"]
         model._factor_names = state["factor_names"]

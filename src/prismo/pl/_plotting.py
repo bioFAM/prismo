@@ -399,6 +399,108 @@ def variance_explained(
     return combined_heatmap
 
 
+def factor_significance(
+    model: PRISMO,
+    n_factors: int | None = None,
+    views: str | Sequence[str] | None = None,
+    groups: str | Sequence[str] | None = None,
+    alpha: float = 0.05,
+    figsize: tuple[float, float] | None = None,
+) -> p9.ggplot:
+    """Plot an overview of the factors summarizing the PCGSE results along with the variance explained per factor.
+
+    This is a diagnostic plot showing only the results of testing a factor against its matching annotation.  Of the
+    two one-sided tests, only the most significant one is shown. The factor names of the factors significant at
+    `alpha` FDR will be annotated with the direction of the test.
+
+    Args:
+        model: The PRISMO model.
+        n_factors: Number of top factors to plot. If `None`, plot all factors (ordered).
+        views: The views to consider in the ranking. If `None`, plot all views.
+        groups: The groups to consider in the ranking. If `None`, plot all groups.
+        alpha: False discovery rate threshold.
+        figsize: Figure size in inches.
+    """
+    pcgse_results = model.get_significant_factor_annotations()
+    if pcgse_results is None:
+        raise ValueError("PCGSE results not available.")
+
+    if views is None:
+        # TODO: I'd prefer we plot even without pcgse results, simply to show variance explained (?)
+        views = [view for view in model.view_names if view in pcgse_results]
+    elif isinstance(views, str):
+        views = [views]
+
+    if groups is None:
+        groups = model.group_names
+    elif isinstance(groups, str):
+        groups = [groups]
+
+    if figsize is None:
+        figsize = (6 * len(views), 4 * len(groups))
+
+    pcgse_results = {
+        view_name: pcgse_results[view_name].loc[
+            (pcgse_results[view_name]["factor"] == pcgse_results[view_name]["annotation"]), :
+        ]
+        for view_name in views
+    }
+    r2 = model.get_r2()
+    annotations = model.get_annotations()
+    factor_order = model.factor_names[model.factor_order]
+
+    combined_df = []
+    for group in groups:
+        r2_df = r2[group]
+        for view_name, view_pcgse in pcgse_results.items():
+            view_pcgse = (
+                view_pcgse.loc[view_pcgse.groupby("factor")["padj"].idxmin()]
+                .set_index("annotation", drop=False)
+                .assign(r2=r2_df[[view_name]])
+            )
+            view_pcgse.loc[view_pcgse["padj"] > alpha, "sign"] = pd.NA
+
+            view_pcgse["annotation_size"] = annotations[view_name].sum(axis=1)
+            view_pcgse["factor"] = view_pcgse["factor"] + view_pcgse["sign"].map(
+                {"pos": " (+)", "neg": " (-)", pd.NA: ""}
+            )
+            view_pcgse["view"] = view_name
+            view_pcgse["group"] = group
+
+            view_factor_order = factor_order[np.isin(factor_order, view_pcgse.index)]
+            view_pcgse = view_pcgse.loc[
+                view_factor_order[slice(n_factors) if n_factors is not None else slice(None)], :
+            ]
+            combined_df.append(view_pcgse)
+
+    combined_df = pd.concat(combined_df, ignore_index=True).assign(
+        factor=lambda x: pd.Categorical(x.factor, categories=x.factor.unique())
+    )
+
+    combined_scatter = (
+        p9.ggplot(combined_df, p9.aes(x="r2", y="factor", fill="-np.log10(padj)", size="annotation_size"))
+        + p9.geom_point()
+        + p9.scale_fill_distiller(palette="OrRd", limits=(0, 10), oob=bounds.squish)
+        + p9.labs(x="$R^2$", y="Factor", fill="$-\\log_{10}(\\text{FDR})$", size="No. features\nin annotation")
+        + p9.theme(figure_size=figsize)
+    )
+
+    facet = (
+        p9.facet_grid("group", "view")
+        if len(groups) > 1 and len(views) > 1
+        else p9.facet_wrap("group")
+        if len(groups) > 1
+        else p9.facet_wrap("view")
+        if len(views) > 1
+        else None
+    )
+
+    if facet is not None:
+        combined_scatter += facet
+
+    return combined_scatter
+
+
 def all_weights(
     model: PRISMO,
     views: str | Sequence[str] | None = None,

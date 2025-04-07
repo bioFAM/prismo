@@ -1,7 +1,13 @@
+import warnings
+from pathlib import Path
+
+import mudata as md
 import numpy as np
 import pandas as pd
 import pytest
 from anndata import AnnData
+
+import prismo as pr
 
 
 @pytest.fixture(scope="module")
@@ -49,8 +55,25 @@ def random_adata(rng, random_array):
         )
         adata.obsm["covar"] = pd.DataFrame(rng.random(size=(nobs, 3)), columns=["a", "b", "c"], index=adata.obs_names)
         adata.varm["annot"] = pd.DataFrame(
-            rng.random(size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
+            rng.choice([False, True], size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
         )
         return adata
 
     return _adata
+
+
+@pytest.fixture(scope="session")
+def cll_data():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        return md.read_h5mu(Path(__file__).parent / "data" / "cll.h5mu")
+
+
+@pytest.fixture(scope="session")
+def cll_model():
+    return pr.PRISMO.load(Path(__file__).parent / "data" / "cll_model.h5", map_location="cpu")
+
+
+@pytest.fixture(scope="session")
+def mousebrain_model():
+    return pr.PRISMO.load(Path(__file__).parent / "data" / "mousebrain_model.h5", map_location="cpu")

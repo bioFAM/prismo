@@ -2,205 +2,68 @@ import logging
 
 import numpy as np
 import pandas as pd
-import scipy
+from anndata import AnnData
+from mudata import MuData
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
-from statsmodels.stats import multitest
-from tqdm import tqdm
 
-logger = logging.getLogger(__name__)
+from .._core import PRISMO, PrismoDataset, pcgse_test
 
-Index = int | str | list[int] | list[str] | np.ndarray | pd.Index
+_logger = logging.getLogger(__name__)
 
 
-def _test_single_view(
-    model,
-    view_name: str,
-    feature_sets: pd.DataFrame = None,
-    sign: str = "all",
+def test_annotation_significance(
+    model: PRISMO,
+    annotations: dict[str, pd.DataFrame],
+    data: MuData | dict[str, dict[str, AnnData]] | PrismoDataset | None = None,
     corr_adjust: bool = True,
     p_adj_method: str = "fdr_bh",
     min_size: int = 10,
-):
-    """Perform significance test of factor loadings against feature sets.
+    subsample: int = 1000,
+) -> dict[str, pd.DataFrame]:
+    """Test feature sets for significant associations with model factors.
+
+    This is an implementation of PCGSE :cite:p:`pmid26300978`.
 
     Args:
-        model: A PRISMO model instance.
-        view_name: Name of the view to test.
-        feature_sets: Boolean dataframe with feature sets in each row. If None, uses model annotations.
-        sign: Test direction - "all" for two-sided, "neg" or "pos" for one-sided tests.
-        corr_adjust: Whether to adjust for correlations between features.
-        p_adj_method: Method for multiple testing adjustment (e.g. "fdr_bh").
-        min_size: Minimum size threshold for feature sets.
-
-    Returns:
-        dict: Test results containing:
-            - "t": DataFrame of t-statistics
-            - "p": DataFrame of p-values
-            - "p_adj": DataFrame of adjusted p-values (if p_adj_method is not None)
-    """
-    use_prior_mask = feature_sets is None
-    adjust_p = p_adj_method is not None
-
-    if not isinstance(view_name, str):
-        raise IndexError(f"Invalid `view_name`, `{view_name}` must be a string.")
-    if view_name not in model.view_names:
-        raise IndexError(f"`{view_name}` not found in the view names.")
-
-    informed = model.annotations is not None and len(model.annotations) > 0
-    if use_prior_mask and not informed:
-        raise ValueError("`feature_sets` is None, no feature sets provided for uninformed model.")
-
-    sign = sign.lower().strip()
-    allowed_signs = ["all", "pos", "neg"]
-    if sign not in allowed_signs:
-        raise ValueError(f"sign `{sign}` must be one of `{', '.join(allowed_signs)}`.")
-
-    if use_prior_mask:
-        logger.warning("No feature sets provided, extracting feature sets from prior mask.")
-        feature_sets = model.get_annotations("pandas")[view_name]
-        if not feature_sets.any(axis=None):
-            raise ValueError(f"Empty `feature_sets`, view `{view_name}` has not been informed prior to training.")
-
-    feature_sets = feature_sets.astype(bool)
-    if not feature_sets.any(axis=None):
-        raise ValueError("Empty `feature_sets`.")
-    feature_sets = feature_sets.loc[feature_sets.sum(axis=1) >= min_size, :]
-
-    if not feature_sets.any(axis=None):
-        raise ValueError(f"Empty `feature_sets` after filtering feature sets of fewer than {min_size} features.")
-
-    feature_sets = feature_sets.loc[~(feature_sets.all(axis=1)), feature_sets.any()]
-    if not feature_sets.any(axis=None):
-        raise ValueError(f"Empty `feature_sets` after filtering feature sets of fewer than {min_size} features.")
-
-    # subset available features only
-    feature_intersection = feature_sets.columns.intersection(model.feature_names[view_name])
-    feature_sets = feature_sets.loc[:, feature_intersection]
-
-    if not feature_sets.any(axis=None):
-        raise ValueError("Empty `feature_sets` after feature intersection with the observations.")
-
-    y = pd.concat(
-        [group_data[view_name].to_df().loc[:, feature_intersection].copy() for _, group_data in model.data.items()],
-        axis=0,
-    )
-    factor_loadings = model.get_weights(return_type="anndata")[view_name].to_df().loc[:, feature_intersection].copy()
-    factor_loadings /= np.max(np.abs(factor_loadings.to_numpy()))
-
-    if "pos" in sign:
-        factor_loadings[factor_loadings < 0] = 0.0
-    if "neg" in sign:
-        factor_loadings[factor_loadings > 0] = 0.0
-    factor_loadings = factor_loadings.abs()
-
-    factor_names = factor_loadings.index
-
-    t_stat_dict = {}
-    prob_dict = {}
-
-    for feature_set in tqdm(feature_sets.index.tolist()):
-        fs_features = feature_sets.loc[feature_set, :]
-
-        features_in = factor_loadings.loc[:, fs_features]
-        features_out = factor_loadings.loc[:, ~fs_features]
-
-        n_in = features_in.shape[1]
-        n_out = features_out.shape[1]
-
-        df = n_in + n_out - 2.0
-        mean_diff = features_in.mean(axis=1) - features_out.mean(axis=1)
-        # why divide here by df and not denom later?
-        svar = ((n_in - 1) * features_in.var(axis=1) + (n_out - 1) * features_out.var(axis=1)) / df
-
-        vif = 1.0
-        if corr_adjust:
-            corr_df = y.loc[:, fs_features].corr()
-            mean_corr = (np.nansum(corr_df.to_numpy()) - n_in) / (n_in * (n_in - 1))
-            vif = 1 + (n_in - 1) * mean_corr
-            df = y.shape[0] - 2
-        denom = np.sqrt(svar * (vif / n_in + 1.0 / n_out))
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            t_stat = np.divide(mean_diff, denom)
-        prob = t_stat.apply(lambda t: scipy.stats.t.sf(np.abs(t), df) * 2)  # noqa: B023
-
-        t_stat_dict[feature_set] = t_stat
-        prob_dict[feature_set] = prob
-
-    t_stat_df = pd.DataFrame(t_stat_dict, index=factor_names)
-    prob_df = pd.DataFrame(prob_dict, index=factor_names)
-    t_stat_df.fillna(0.0, inplace=True)
-    prob_df.fillna(1.0, inplace=True)
-    if adjust_p:
-        prob_adj_df = prob_df.apply(
-            lambda p: multitest.multipletests(p, method=p_adj_method)[1], axis=1, result_type="broadcast"
-        )
-
-    if "all" not in sign:
-        prob_df[t_stat_df < 0.0] = 1.0
-        if adjust_p:
-            prob_adj_df[t_stat_df < 0.0] = 1.0
-        t_stat_df[t_stat_df < 0.0] = 0.0
-
-    result = {"t": t_stat_df, "p": prob_df}
-    if adjust_p:
-        result["p_adj"] = prob_adj_df
-
-    return result
-
-
-def test(
-    model, feature_sets: pd.DataFrame = None, corr_adjust: bool = True, p_adj_method: str = "fdr_bh", min_size: int = 10
-):
-    """Perform significance testing across multiple views and sign directions.
-
-    Args:
-        model: A PRISMO model instance.
-        feature_sets: Boolean dataframe with feature sets in each row. If None, uses model annotations.
+        model: The PRISMo model.
+        annotations: Boolean dataframe with feature sets in each row for each view.
+        data: The data that the model was trained on. Only required if `corr_adjust=True`.
         corr_adjust: Whether to adjust for correlations between features.
         p_adj_method: Method for multiple testing adjustment.
         min_size: Minimum size threshold for feature sets.
+        subsample: Work with a random subsample of the data to speed up testing. Set to 0 to use
+            all data (may use excessive amounts of memory). Only relevant if `corr_adjust=True`.
 
     Returns:
-        dict: Nested dictionary with structure:
-            {sign: {view_name: test_results}}
-            where test_results contains t-statistics, p-values, and adjusted p-values.
+        PCGSE results for each view.
     """
-    use_prior_mask = feature_sets is None
-    if use_prior_mask:
-        view_names = [vi for vi in model.view_names if vi in model.annotations]
+    if corr_adjust and data is None:
+        raise ValueError("`data` cannot be `None` if `corr_adjust=True`.")
 
-    if len(view_names) == 0:
-        if use_prior_mask:
-            raise ValueError("`feature_sets` is None, and none of the selected views are informed.")
-        raise ValueError("No valid views.")
+    if data is not None and not isinstance(data, PrismoDataset):
+        data = model._prismodataset(data)
+    annotations = {
+        view_name: annot.loc[:, features].astype(bool)
+        for view_name, annot in annotations.items()
+        if view_name in model.view_names
+        and (features := annot.columns.intersection(model.feature_names[view_name])).size > 0
+    }
 
-    signs = ["neg", "pos"]
-
-    results = {}
-
-    for sign in signs:
-        results[sign] = {}
-        for view_name in view_names:
-            try:
-                results[sign][view_name] = _test_single_view(
-                    model,
-                    view_name=view_name,
-                    feature_sets=feature_sets,
-                    sign=sign,
-                    corr_adjust=corr_adjust,
-                    p_adj_method=p_adj_method,
-                    min_size=min_size,
-                )
-            except ValueError as e:
-                logger.warning(e)
-                results[sign][view_name] = {"t": pd.DataFrame(), "p": pd.DataFrame()}
-                if p_adj_method is not None:
-                    results[sign][view_name]["p_adj"] = pd.DataFrame()
-                continue
-    return results
+    if len(annotations) > 0:
+        return pcgse_test(
+            data,
+            model._model_opts.nonnegative_weights,
+            annotations,
+            model.get_weights("pandas"),
+            corr_adjust=corr_adjust,
+            p_adj_method=p_adj_method,
+            min_size=min_size,
+            subsample=subsample,
+        )
+    else:
+        return {}
 
 
 def match(reference: NDArray, permutable: NDArray, axis: int) -> tuple[NDArray[int], NDArray[int], NDArray[np.uint8]]:

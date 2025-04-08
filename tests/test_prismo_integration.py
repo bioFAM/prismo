@@ -99,7 +99,7 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
         ("mefisto_kernel", True),
         ("mefisto_kernel", False),
         ("warp_groups", []),
-        ("warp_groups", ["group_1"]),
+        ("warp_groups", ["group_1", "group_2"]),
     ],
 )
 def test_integration_gp(anndata_dict, attrname, attrvalue):

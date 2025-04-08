@@ -3,7 +3,7 @@ build-backend = "hatchling.build"
 requires = [ "hatch-vcs", "hatchling" ]
 
 [project]
-name = "prismo"
+name = "mofaflex"
 description = "Factor Analysis Models"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -74,12 +74,12 @@ optional-dependencies.test = [
   "pytest",
 ]
 # https://docs.pypi.org/project_metadata/#project-urls
-urls.Documentation = "https://prismo.readthedocs.io/"
-urls.Home-page = "https://github.com/bioFAM/prismo"
-urls.Source = "https://github.com/bioFAM/prismo"
+urls.Documentation = "https://mofaflex.readthedocs.io/"
+urls.Home-page = "https://github.com/bioFAM/mofaflex"
+urls.Source = "https://github.com/bioFAM/mofaflex"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/prismo/_version.py"
+version-file = "src/mofaflex/_version.py"
 
 [tool.hatch.version]
 source = "vcs"
@@ -153,7 +153,7 @@ addopts = [
 ]
 
 [tool.coverage.run]
-source = [ "prismo" ]
+source = [ "mofaflex" ]
 omit = [
   "**/test_*.py",
 ]

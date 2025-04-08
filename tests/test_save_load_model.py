@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from anndata import AnnData
 
-from prismo import PRISMO, DataOptions, ModelOptions, TrainingOptions
+from mofaflex import MOFAFLEX, DataOptions, ModelOptions, TrainingOptions
 
 
 def compare_nested(data1, data2):
@@ -47,8 +47,8 @@ def test_save_load_model(setup_teardown):
     # Prepare dummy data
     data = {"group1": {"view1": AnnData(X=np.random.rand(3, 10)), "view2": AnnData(X=np.random.rand(3, 5))}}
 
-    # Create and train the PRISMO model for a single epoch
-    model = PRISMO(
+    # Create and train the MOFA-FLEX model for a single epoch
+    model = MOFAFLEX(
         data,
         DataOptions(scale_per_group=False, plot_data_overview=False),
         ModelOptions(
@@ -70,7 +70,7 @@ def test_save_load_model(setup_teardown):
     assert os.path.exists(temp_file)
 
     # Load the model and its parameters
-    loaded_model = PRISMO.load(path=temp_file)
+    loaded_model = MOFAFLEX.load(path=temp_file)
     # Check if the model's parameter is correctly loaded
     if model._gp is not None:  # TODO: test with GP
         for original_param, loaded_param in zip(model._gp.parameters(), loaded_model._gp.parameters(), strict=False):

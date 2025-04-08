@@ -5,7 +5,7 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats import multitest
 
-from .datasets import PrismoDataset
+from .datasets import MofaFlexDataset
 from .utils import sample_all_data_as_one_batch
 
 _logger = logging.getLogger(__name__)
@@ -128,7 +128,7 @@ def _test_single_view(
 
 
 def pcgse_test(
-    data: PrismoDataset | None,
+    data: MofaFlexDataset | None,
     nonnegative_weights: dict[str, bool],
     annotations: dict[str, pd.DataFrame],
     weights: dict[str, pd.DataFrame],
@@ -140,7 +140,7 @@ def pcgse_test(
     """Perform significance testing across multiple views and sign directions.
 
     Args:
-        data: A PRISMO dataset.
+        data: A MOFA-FLEX dataset.
         nonnegative_weights: Whether the model was constrained to nonnegative weights for each view.
         annotations: Boolean dataframe with feature sets in each row for each view.
         weights: Weights for each view.

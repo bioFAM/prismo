@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from ..settings import settings
-from .base import ApplyCallable, Preprocessor, PrismoDataset
+from .base import ApplyCallable, MofaFlexDataset, Preprocessor
 from .utils import anndata_to_dask, apply_to_nested, array_to_dask, from_dask, have_dask
 
 T = TypeVar("T")
@@ -31,7 +31,7 @@ def _mudata_to_dask(mudata: MuData, with_extra=True):
     return dask_mudata
 
 
-class MuDataDataset(PrismoDataset):
+class MuDataDataset(MofaFlexDataset):
     def __init__(
         self,
         mudata: MuData,

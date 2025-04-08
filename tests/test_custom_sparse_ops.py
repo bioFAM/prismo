@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 
-from prismo._core import utils
+from mofaflex._core import utils
 
 
 @pytest.fixture(scope="module")

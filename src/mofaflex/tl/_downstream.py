@@ -8,15 +8,15 @@ from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 
-from .._core import PRISMO, PrismoDataset, pcgse_test
+from .._core import MOFAFLEX, MofaFlexDataset, pcgse_test
 
 _logger = logging.getLogger(__name__)
 
 
 def test_annotation_significance(
-    model: PRISMO,
+    model: MOFAFLEX,
     annotations: dict[str, pd.DataFrame],
-    data: MuData | dict[str, dict[str, AnnData]] | PrismoDataset | None = None,
+    data: MuData | dict[str, dict[str, AnnData]] | MofaFlexDataset | None = None,
     corr_adjust: bool = True,
     p_adj_method: str = "fdr_bh",
     min_size: int = 10,
@@ -27,7 +27,7 @@ def test_annotation_significance(
     This is an implementation of PCGSE :cite:p:`pmid26300978`.
 
     Args:
-        model: The PRISMo model.
+        model: The MOFA-FLEX model.
         annotations: Boolean dataframe with feature sets in each row for each view.
         data: The data that the model was trained on. Only required if `corr_adjust=True`.
         corr_adjust: Whether to adjust for correlations between features.
@@ -42,8 +42,8 @@ def test_annotation_significance(
     if corr_adjust and data is None:
         raise ValueError("`data` cannot be `None` if `corr_adjust=True`.")
 
-    if data is not None and not isinstance(data, PrismoDataset):
-        data = model._prismodataset(data)
+    if data is not None and not isinstance(data, MofaFlexDataset):
+        data = model._mofaflexdataset(data)
     annotations = {
         view_name: annot.loc[:, features].astype(bool)
         for view_name, annot in annotations.items()

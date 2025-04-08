@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from mudata import MuData
 
-from prismo.tl import DataGenerator
+from mofaflex.tl import DataGenerator
 
 
 @pytest.fixture(scope="module")

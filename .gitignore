@@ -9,7 +9,7 @@ buck-out/
 .venv/
 __pycache__/
 .*cache/
-/src/prismo/_version.py
+/src/mofaflex/_version.py
 
 # Distribution / packaging
 /dist/

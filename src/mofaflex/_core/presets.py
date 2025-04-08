@@ -1,14 +1,14 @@
 """Presets corresponding to different previously published factor analysis models.
 
-These can be used by passing them to the :class:`PRISMO<prismo.PRISMO>` constructor: `PRISMO(*preset)`.
+These can be used by passing them to the :class:`MOFAFLEX<mofaflex.MOFAFLEX>` constructor: `MOFAFLEX(*preset)`.
 
 Attributes:
-    MOFA: Options used to reproduce MOFA results in the PRISMO paper.
-    MEFISTO: Options used to reproduce MEFISTO results in the PRISMO paper.
-    NSF: Options used to reproduce NSF results in the PRISMO paper.
+    MOFA: Options used to reproduce MOFA results in the MOFA-FLEX paper.
+    MEFISTO: Options used to reproduce MEFISTO results in the MOFA-FLEX paper.
+    NSF: Options used to reproduce NSF results in the MOFA-FLEX paper.
 """
 
-from .prismo import ModelOptions, SmoothOptions, TrainingOptions
+from .mofaflex import ModelOptions, SmoothOptions, TrainingOptions
 
 MOFA = (
     ModelOptions(n_factors=10, weight_prior="Horseshoe", factor_prior="Normal", likelihoods="Normal"),

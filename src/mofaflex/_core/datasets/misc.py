@@ -3,10 +3,10 @@ import torch
 from numpy.typing import NDArray
 from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
 
-from .base import PrismoDataset
+from .base import MofaFlexDataset
 
 
-class PrismoBatchSampler(Sampler[dict[str, list[int]]]):
+class MofaFlexBatchSampler(Sampler[dict[str, list[int]]]):
     """A sampler for dicts.
 
     Given a dict with arbitrary keys and values indicating the number of data points in
@@ -47,7 +47,7 @@ class PrismoBatchSampler(Sampler[dict[str, list[int]]]):
 
 class CovariatesDataset(Dataset):
     def __init__(
-        self, data: PrismoDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
+        self, data: MofaFlexDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
     ):
         super().__init__()
 

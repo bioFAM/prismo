@@ -1,6 +1,6 @@
 # Tools
 
 ```{eval-rst}
-.. automodsumm:: prismo.tl
+.. automodsumm:: mofaflex.tl
     :toctree: ../generated
 ```

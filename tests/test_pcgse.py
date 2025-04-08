@@ -1,23 +1,23 @@
 import pytest
 
-import prismo as pr
-from prismo._core.pcgse import _test_single_view, pcgse_test
+import mofaflex as mfl
+from mofaflex._core.pcgse import _test_single_view, pcgse_test
 
 
 def test_test_annotation_significance_data_None_corr_True(mousebrain_model):
     with pytest.raises(ValueError):
-        pr.tl.test_annotation_significance(
+        mfl.tl.test_annotation_significance(
             mousebrain_model, mousebrain_model.get_annotations(), data=None, corr_adjust=True
         )
 
 
 def test_test_annotation_significance_annotations_empty(mousebrain_model):
-    results = pr.tl.test_annotation_significance(mousebrain_model, {}, corr_adjust=False)
+    results = mfl.tl.test_annotation_significance(mousebrain_model, {}, corr_adjust=False)
     assert results == {}
 
 
 def test_test_annotation_significance(mousebrain_model):
-    results = pr.tl.test_annotation_significance(
+    results = mfl.tl.test_annotation_significance(
         mousebrain_model, mousebrain_model.get_annotations(), data=None, corr_adjust=False
     )
 

@@ -6,7 +6,7 @@ import pytest
 from packaging.version import Version
 from scipy import sparse
 
-from prismo._core.datasets import MuDataDataset, PrismoDataset
+from mofaflex._core.datasets import MofaFlexDataset, MuDataDataset
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +62,7 @@ def mdata(rng):
 
 @pytest.fixture(scope="module")
 def dataset(mdata):
-    return PrismoDataset(mdata, group_by="batch", cast_to=np.float32)
+    return MofaFlexDataset(mdata, group_by="batch", cast_to=np.float32)
 
 
 def test_instance(dataset):

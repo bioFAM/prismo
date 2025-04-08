@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from scipy.sparse import SparseEfficiencyWarning, csc_array, csc_matrix, csr_array, csr_matrix, issparse
 
-from prismo import PRISMO, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
+from mofaflex import MOFAFLEX, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
 
 
 @pytest.fixture(scope="module")
@@ -88,7 +88,7 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
         if hasattr(opt, attrname):
             setattr(opt, attrname, attrvalue)
 
-    model = PRISMO(anndata_dict, *opts)  # noqa F841
+    model = MOFAFLEX(anndata_dict, *opts)  # noqa F841
 
 
 @pytest.mark.parametrize(
@@ -111,7 +111,7 @@ def test_integration_gp(anndata_dict, attrname, attrvalue):
     smooth_opts = SmoothOptions(n_inducing=20, warp_interval=1)
     setattr(smooth_opts, attrname, attrvalue)
 
-    model = PRISMO(anndata_dict, *opts, smooth_opts)  # noqa F841
+    model = MOFAFLEX(anndata_dict, *opts, smooth_opts)  # noqa F841
 
 
 def test_imputation(rng, anndata_dict):
@@ -131,7 +131,7 @@ def test_imputation(rng, anndata_dict):
                 cnanidx[view_name] = (rowidx, colidx)
             nanidx[group_name] = cnanidx
 
-    model = PRISMO(
+    model = MOFAFLEX(
         anndata_dict,
         DataOptions(plot_data_overview=False),
         ModelOptions(n_factors=5),
@@ -144,7 +144,7 @@ def test_imputation(rng, anndata_dict):
             assert np.isnan(view.X if not issparse(view.X) else view.X.data).sum() == 0
 
     imputed = model.impute_data(anndata_dict, missing_only=True)
-    preprocessor = model._prismodataset(anndata_dict).preprocessor
+    preprocessor = model._mofaflexdataset(anndata_dict).preprocessor
     for group_name, group in imputed.items():
         for view_name, view in group.items():
             assert np.isnan(view.X if not issparse(view.X) else view.X.data).sum() == 0

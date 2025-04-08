@@ -5,9 +5,9 @@ import pandas as pd
 import pytest
 from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 
-from prismo._core import PrismoDataset
-from prismo._core.preprocessing import PrismoPreprocessor
-from prismo._core.utils import sample_all_data_as_one_batch
+from mofaflex._core import MofaFlexDataset
+from mofaflex._core.preprocessing import MofaFlexPreprocessor
+from mofaflex._core.utils import sample_all_data_as_one_batch
 
 
 @pytest.fixture(scope="module", params=[np.asarray, csc_array, csc_matrix, csr_array, csr_matrix])
@@ -119,10 +119,10 @@ def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, array
 def test_remove_constant_features(adata_dict, arrays_are, likelihood):
     adata_dict, constgenes = adata_dict
 
-    dataset = PrismoDataset(adata_dict)
+    dataset = MofaFlexDataset(adata_dict)
     likelihoods = dict.fromkeys(dataset.view_names, likelihood)
 
-    preprocessor = PrismoPreprocessor(
+    preprocessor = MofaFlexPreprocessor(
         dataset,
         likelihoods,
         dict.fromkeys(dataset.view_names, False),

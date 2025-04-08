@@ -267,12 +267,13 @@ class PRISMO:
 
     def _make_preprocessor(self, data: PrismoDataset) -> preprocessing.PrismoPreprocessor:
         preprocessor = preprocessing.PrismoPreprocessor(
-            data,
-            self._model_opts.likelihoods,
-            self._model_opts.nonnegative_weights,
-            self._model_opts.nonnegative_factors,
-            self._data_opts.remove_constant_features,
-            self._data_opts.scale_per_group,
+            dataset=data,
+            likelihoods=self._model_opts.likelihoods,
+            nonnegative_weights=self._model_opts.nonnegative_weights,
+            nonnegative_factors=self._model_opts.nonnegative_factors,
+            scale_per_group=self._data_opts.scale_per_group,
+            remove_constant_features=self._data_opts.remove_constant_features,
+            state=getattr(self, "_preprocessor_state", None),
         )
         data.preprocessor = preprocessor
         return preprocessor
@@ -571,7 +572,7 @@ class PRISMO:
 
         return svi, variational, gp_warp_groups_order
 
-    def _post_fit(self, data, covariates, feature_means, variational, train_loss_elbo):
+    def _post_fit(self, data, preprocessor, covariates, variational, train_loss_elbo):
         self._weights = variational.get_weights()
         self._factors = variational.get_factors()
         self._dispersions = variational.get_dispersion()
@@ -588,6 +589,8 @@ class PRISMO:
             weights=self.get_weights(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
             factors=self.get_factors(return_type="numpy", moment="mean", sparse_type="mix", ordered=False),
         )
+
+        self._preprocessor_state = preprocessor.state_dict()
 
         if len(self._annotations) > 0:
             self._pcgse = pcgse_test(
@@ -606,7 +609,7 @@ class PRISMO:
                 self._train_opts.save_path = f"prismo_{time.strftime('%Y%m%d_%H%M%S')}.h5"
             _logger.info(f"Saving results to {self._train_opts.save_path}...")
             Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
-            self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, feature_means)
+            self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, preprocessor.feature_means)
 
     @staticmethod
     def _init_factor_group(adata, group_name, view_name, impute_missings, initializer):
@@ -823,7 +826,7 @@ class PRISMO:
         if isinstance(t, tqdm_notebook):  # https://github.com/tqdm/tqdm/issues/1659
             t.container.children[1].bar_style = "success"
 
-        self._post_fit(data, covariates, preprocessor.feature_means, variational, train_loss_elbo)
+        self._post_fit(data, preprocessor, covariates, variational, train_loss_elbo)
 
     def _warp_covariates(self, covariates, variational, warp_groups_order):
         factormeans = variational.get_factors().mean
@@ -1308,6 +1311,7 @@ class PRISMO:
             "model_opts": asdict(self._model_opts),
             "train_opts": asdict(self._train_opts),
             "gp_opts": asdict(self._gp_opts),
+            "preprocessor_state": self._preprocessor_state,
         }
         state["train_opts"]["device"] = str(state["train_opts"]["device"])
         if hasattr(self, "_orig_covariates"):
@@ -1366,6 +1370,7 @@ class PRISMO:
         model._model_opts = ModelOptions(**state["model_opts"])
         model._train_opts = TrainingOptions(**state["train_opts"])
         model._gp_opts = SmoothOptions(**state["gp_opts"])
+        model._preprocessor_state = state["preprocessor_state"]
 
         model._setup_gp(full_setup=False)
         if model._gp is not None and len(pickle):

@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from scipy.sparse import issparse, sparray, spmatrix
 
 from . import utils
-from .datasets import Preprocessor, PrismoDataset
+from .datasets import MofaFlexDataset, Preprocessor
 
 _logger = logging.getLogger(__name__)
 
@@ -17,10 +17,10 @@ _logger = logging.getLogger(__name__)
 ViewStatistics = namedtuple("ViewStatistics", ["mean", "min"])
 
 
-class PrismoPreprocessor(Preprocessor):
+class MofaFlexPreprocessor(Preprocessor):
     def __init__(
         self,
-        dataset: PrismoDataset | None,
+        dataset: MofaFlexDataset | None,
         likelihoods: dict[str, utils.Likelihood],
         nonnegative_weights: dict[str, bool],
         nonnegative_factors: dict[str, bool],

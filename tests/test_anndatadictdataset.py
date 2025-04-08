@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from scipy import sparse
 
-from prismo._core.datasets import AnnDataDictDataset, PrismoDataset
+from mofaflex._core.datasets import AnnDataDictDataset, MofaFlexDataset
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +48,7 @@ def use_var(request):
 
 @pytest.fixture(scope="module")
 def dataset(anndata_dict, use_obs, use_var):
-    return PrismoDataset(anndata_dict, use_obs=use_obs, use_var=use_var, cast_to=np.float32)
+    return MofaFlexDataset(anndata_dict, use_obs=use_obs, use_var=use_var, cast_to=np.float32)
 
 
 def test_dataset(dataset):

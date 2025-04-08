@@ -14,12 +14,12 @@ from numpy.typing import NDArray
 from packaging.version import Version
 from scipy.sparse import issparse
 
-from .datasets import PrismoDataset
+from .datasets import MofaFlexDataset
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from . import PRISMO
+    from . import MOFAFLEX
 
 
 MOFACompatOption = Literal["full", "modelonly"] | bool
@@ -37,11 +37,11 @@ def save_model(
     model_topickle,
     path: str | Path,
     mofa_compat: bool = False,
-    model: PRISMO | None = None,
-    data: PrismoDataset | None = None,
+    model: MOFAFLEX | None = None,
+    data: MofaFlexDataset | None = None,
     intercepts: dict[str, dict[str, NDArray[np.number]]] | None = None,
 ):
-    """Save a PRISMO model to an HDF5 file.
+    """Save a MOFA-FLEX model to an HDF5 file.
 
     Saves both the model state and parameters, with optional MOFA-compatible format.
 
@@ -50,12 +50,12 @@ def save_model(
         model_topickle: Parts of the model to save as pickle. Generally some. PyTorch state.
         path: File path where to save the model.
         mofa_compat: If True, saves additional data in MOFA-compatible format.
-        model: The PRISMO model to save. Only needed for `mofa_compat=True`.
+        model: The MOFA-FLEX model to save. Only needed for `mofa_compat=True`.
         data: The input data. Only needed for `mofa_compat=True`.
         intercepts: The data intercepts. Only needed for `mofa_compat=True`.
     """
     if mofa_compat and model is None:
-        raise ValueError("Need a PRISMO object if saving in MOFA compatibility mode.")
+        raise ValueError("Need a MOFAFLEX object if saving in MOFA compatibility mode.")
     if (mofa_compat is True or mofa_compat == "full") and (data is None or intercepts is None):
         raise ValueError("Need both data and intercepts if saving data in MOFA compatibility mode.")
 
@@ -67,10 +67,10 @@ def save_model(
     if path.exists():
         logger.warning(f"{path} already exists, overwriting")
     with h5py.File(path, "w") as f:
-        prismogrp = f.create_group("prismo")
+        mofaflexgrp = f.create_group("mofaflex")
         with ad.settings.override(allow_write_nullable_strings=True):
             ad.io.write_elem(
-                prismogrp,
+                mofaflexgrp,
                 "state",
                 model_state,
                 dataset_kwargs={} if Version(ad.__version__) < Version("0.11.2") else dset_kwargs,
@@ -79,8 +79,8 @@ def save_model(
         pkl = BytesIO()
         torch.save(model_topickle, pkl)
 
-        prismogrp.create_dataset("pickle", data=np.frombuffer(pkl.getbuffer(), dtype=np.uint8), **dset_kwargs)
-        prismogrp.attrs["version"] = __version__
+        mofaflexgrp.create_dataset("pickle", data=np.frombuffer(pkl.getbuffer(), dtype=np.uint8), **dset_kwargs)
+        mofaflexgrp.attrs["version"] = __version__
 
         if mofa_compat:
             # save MOFA-compatible output
@@ -221,26 +221,26 @@ def save_model(
 
 
 def load_model(path: str | Path, map_location=None):
-    """Load a PRISMO model from an HDF5 file.
+    """Load a MOFA-FLEX model from an HDF5 file.
 
     Args:
         path: Path to the HDF5 file containing the saved model.
         map_location: Optional device specification for loading the model.
 
     Returns:
-        The loaded PRISMO model.
+        The loaded MOFA-FLEX model.
     """
     from .. import __version__
 
     path = Path(path)
     with h5py.File(path, "r") as f:
-        prismogrp = f["prismo"]
-        if prismogrp.attrs["version"] != __version__:
+        mofaflexgrp = f["mofaflex"]
+        if mofaflexgrp.attrs["version"] != __version__:
             logger.warning(
-                "The stored model was created with a different version of PRISMO. Some features may not work."
+                "The stored model was created with a different version of MOFA-FLEX. Some features may not work."
             )
-        state = ad.io.read_elem(prismogrp["state"])
-        pickle = BytesIO(prismogrp["pickle"][()].tobytes())
+        state = ad.io.read_elem(mofaflexgrp["state"])
+        pickle = BytesIO(mofaflexgrp["pickle"][()].tobytes())
 
         pickle = torch.load(pickle, map_location=map_location, weights_only=True)
 

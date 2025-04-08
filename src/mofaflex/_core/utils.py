@@ -20,7 +20,7 @@ from scipy.sparse import (
 from scipy.special import expit
 from torch.utils.data import BatchSampler, SequentialSampler
 
-from .datasets import PrismoDataset
+from .datasets import MofaFlexDataset
 
 WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
 FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
@@ -30,7 +30,7 @@ PossiblySparseArray: TypeAlias = NDArray | spmatrix | sparray
 MeanStd = namedtuple("MeanStd", ["mean", "std"])
 
 
-def sample_all_data_as_one_batch(data: PrismoDataset) -> dict[str, list[int]]:
+def sample_all_data_as_one_batch(data: MofaFlexDataset) -> dict[str, list[int]]:
     return {
         k: next(
             iter(BatchSampler(SequentialSampler(range(nsamples)), batch_size=data.n_samples_total, drop_last=False))

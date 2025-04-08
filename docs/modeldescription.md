@@ -1,20 +1,20 @@
 (modeldescription)=
-# The PRISMO model
+# The MOFA-FLEX model
 
-PRISMO aims to be a general framework for factor analysis of multi-omics data.
+MOFA-FLEX aims to be a general framework for factor analysis of multi-omics data.
 It contains features of MOFA{cite:p}`pmid29925568,pmid32393329`, MEFISTO{cite:p}`pmid35027765`, MuVI{cite:p}`pmlr-v206-qoku23a`, nonnegative matrix factorization, and NSF{cite:p}`pmid36587187`.
 It allows users to flexibly combine features from all aforementioned methods.
-PRISMO is a probabilistic Bayesian model and uses approximate variational inference{cite:p}`1601.00670v9,JMLR:v18:16-107,pmlr-v33-ranganath14,1301.1299v1,1610.05735v1,JMLR:v20:18-403` to flexibly handle large datasets and specifics of different data modalities.
+MOFA-FLEX is a probabilistic Bayesian model and uses approximate variational inference{cite:p}`1601.00670v9,JMLR:v18:16-107,pmlr-v33-ranganath14,1301.1299v1,1610.05735v1,JMLR:v20:18-403` to flexibly handle large datasets and specifics of different data modalities.
 
-In PRISMO we follow MOFA's terminology and refer to data modalities (groups of distinct features) as views and to batches of observations as groups.
+In MOFA-FLEX we follow MOFA's terminology and refer to data modalities (groups of distinct features) as views and to batches of observations as groups.
 Given a view $m$ and a group $g$ with $N_g$ observations and $D_m$ features and a user-defined parameter $K \in \mathbb{N}$, we decompose the observation matrix $\mat{Y}^{mg} \in \mathbb{R}^{N_g \times D_m}$ into a product of a factor matrix $\mat{Z}^{(g)} \in \mathbb{R}^{N_g \times K}$ and a weight matrix $\mat{W}^{(m)} \in \mathbb{R}^{K \times D_m}$, such that $\mat{Y}^{(m,g)} \approx \mat{Z}^{(g)} \mat{W}^{(m)}$.
 
 ## Choosing priors
 
-As a Bayesian model, PRISMO has prior and posterior distributions for each model parameter.
+As a Bayesian model, MOFA-FLEX has prior and posterior distributions for each model parameter.
 The posterior family can currently not be influenced by the user, and parameters of the posterior are optimized during model training.
 However, the prior can be selected by the user, and the choice of prior distribution can drastically affect the results.
-PRISMO offers several prior options for both weights and factors, where each entry of the respective matrix is sampled independently:
+MOFA-FLEX offers several prior options for both weights and factors, where each entry of the respective matrix is sampled independently:
 
 - Normal: The standard Normal distribution $\Normal{0}{1}$.
 
@@ -33,8 +33,8 @@ PRISMO offers several prior options for both weights and factors, where each ent
   In practice, $\tau$ is often drawn from a half-Cauchy distribution: $\tau \sim \HalfCauchy{0}{1}$.
   Intuitively, the global shrinkage parameter $\tau$ pushes the entire distribution towards 0, while large values of individual local shrinkage parameters $\lambda_i$ can allow the corresponding samples to escape shrinkage{cite:p}`10.1093/acprof:oso/9780199694587.003.0017`.
 
-  PRISMO implements the group Horseshoe{cite:p}`1709.04333v3` to allow shrinkage for entire views or groups of observations.
-  Additionally, PRISMO's Horseshoe prior incorporates regularization{cite:p}`10.1214/17-EJS1337SI` to prevent individual weights from getting too large.
+  MOFA-FLEX implements the group Horseshoe{cite:p}`1709.04333v3` to allow shrinkage for entire views or groups of observations.
+  Additionally, MOFA-FLEX's Horseshoe prior incorporates regularization{cite:p}`10.1214/17-EJS1337SI` to prevent individual weights from getting too large.
   In particular, our formulation of the regularized group Horseshoe is defined as
   \begin{align*}
   \tau_i &\sim \HalfCauchy{0}{1}\\
@@ -67,7 +67,7 @@ PRISMO offers several prior options for both weights and factors, where each ent
   In our experience, the ReinMax distribution typically requires higher learning rates or longer training durations than other, continuous, distributions.
 
 - Gaussian process (GP, for factors only): A smoothness-inducing prior requiring additional covariates such as time or spatial coordinates for each observation.
-  PRISMO considers two smoothness levels: Between observations and between groups.
+  MOFA-FLEX considers two smoothness levels: Between observations and between groups.
   This is achieved by using a product kernel of kernels for within-group and between-group smoothness.
   In detail, the group covariance matrix for $G$ groups and factor $k$ is defined by a low-rank approximation
   \begin{equation*}
@@ -88,18 +88,18 @@ PRISMO offers several prior options for both weights and factors, where each ent
   \end{align*}
   $\zeta_k \in (0, 1)$ is a free parameter learned during optimization and determines the degree of smoothness: For $\zeta_k \to 0$, all variance of $\vec{Z}^{(g)}_{:, k}$ is explained by the Gaussian process, while for $\zeta_k \to 0$, all variance is explained by random noise.
 
-  PRISMO offers a choice between two kernel functions $\widetilde{\kappa}$: The squared exponential or RBF kernel $\widetilde{\kappa}_k(\vec{c}_n^g, \vec{c}_{n'}^{g'}) = \exp(-\frac{1}{2}d_k)$ and the Matérn kernel $\widetilde{\kappa_k}(\vec{c}_n^g, \vec{c}_{n'}^{g'}) = \frac{2^{1-\nu}}{\Gamma(\nu)} \left( \sqrt{2 \nu}d_k \right)^{\nu} K_{\nu} \left( \sqrt{2 \nu}d_k \right)$ where $K_\nu$ is the modified Bessel function and $\nu \in \{0.5, 1.5, 2.5\}$ is a user-defined hyperparameter. $d = \frac{\norm{\vec{c}_n^g - \vec{c}_{n'}^{g'}}_2^2}{l_k^2}$ is the scaled distance, with $l_k$ a free parameter estimated during optimization.
-  PRISMO with the RBF kernel corresponds to the formulation of MEFISTO{cite:p}`pmid35027765` and with the Matérn kernel to nonnegative spatial factorization{cite:p}`pmid36587187`.
+  MOFA-FLEX offers a choice between two kernel functions $\widetilde{\kappa}$: The squared exponential or RBF kernel $\widetilde{\kappa}_k(\vec{c}_n^g, \vec{c}_{n'}^{g'}) = \exp(-\frac{1}{2}d_k)$ and the Matérn kernel $\widetilde{\kappa_k}(\vec{c}_n^g, \vec{c}_{n'}^{g'}) = \frac{2^{1-\nu}}{\Gamma(\nu)} \left( \sqrt{2 \nu}d_k \right)^{\nu} K_{\nu} \left( \sqrt{2 \nu}d_k \right)$ where $K_\nu$ is the modified Bessel function and $\nu \in \{0.5, 1.5, 2.5\}$ is a user-defined hyperparameter. $d = \frac{\norm{\vec{c}_n^g - \vec{c}_{n'}^{g'}}_2^2}{l_k^2}$ is the scaled distance, with $l_k$ a free parameter estimated during optimization.
+  MOFA-FLEX with the RBF kernel corresponds to the formulation of MEFISTO{cite:p}`pmid35027765` and with the Matérn kernel to nonnegative spatial factorization{cite:p}`pmid36587187`.
 
-  For 1-dimensional covariates, which often represent time, PRISMO supports dynamic time warping to align multiple potentially mismatched timeseries.
+  For 1-dimensional covariates, which often represent time, MOFA-FLEX supports dynamic time warping to align multiple potentially mismatched timeseries.
   The algorithm and implementation closely follow MEFISTO{cite:p}`pmid35027765`.
-  However, PRISMO's time warping algorithm works for any GP kernel.
+  However, MOFA-FLEX's time warping algorithm works for any GP kernel.
 
 ## Choosing likelihoods
 
 The likelihood is the probability distribution of the observed data $\mat{Y}^{(m,g)}$, parametrized by the mean $\mat{Z}^{(g)} \mat{W}^{(m)}$ and, depending on the likelihood, a link function transforming the real-valued matrix product into nonnegative or bounded values and additional parameters sampled from their own prior distributions.
 
-PRISMO offers a choice of three likelihoods:
+MOFA-FLEX offers a choice of three likelihoods:
 
 - Normal: The Normal distribution $\Normal{\mu}{\sigma^2}$. This should be suitable for most types of real-valued data.
 
@@ -112,7 +112,7 @@ PRISMO offers a choice of three likelihoods:
 
 - Bernoulli: The Bernoulli distribution modeling binary data. This should be suitable for metylation or ATAC data.
 
-If no likelihood is specified by the user, PRISMO tries to automatically determine a suitable likelihood based on the data using a simple heuristic:
+If no likelihood is specified by the user, MOFA-FLEX tries to automatically determine a suitable likelihood based on the data using a simple heuristic:
 If all values in a view are 0 or 1, the Bernoulli likelihood is chosen.
 Otherwise, if all values are integers, the Gamma-Poisson likelihood is selected.
 The Normal likelihood is used in all other cases.
@@ -124,7 +124,7 @@ This is achieved by applying a ReLU function to the real-valued factor or weight
 
 ## Using prior domain knowledge
 
-PRISMO fully supports the approach pioneered in MuVI{cite:p}`pmlr-v206-qoku23a` to use prior domain knowledge.
+MOFA-FLEX fully supports the approach pioneered in MuVI{cite:p}`pmlr-v206-qoku23a` to use prior domain knowledge.
 Given one or multiple feature sets, consisting of for example genes belonging to the same biochemical pathways, the goal is to reserve one factor for each feature set, forcing weights for all features not included in the respective gene set to 0.
 However, domain knowledge is often imperfect, thus the feature sets may be incomplete or contain superfluous features.
 The model therefore allows a measure of noisiness: Weights for features not included in a feature set are strongly shrunk towards zero, but are allowed to be non-zero if strongly supported by the data.

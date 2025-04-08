@@ -1,6 +1,6 @@
 from . import presets
-from .datasets import PrismoDataset
+from .datasets import MofaFlexDataset
 from .feature_sets import FeatureSet, FeatureSets
+from .mofaflex import MOFAFLEX, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
 from .pcgse import pcgse_test
-from .prismo import PRISMO, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
 from .settings import settings

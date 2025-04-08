@@ -14,7 +14,7 @@ from mudata import MuData
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from .._core import PRISMO, PrismoDataset
+    from .._core import MOFAFLEX, MofaFlexDataset
 
 
 def _rescale_zerosymmetric(x, to: tuple[float, float] = (0, 1), _from: tuple[float, float] | None = None):
@@ -41,7 +41,7 @@ _no_axis_ticks_y = {"axis_ticks_length_major_y": 0, "axis_ticks_length_minor_y":
 
 
 def factors_scatter(
-    model: PRISMO,
+    model: MOFAFLEX,
     x: int | str,
     y: int | str,
     groups: str | Sequence[str] | None = None,
@@ -56,7 +56,7 @@ def factors_scatter(
     """Plot two factors against each other and color by covariates.
 
     Args:
-        model: A PRISMO model.
+        model: A MOFA-FLEX model.
         x: The factor to plot on the x-axis.
         y: The factor to plot on the y-axis.
         groups: The groups to plot. If `None`, all groups are shown.
@@ -116,7 +116,7 @@ def factors_scatter(
 
 
 def covariates_factor_scatter(
-    model: PRISMO,
+    model: MOFAFLEX,
     factor: int | str,
     groups: str | Sequence[str] | None = None,
     covariate_dims: int | str | Sequence[int] | Sequence[str] | None = None,
@@ -128,7 +128,7 @@ def covariates_factor_scatter(
     """Plot a factor against one or two covariate dimensions.
 
     Args:
-        model: A PRISMO model.
+        model: A MOFA-FLEX model.
         factor: The factor to plot.
         groups: The groups to plot. If `None`, all groups with covariates are shown.
         covariate_dims: The dimensions of the covariates to plot against. If a list of length 1, plot covariate
@@ -216,12 +216,12 @@ def covariates_factor_scatter(
 
 
 def training_curve(
-    model: PRISMO, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
+    model: MOFAFLEX, linecolor: str = "#214D83", linewidth: int = 1, figsize: tuple[float, float] = (12, 4)
 ) -> p9.ggplot:
     """Plot the training curve: -ELBO vs epoch.
 
     Args:
-        model: The PRISMO model to plot the training curve for.
+        model: The MOFA-FLEX model to plot the training curve for.
         linecolor: The color of the line.
         linewidth: The width of the line.
         figsize: Figure size in inches.
@@ -238,7 +238,7 @@ def training_curve(
     return plot
 
 
-def factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
+def factor_correlation(model: MOFAFLEX, figsize: tuple[float, float] = (8, 8)) -> p9.ggplot:
     """Plot the correlation between factors.
 
     Args:
@@ -284,7 +284,7 @@ def factor_correlation(model: PRISMO, figsize: tuple[float, float] = (8, 8)) -> 
 
 
 def overview(
-    data: dict[str, dict[str, AnnData]] | MuData | PrismoDataset,
+    data: dict[str, dict[str, AnnData]] | MuData | MofaFlexDataset,
     group_by: str | list[str] | None = None,
     missingcolor: str = "#214D83",
     nonmissingcolor: str = "#8AB6D4",
@@ -307,10 +307,10 @@ def overview(
         max_plot_x_labels: The maximum number of x-axis labels to show. If the number of observations is greater than this value in any group,
             the x-axis labels are not shown.
     """
-    from .._core import PrismoDataset
+    from .._core import MofaFlexDataset
 
-    if not isinstance(data, PrismoDataset):
-        data = PrismoDataset(data, group_by=group_by)
+    if not isinstance(data, MofaFlexDataset):
+        data = MofaFlexDataset(data, group_by=group_by)
 
     missings = data.get_missing_obs()
     n_obs_groups = max(data.n_samples.values())
@@ -352,12 +352,12 @@ def overview(
 
 
 def variance_explained(
-    model: PRISMO, group_by: Literal["group", "view"] = "group", figsize: tuple[float, float] | None = None
+    model: MOFAFLEX, group_by: Literal["group", "view"] = "group", figsize: tuple[float, float] | None = None
 ) -> p9.ggplot:
     """Plot the variance explained per factor in each group and view.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         group_by: The grouping to use for the plots.
         figsize: Figure size in inches.
     """
@@ -400,7 +400,7 @@ def variance_explained(
 
 
 def factor_significance(
-    model: PRISMO,
+    model: MOFAFLEX,
     n_factors: int | None = None,
     views: str | Sequence[str] | None = None,
     groups: str | Sequence[str] | None = None,
@@ -414,7 +414,7 @@ def factor_significance(
     `alpha` FDR will be annotated with the direction of the test.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         n_factors: Number of top factors to plot. If `None`, plot all factors (ordered).
         views: The views to consider in the ranking. If `None`, plot all views.
         groups: The groups to consider in the ranking. If `None`, plot all groups.
@@ -502,7 +502,7 @@ def factor_significance(
 
 
 def all_weights(
-    model: PRISMO,
+    model: MOFAFLEX,
     views: str | Sequence[str] | None = None,
     clip: tuple[float, float] | None = (-1, 1),
     show_featurenames: bool = False,
@@ -511,7 +511,7 @@ def all_weights(
     """Plot the weight matrices.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         views: The views to consider in the ranking. If `None`, plot all views.
         clip: Weight value range to clip to.
         show_featurenames: Whether to show the feature names on the Y axis.
@@ -551,7 +551,7 @@ def all_weights(
 
 
 def factor(
-    model: PRISMO,
+    model: MOFAFLEX,
     factor: int = 1,
     show_featurenames: bool = False,
     figsize: tuple[float, float] | None = None,  # F821
@@ -559,7 +559,7 @@ def factor(
     """Plot factor values (y-axis) for each sample (x-axis).
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         factor: The factor to plot.
         show_featurenames: Whether to show the feature names on the X axis.
         figsize: Figure size in inches.
@@ -606,7 +606,7 @@ def _check_covariate(cov, cnames, group_name, covars):
 
 
 def _plot_factors_covariate(
-    model: PRISMO,
+    model: MOFAFLEX,
     covariate1: str | int,
     covariate2: str | int | None = None,
     gp: bool = False,
@@ -616,7 +616,7 @@ def _plot_factors_covariate(
     """Plot every factor against one or two covariates.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         covariate1: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
         covariate2: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
             If `None`, only one covariate will be plotted.
@@ -678,7 +678,7 @@ def _plot_factors_covariate(
 
 
 def factors_covariate(
-    model: PRISMO,
+    model: MOFAFLEX,
     covariate1: str | int,
     covariate2: str | int | None = None,
     size: int = 1,
@@ -687,7 +687,7 @@ def factors_covariate(
     """Plot every factor against one or two covariates.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         covariate1: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
         covariate2: The first covariate to plot against. Can be an integer index or the covariate name, if the covariates are named.
             If `None`, only one covariate will be plotted.
@@ -698,7 +698,7 @@ def factors_covariate(
 
 
 def gp_covariate(
-    model: PRISMO,
+    model: MOFAFLEX,
     ci_opacity: float = 0.3,
     group: Literal["facet", "color"] = "facet",
     color: str = "black",
@@ -711,7 +711,7 @@ def gp_covariate(
     If the model covariates are 1D, plot the covariate on X and the GP posterior mean and 95% confidence interval on Y.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         ci_opacity: Opacity of the 95% CI band. Only relevant for 1D covariates.
         group: Whether to encode the sample groups by color or by faceting. Only relevant for 1D covariates.
         color: Color of the line and CI and. Only relevant for 1D covariates and `group="facet"`.
@@ -786,11 +786,11 @@ def gp_covariate(
     return plt
 
 
-def smoothness(model: PRISMO, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
+def smoothness(model: MOFAFLEX, figsize: tuple[float, float] = (3, 3)) -> p9.ggplot:
     """Plot the smoothness of the GP for each factor.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         figsize: Figure size in inches.
     """
     scale = model.gp_scale
@@ -810,7 +810,7 @@ def smoothness(model: PRISMO, figsize: tuple[float, float] = (3, 3)) -> p9.ggplo
 
 
 def _prepare_weights_df(
-    model: PRISMO,
+    model: MOFAFLEX,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | str | Sequence[int] | Sequence[str] | None = None,
@@ -874,7 +874,7 @@ _weights_inferred_color_scale = p9.scale_color_manual(
 
 
 def top_weights(
-    model: PRISMO,
+    model: MOFAFLEX,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | str | Sequence[int] | Sequence[str] | None = None,
@@ -885,7 +885,7 @@ def top_weights(
     """Plot the top weights for a given factor and view.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         n_features: Number of top features to plot.
         views: The views to consider in the ranking. If `None`, plot all views.
         factors: The factors to plot. If `None`, plot all factors.
@@ -930,7 +930,7 @@ def top_weights(
 
 
 def weights(
-    model: PRISMO,
+    model: MOFAFLEX,
     n_features: int = 10,
     views: str | Sequence[str] | None = None,
     factors: int | str | Sequence[int] | Sequence[str] | None = None,
@@ -942,7 +942,7 @@ def weights(
     """Plot the weights for a given factor and view.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         n_features: Number of top features to annotate.
         views: The views to consider in the ranking. If `None`, use all views.
         factors: The factors to plot. If `None`, plot all factors.
@@ -1033,7 +1033,7 @@ def _plot_sparse_probabilities_histogram(
     return plot
 
 
-def weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
+def weight_sparsity_histogram(model: MOFAFLEX, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
     """Plot a histogram of probabilities that weights are non-zero for views with SnS prior.
 
     The spike-and-slab prior is a mixture distribution of a Normal distribution with a
@@ -1041,7 +1041,7 @@ def weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = 
     the posterior probability of the Normal mixture compoonent.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         bins: Number of histogram bins.
         nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
         ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.
@@ -1051,7 +1051,7 @@ def weight_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = 
     )
 
 
-def factor_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
+def factor_sparsity_histogram(model: MOFAFLEX, bins: int = 50, nrow: int | None = None, ncol: int | None = None):
     """Plot a histogram of probabilities that factors are non-zero for views with SnS prior.
 
     The spike-and-slab prior is a mixture distribution of a Normal distribution with a
@@ -1059,7 +1059,7 @@ def factor_sparsity_histogram(model: PRISMO, bins: int = 50, nrow: int | None = 
     the posterior probability of the Normal mixture compoonent.
 
     Args:
-        model: The PRISMO model.
+        model: The MOFA-FLEX model.
         bins: Number of histogram bins.
         nrow: Number of rows in the faceted plot. If None, plotnine will determine automatically.
         ncol: Number of columns in the faceted plot. If None, plotnine will determine automatically.

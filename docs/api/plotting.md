@@ -1,6 +1,6 @@
 # Plotting
 
 ```{eval-rst}
-.. automodsumm:: prismo.pl
+.. automodsumm:: mofaflex.pl
     :toctree: ../generated
 ```

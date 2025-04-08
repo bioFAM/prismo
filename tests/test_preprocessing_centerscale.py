@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix, issparse
 
-from prismo._core import PrismoDataset
-from prismo._core.preprocessing import PrismoPreprocessor
-from prismo._core.utils import sample_all_data_as_one_batch
+from mofaflex._core import MofaFlexDataset
+from mofaflex._core.preprocessing import MofaFlexPreprocessor
+from mofaflex._core.utils import sample_all_data_as_one_batch
 
 _sparse_arr = [csc_array, csc_matrix, csr_array, csr_matrix]
 
@@ -84,8 +84,8 @@ def scale_per_group(request):
 
 @pytest.fixture(scope="module")
 def dataset(adata_dict, likelihoods, nonnegative_weights, nonnegative_factors, scale_per_group):
-    dataset = PrismoDataset(adata_dict, cast_to=None)
-    preprocessor = PrismoPreprocessor(
+    dataset = MofaFlexDataset(adata_dict, cast_to=None)
+    preprocessor = MofaFlexPreprocessor(
         dataset,
         likelihoods,
         nonnegative_weights,

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from prismo import FeatureSet, FeatureSets
+from mofaflex import FeatureSet, FeatureSets
 
 
 def random_strings(n, rng, min_len=2, max_len=20):

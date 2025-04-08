@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from prismo.tl import match
+from mofaflex.tl import match
 
 
 @pytest.mark.parametrize(

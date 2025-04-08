@@ -2,7 +2,7 @@ import logging
 
 from . import pl, tl
 from ._core import (
-    PRISMO,
+    MOFAFLEX,
     DataOptions,
     FeatureSet,
     FeatureSets,

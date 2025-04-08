@@ -10,14 +10,14 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from ..settings import settings
-from .base import ApplyCallable, Preprocessor, PrismoDataset
+from .base import ApplyCallable, MofaFlexDataset, Preprocessor
 from .utils import AlignmentMap, anndata_to_dask, apply_to_nested, from_dask, have_dask
 
 T = TypeVar("T")
 _logger = logging.getLogger(__name__)
 
 
-class AnnDataDictDataset(PrismoDataset):
+class AnnDataDictDataset(MofaFlexDataset):
     # There are 3 different alignments to consider: Global, local, and data. In particular, the user may provide a
     # global alignment in sample_names or feature_names that is a proper superset of the data (i.e. it has names not
     # present in any of the AnnData objects). Similarly, the global alignment may only capture a subset of the data.

@@ -27,7 +27,7 @@ class Preprocessor:
         group: str,
         view: str,
     ) -> tuple[NDArray | sparray | spmatrix, NDArray[int] | slice, NDArray[int] | slice]:
-        """Will be called by subclasses of PrismoDataset on each minibatch.
+        """Will be called by subclasses of MofaFlexDataset on each minibatch.
 
         Args:
             arr: The data for one group and view.
@@ -45,8 +45,8 @@ class Preprocessor:
         return arr, nonmissing_samples, nonmissing_features
 
 
-class PrismoDataset(Dataset, ABC):
-    """Base class for PRISMO datasets, compatible with the PyTorch dataloader interface.
+class MofaFlexDataset(Dataset, ABC):
+    """Base class for MOFA-FLEX datasets, compatible with the PyTorch dataloader interface.
 
     Key concepts:
         We distinguish between global and local samples/features. Global samples are the union of samples from all
@@ -57,7 +57,7 @@ class PrismoDataset(Dataset, ABC):
         Subclasses must implement methods to align local samples to global samples and vice versa. Similarly for features.
 
         The constructor of subclasses must take a **kwargs argument which is ignored. This ensures that users can
-        simply call `PrismoDataset(data, args)`, where args may be a union of arguments suitable for different
+        simply call `MofaFlexDataset(data, args)`, where args may be a union of arguments suitable for different
         data types, only a subset of which will be used by the concrete Dataset. Subclasses should also force all
         constructor arguments except for the first (which should be the data) to be keyword arguments. Subclass
         constructors must also take arguments `sample_names` and `feature_names`, both of which default to `None`.
@@ -66,7 +66,7 @@ class PrismoDataset(Dataset, ABC):
     Preprocessor interface:
         The preprocessor must be able to process an entire minibatch. If it is a function, it will have four functions
         injected into its global namespace: `align_global_array_to_local`, `align_local_array_to_global`, `map_global_indices_to_local`,
-        and `map_local_indices_to_global`. These are methods of the given PrismoDataset instance, see their documentation
+        and `map_local_indices_to_global`. These are methods of the given MofaFlexDataset instance, see their documentation
         for how to use them. If the preprocessor is an instance of a class, these four functions will be added to its
         instance attributes. The preprocessor must accept five arguments: A (possibly sparse) array with data, a 1D
         index array indicating which global samples correspond to which samples in the current minibatch, a 1D index
@@ -348,7 +348,7 @@ class PrismoDataset(Dataset, ABC):
 
         If `func` is a function, it will have four functions injected into its global namespace: `align_global_array_to_local`,
         `align_local_array_to_global`, `map_global_indices_to_local`, and `map_local_indices_to_global`. These are methods of the
-        given PrismoDataset instance, see their documentation for how to use them. If `func` is an instance of a class, these four
+        given MofaFlexDataset instance, see their documentation for how to use them. If `func` is an instance of a class, these four
         functions will be added to its instance attributes.
 
         If `by_group=True` and `by_view=True`, the `AnnData` object passed to `func` will **not** have its samples and features

@@ -1,7 +1,7 @@
 # Core
 
 ```{eval-rst}
-.. currentmodule:: prismo
+.. currentmodule:: mofaflex
 .. autosummary::
     :toctree: ../generated
 
@@ -9,7 +9,7 @@
     ModelOptions
     TrainingOptions
     SmoothOptions
-    PRISMO
+    MOFAFLEX
     FeatureSet
     FeatureSets
 ```
@@ -17,15 +17,15 @@
 ## Presets
 
 ```{eval-rst}
-.. automodule:: prismo.presets
+.. automodule:: mofaflex.presets
 ```
 
 ## Settings
 
-An instance of the [](#_core.settings.Settings) is available as `prismo.settings` and allows configuring PRISMO.
+An instance of the [](#_core.settings.Settings) is available as `mofaflex.settings` and allows configuring MOFA-FLEX.
 
 ```{eval-rst}
-.. currentmodule:: prismo
+.. currentmodule:: mofaflex
 .. autosummary::
     :toctree: ../generated
 

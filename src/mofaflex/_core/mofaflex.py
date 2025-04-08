@@ -27,7 +27,7 @@ from tqdm.notebook import tqdm_notebook
 
 from .. import pl
 from . import gp, preprocessing
-from .datasets import CovariatesDataset, PrismoBatchSampler, PrismoDataset, StackDataset
+from .datasets import CovariatesDataset, MofaFlexBatchSampler, MofaFlexDataset, StackDataset
 from .io import MOFACompatOption, load_model, save_model
 from .model import Generative, Variational
 from .pcgse import pcgse_test
@@ -225,7 +225,7 @@ class SmoothOptions(_Options):
             self.warp_groups = list(self.warp_groups)  # in case the user passed a tuple here, we need a list for saving
 
 
-class PRISMO:
+class MOFAFLEX:
     """Fit the model using the provided data.
 
     Args:
@@ -260,13 +260,13 @@ class PRISMO:
 
         self._fit(data, preprocessor)
 
-    def _make_dataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
-        return PrismoDataset(
+    def _make_dataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> MofaFlexDataset:
+        return MofaFlexDataset(
             data, group_by=self._data_opts.group_by, use_obs=self._data_opts.use_obs, use_var=self._data_opts.use_var
         )
 
-    def _make_preprocessor(self, data: PrismoDataset) -> preprocessing.PrismoPreprocessor:
-        preprocessor = preprocessing.PrismoPreprocessor(
+    def _make_preprocessor(self, data: MofaFlexDataset) -> preprocessing.MofaFlexPreprocessor:
+        preprocessor = preprocessing.MofaFlexPreprocessor(
             dataset=data,
             likelihoods=self._model_opts.likelihoods,
             nonnegative_weights=self._model_opts.nonnegative_weights,
@@ -278,7 +278,7 @@ class PRISMO:
         data.preprocessor = preprocessor
         return preprocessor
 
-    def _prismodataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
+    def _mofaflexdataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> MofaFlexDataset:
         data = self._make_dataset(data)
         self._make_preprocessor(data)
         return data
@@ -606,7 +606,7 @@ class PRISMO:
 
         if self._train_opts.save_path is not False:
             if self._train_opts.save_path is None:
-                self._train_opts.save_path = f"prismo_{time.strftime('%Y%m%d_%H%M%S')}.h5"
+                self._train_opts.save_path = f"mofaflex_{time.strftime('%Y%m%d_%H%M%S')}.h5"
             _logger.info(f"Saving results to {self._train_opts.save_path}...")
             Path(self._train_opts.save_path).parent.mkdir(parents=True, exist_ok=True)
             self._save(self._train_opts.save_path, self._train_opts.mofa_compat, data, preprocessor.feature_means)
@@ -785,7 +785,7 @@ class PRISMO:
         else:
             loader = DataLoader(
                 dataset,
-                batch_sampler=PrismoBatchSampler(
+                batch_sampler=MofaFlexBatchSampler(
                     data.n_samples, self._train_opts.batch_size, False, generator=torch.default_generator
                 ),
                 collate_fn=default_convert,
@@ -1258,7 +1258,7 @@ class PRISMO:
             In both cases, the returned data will be preprocessed. In the case of Gaussian distributed data, that involves
             centering and scaling.
         """
-        data = self._prismodataset(data)
+        data = self._mofaflexdataset(data)
 
         factors = self.get_factors(return_type="numpy")
         weights = self.get_weights(return_type="numpy")
@@ -1324,8 +1324,8 @@ class PRISMO:
         save_model(state, pickle, path, mofa_compat, self, data, intercepts)
 
     @classmethod
-    def load(cls, path: str | Path, map_location=None) -> "PRISMO":
-        """Load a saved PRISMO model.
+    def load(cls, path: str | Path, map_location=None) -> "MOFAFLEX":
+        """Load a saved MOFAFLEX model.
 
         Args:
             path: Path to the saved model file.

@@ -1,11 +1,11 @@
 # API
 
 ```{eval-rst}
-.. module:: prismo
+.. module:: mofaflex
 ```
 
 ```{eval-rst}
-.. currentmodule:: prismo
+.. currentmodule:: mofaflex
 
 .. toctree::
     :hidden:
@@ -24,7 +24,7 @@
     ModelOptions
     TrainingOptions
     SmoothOptions
-    PRISMO
+    MOFAFLEX
     FeatureSet
     FeatureSets
 ```
@@ -32,16 +32,16 @@
 ### Presets
 
 ```{eval-rst}
-.. automodule:: prismo.presets
+.. automodule:: mofaflex.presets
    :no-index:
 ```
 
 ### Settings
 
-An instance of the [](#_core.settings.Settings) class is available as `prismo.settings` and allows configuring PRISMO.
+An instance of the [](#_core.settings.Settings) class is available as `mofaflex.settings` and allows configuring MOFA-FLEX.
 
 ```{eval-rst}
-.. currentmodule:: prismo
+.. currentmodule:: mofaflex
 .. autosummary::
 
     _core.settings.Settings
@@ -50,11 +50,11 @@ An instance of the [](#_core.settings.Settings) class is available as `prismo.se
 ## Tools
 
 ```{eval-rst}
-.. automodsumm:: prismo.tl
+.. automodsumm:: mofaflex.tl
 ```
 
 ## Plotting
 
 ```{eval-rst}
-.. automodsumm:: prismo.pl
+.. automodsumm:: mofaflex.pl
 ```

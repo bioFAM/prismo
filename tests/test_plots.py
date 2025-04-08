@@ -6,7 +6,7 @@ import pytest
 from matplotlib.testing.decorators import image_comparison as mpl_image_comparison
 from packaging.version import Version
 
-import prismo as pr
+import mofaflex as mfl
 
 image_comparison = partial(
     mpl_image_comparison, extensions=["png"], tol=0.5
@@ -33,22 +33,22 @@ def plotnine_comparison(*decorator_args, **decorator_kwargs):
 
 @plotnine_comparison(baseline_images=["overview"])
 def test_overview(cll_data):
-    return pr.pl.overview(cll_data)
+    return mfl.pl.overview(cll_data)
 
 
 @plotnine_comparison(baseline_images=["training_curve"])
 def test_training_curve(cll_model):
-    return pr.pl.training_curve(cll_model)
+    return mfl.pl.training_curve(cll_model)
 
 
 @plotnine_comparison(baseline_images=["factor_correlation"])
 def test_factor_correlation(cll_model):
-    return pr.pl.factor_correlation(cll_model)
+    return mfl.pl.factor_correlation(cll_model)
 
 
 @plotnine_comparison(baseline_images=["variance_explained"])
 def test_variance_explained(cll_model):
-    return pr.pl.variance_explained(cll_model)
+    return mfl.pl.variance_explained(cll_model)
 
 
 @plotnine_comparison(
@@ -56,24 +56,24 @@ def test_variance_explained(cll_model):
 )
 def test_factor_significance(mousebrain_model):
     return (
-        pr.pl.factor_significance(mousebrain_model, figsize=(8, 5)),
-        pr.pl.factor_significance(mousebrain_model, n_factors=5, figsize=(8, 5)),
-        pr.pl.factor_significance(mousebrain_model, alpha=1e-42, figsize=(8, 5)),
+        mfl.pl.factor_significance(mousebrain_model, figsize=(8, 5)),
+        mfl.pl.factor_significance(mousebrain_model, n_factors=5, figsize=(8, 5)),
+        mfl.pl.factor_significance(mousebrain_model, alpha=1e-42, figsize=(8, 5)),
     )
 
 
 @plotnine_comparison(baseline_images=["all_weights", "all_weights_Mutations", "all_weights_Mutations_mRNA"])
 def test_all_weights(cll_model):
     return (
-        pr.pl.all_weights(cll_model),
-        pr.pl.all_weights(cll_model, views="Mutations"),
-        pr.pl.all_weights(cll_model, views=["Mutations", "mRNA"]),
+        mfl.pl.all_weights(cll_model),
+        mfl.pl.all_weights(cll_model, views="Mutations"),
+        mfl.pl.all_weights(cll_model, views=["Mutations", "mRNA"]),
     )
 
 
 @plotnine_comparison(baseline_images=["factor"])
 def test_factor(cll_model):
-    return pr.pl.factor(cll_model)
+    return mfl.pl.factor(cll_model)
 
 
 @plotnine_comparison(
@@ -90,14 +90,14 @@ def test_factor(cll_model):
 )
 def test_top_weights(cll_model):
     return (
-        pr.pl.top_weights(cll_model, figsize=(20, 20)),
-        pr.pl.top_weights(cll_model, n_features=5, figsize=(20, 20)),
-        pr.pl.top_weights(cll_model, views="Mutations", figsize=(20, 20)),
-        pr.pl.top_weights(cll_model, views=["Mutations", "mRNA"], figsize=(20, 20)),
-        pr.pl.top_weights(cll_model, factors=1),
-        pr.pl.top_weights(cll_model, factors=["Factor 1", "Factor 7"]),
-        pr.pl.top_weights(cll_model, views="Mutations", factors=1),
-        pr.pl.top_weights(cll_model, nrow=2, figsize=(20, 5)),
+        mfl.pl.top_weights(cll_model, figsize=(20, 20)),
+        mfl.pl.top_weights(cll_model, n_features=5, figsize=(20, 20)),
+        mfl.pl.top_weights(cll_model, views="Mutations", figsize=(20, 20)),
+        mfl.pl.top_weights(cll_model, views=["Mutations", "mRNA"], figsize=(20, 20)),
+        mfl.pl.top_weights(cll_model, factors=1),
+        mfl.pl.top_weights(cll_model, factors=["Factor 1", "Factor 7"]),
+        mfl.pl.top_weights(cll_model, views="Mutations", factors=1),
+        mfl.pl.top_weights(cll_model, nrow=2, figsize=(20, 5)),
     )
 
 
@@ -115,35 +115,35 @@ def test_top_weights(cll_model):
 )
 def test_weights(cll_model):
     return (
-        pr.pl.weights(cll_model, figsize=(40, 20)),
-        pr.pl.weights(cll_model, n_features=5, figsize=(40, 20)),
-        pr.pl.weights(cll_model, views="Mutations", figsize=(40, 5)),
-        pr.pl.weights(cll_model, views=["Mutations", "mRNA"], figsize=(40, 10)),
-        pr.pl.weights(cll_model, factors=1),
-        pr.pl.weights(cll_model, factors=["Factor 1", "Factor 7"]),
-        pr.pl.weights(cll_model, views="Mutations", factors=1),
-        pr.pl.weights(cll_model, views=["Mutations", "mRNA"], nrow=3, figsize=(30, 15)),
+        mfl.pl.weights(cll_model, figsize=(40, 20)),
+        mfl.pl.weights(cll_model, n_features=5, figsize=(40, 20)),
+        mfl.pl.weights(cll_model, views="Mutations", figsize=(40, 5)),
+        mfl.pl.weights(cll_model, views=["Mutations", "mRNA"], figsize=(40, 10)),
+        mfl.pl.weights(cll_model, factors=1),
+        mfl.pl.weights(cll_model, factors=["Factor 1", "Factor 7"]),
+        mfl.pl.weights(cll_model, views="Mutations", factors=1),
+        mfl.pl.weights(cll_model, views=["Mutations", "mRNA"], nrow=3, figsize=(30, 15)),
     )
 
 
 @plotnine_comparison(baseline_images=["weight_sparsity_histogram"])
 def test_weight_sparsity_histogram(cll_model):
-    return pr.pl.weight_sparsity_histogram(cll_model)
+    return mfl.pl.weight_sparsity_histogram(cll_model)
 
 
 @plotnine_comparison(baseline_images=["top_weights_annotations"])
 def test_top_weights_annotations(mousebrain_model):
-    return pr.pl.top_weights(mousebrain_model, figsize=(20, 20))
+    return mfl.pl.top_weights(mousebrain_model, figsize=(20, 20))
 
 
 @plotnine_comparison(baseline_images=["weights_annotations"])
 def test_weights_annotations(mousebrain_model):
-    return pr.pl.weights(mousebrain_model, factors=["Factor 1", "Factor 2", "Astrocytes", "Interneurons"])
+    return mfl.pl.weights(mousebrain_model, factors=["Factor 1", "Factor 2", "Astrocytes", "Interneurons"])
 
 
 @plotnine_comparison(baseline_images=["factors_scatter", "factors_scatter-color"])
 def test_factors_scatter(mousebrain_model):
-    return pr.pl.factors_scatter(mousebrain_model, 1, "Astrocytes"), pr.pl.factors_scatter(
+    return mfl.pl.factors_scatter(mousebrain_model, 1, "Astrocytes"), mfl.pl.factors_scatter(
         mousebrain_model, 1, "Astrocytes", color="log1p_total_counts"
     )
 
@@ -159,26 +159,26 @@ def test_factors_scatter(mousebrain_model):
 )
 def test_covariates_factor_scatter(mousebrain_model):
     return (
-        pr.pl.covariates_factor_scatter(mousebrain_model, 1),
-        pr.pl.covariates_factor_scatter(mousebrain_model, "Astrocytes"),
-        pr.pl.covariates_factor_scatter(mousebrain_model, 1, covariate_dims=0, color="Astrocytes"),
-        pr.pl.covariates_factor_scatter(mousebrain_model, 1, covariate_dims=0, color="log1p_total_counts"),
-        pr.pl.covariates_factor_scatter(mousebrain_model, 1, covariate_dims=(1, 0)),
+        mfl.pl.covariates_factor_scatter(mousebrain_model, 1),
+        mfl.pl.covariates_factor_scatter(mousebrain_model, "Astrocytes"),
+        mfl.pl.covariates_factor_scatter(mousebrain_model, 1, covariate_dims=0, color="Astrocytes"),
+        mfl.pl.covariates_factor_scatter(mousebrain_model, 1, covariate_dims=0, color="log1p_total_counts"),
+        mfl.pl.covariates_factor_scatter(mousebrain_model, 1, covariate_dims=(1, 0)),
     )
 
 
 @plotnine_comparison(baseline_images=["factors_covariate-cov0", "factors_covariate-cov1-cov0"])
 def test_factors_covariate(mousebrain_model):
-    return pr.pl.factors_covariate(mousebrain_model, 0, figsize=(60, 4)), pr.pl.factors_covariate(
+    return mfl.pl.factors_covariate(mousebrain_model, 0, figsize=(60, 4)), mfl.pl.factors_covariate(
         mousebrain_model, 1, 0, figsize=(60, 4)
     )
 
 
 @plotnine_comparison(baseline_images=["gp_covariate"])
 def test_gp_covariate(mousebrain_model):
-    return pr.pl.gp_covariate(mousebrain_model, size=0.25, figsize=(60, 4))
+    return mfl.pl.gp_covariate(mousebrain_model, size=0.25, figsize=(60, 4))
 
 
 @plotnine_comparison(baseline_images=["smoothness"])
 def test_smoothness(mousebrain_model):
-    return pr.pl.smoothness(mousebrain_model, figsize=(5, 5))
+    return mfl.pl.smoothness(mousebrain_model, figsize=(5, 5))

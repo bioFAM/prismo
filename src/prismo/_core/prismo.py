@@ -280,6 +280,7 @@ class PRISMO:
     def _prismodataset(self, data: MuData | dict[str, dict[str, AnnData]]) -> PrismoDataset:
         data = self._make_dataset(data)
         self._make_preprocessor(data)
+        return data
 
     @property
     def group_names(self) -> npt.NDArray[str]:
@@ -1246,17 +1247,15 @@ class PRISMO:
         """Impute values in the training data using the trained factorization.
 
         Args:
-            data: can be any of:
-
-                - MuData object
-                - Nested dict with group names as keys, view names as subkeys and AnnData objects as values
-                  (incompatible with :py:attr:`DataOptions.group_by`)
-
+            data: The data the model was trained on.
             missing_only: Only impute missing values in the data.
+
+        Returns:
+            Nested dictionary of AnnData objects with either fully imputed data or with only the missing values filled in.
+            In both cases, the returned data will be preprocessed. In the case of Gaussian distributed data, that involves
+            centering and scaling.
         """
-        data = PrismoDataset(
-            data, group_by=self._data_opts.group_by, sample_names=self.sample_names, feature_names=self.feature_names
-        )
+        data = self._prismodataset(data)
 
         factors = self.get_factors(return_type="numpy")
         weights = self.get_weights(return_type="numpy")
@@ -1270,6 +1269,7 @@ class PRISMO:
             },
             group_kwargs={"factors": factors, "sample_names": self.sample_names},
             missingonly=missing_only,
+            preprocessor=data.preprocessor,
         )
 
     def _save(

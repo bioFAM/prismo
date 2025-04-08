@@ -141,6 +141,40 @@ def test_alignment(mdata, dataset, rng, axis):
             assert np.all(np.compress(idx, new_global_arr, axis=axis) == np.compress(idx, global_arr, axis=axis))
 
 
+def test_index_mapping(mdata, dataset, rng):
+    for group_name, group_samples in dataset.sample_names.items():
+        global_idx = rng.choice(group_samples.size, size=int(0.3 * group_samples.size), replace=True)
+        for view_name in dataset.view_names:
+            local_idx = dataset.map_global_indices_to_local(global_idx, group_name, view_name, align_to="samples")
+
+            local_obsnames = mdata[mdata.obs["batch"] == group_name, :][view_name].obs_names.intersection(
+                group_samples, sort=False
+            )
+            assert np.all(group_samples[global_idx][local_idx >= 0] == local_obsnames[local_idx[local_idx >= 0]])
+            assert np.all(~np.isin(group_samples[global_idx][local_idx < 0], local_obsnames))
+
+            new_global_idx = dataset.map_local_indices_to_global(
+                local_idx[local_idx >= 0], group_name, view_name, align_to="samples"
+            )
+            assert np.all(global_idx[local_idx >= 0] == new_global_idx)
+
+    for view_name, view_features in dataset.feature_names.items():
+        global_idx = rng.choice(view_features.size, size=int(0.3 * view_features.size), replace=True)
+        for group_name in dataset.group_names:
+            local_idx = dataset.map_global_indices_to_local(global_idx, group_name, view_name, align_to="features")
+
+            local_varnames = mdata[mdata.obs["batch"] == group_name, :][view_name].var_names.intersection(
+                view_features, sort=False
+            )
+            assert np.all(view_features[global_idx][local_idx >= 0] == local_varnames[local_idx[local_idx >= 0]])
+            assert np.all(~np.isin(view_features[global_idx][local_idx < 0], local_varnames))
+
+            new_global_idx = dataset.map_local_indices_to_global(
+                local_idx[local_idx >= 0], group_name, view_name, align_to="features"
+            )
+            assert np.all(global_idx[local_idx >= 0] == new_global_idx)
+
+
 def test_getitems(mdata, dataset, rng):
     idx = {
         group_name: rng.choice(sample_names.size, size=sample_names.size // 3, replace=False)

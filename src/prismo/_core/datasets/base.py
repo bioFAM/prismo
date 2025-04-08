@@ -64,16 +64,16 @@ class PrismoDataset(Dataset, ABC):
         If given, they specify the global sample and feature names, respectively, to align the data to.
 
     Preprocessor interface:
-        The preprocessor must be able to process an entire minibatch. If it is a function, it will have two functions
-        injected into its global namespace: `align_global_array_to_local` and `align_local_array_to_global`. These are
-        methods of the given PrismoDataset instance, see their documentation for how to use them. If the preprocessor is
-        an instance of a class, these two functions will be added to its instance attributes. The preprocessor must
-        accept five arguments: A (possibly sparse) array with data, a 1D index array indicating which global samples
-        correspond to which samples in the current minibatch, a 1D index array indicating which global features
-        correspond to features in the current minibatch, the group name, and the view name. If the preprocessor subsets
-        samples or features, it must correspondingly subset the index arrays. Instead of index arrays, `slice(None)`
-        may be passed. The preprocessor must return a 3-tuple containing the preprocessed data and the index
-        arrays/slices.
+        The preprocessor must be able to process an entire minibatch. If it is a function, it will have four functions
+        injected into its global namespace: `align_global_array_to_local`, `align_local_array_to_global`, `map_global_indices_to_local`,
+        and `map_local_indices_to_global`. These are methods of the given PrismoDataset instance, see their documentation
+        for how to use them. If the preprocessor is an instance of a class, these four functions will be added to its
+        instance attributes. The preprocessor must accept five arguments: A (possibly sparse) array with data, a 1D
+        index array indicating which global samples correspond to which samples in the current minibatch, a 1D index
+        array indicating which global features correspond to features in the current minibatch, the group name, and
+        the view name. If the preprocessor subsets samples or features, it must correspondingly subset the index arrays.
+        Instead of index arrays, `slice(None)` may be passed. The preprocessor must return a 3-tuple containing the
+        preprocessed data and the index arrays/slices.
 
     Args:
         data: The data. This will be stored as `self._data` and can be accessed and manipulaed by subclasses.
@@ -262,6 +262,36 @@ class PrismoDataset(Dataset, ABC):
         pass
 
     @abstractmethod
+    def map_local_indices_to_global(
+        self, idx: NDArray[int], group_name: str, view_name: str, align_to: Literal["samples, features"]
+    ) -> NDArray[int]:
+        """Map indices corresponding to local samples/features to the corresponding global indices.
+
+        Args:
+            idx: The indices.
+            group_name: Group name.
+            view_name: View name.
+            align_to: What to map to.
+        """
+        pass
+
+    @abstractmethod
+    def map_global_indices_to_local(
+        self, idx: NDArray[int], group_name: str, view_name: str, align_to: Literal["samples, features"]
+    ) -> NDArray[int]:
+        """Map indices corresponding to global samples/features to the corresponding local indices.
+
+        The returned array will have values of -1 for global indices missing in the local view.
+
+        Args:
+            idx: The indices.
+            group_name: Group name.
+            view_name: View name.
+            align_to: What to map to.
+        """
+        pass
+
+    @abstractmethod
     def get_obs(self) -> dict[str, pd.DataFrame]:
         """Get observation metadata for each group."""
         pass
@@ -316,9 +346,10 @@ class PrismoDataset(Dataset, ABC):
     ) -> dict[str, dict[str, T]] | dict[str, T]:
         """Apply a function to each group and/or view.
 
-        If `func` is a function, it will have two functions injected into its global namespace: `align_global_array_to_local`
-        and `align_local_array_to_global`. These are methods of the given PrismoDataset instance, see their documentation
-        for how to use them. If `func` is an instance of a class, these two functions will be added to its instance attributes.
+        If `func` is a function, it will have four functions injected into its global namespace: `align_global_array_to_local`,
+        `align_local_array_to_global`, `map_global_indices_to_local`, and `map_local_indices_to_global`. These are methods of the
+        given PrismoDataset instance, see their documentation for how to use them. If `func` is an instance of a class, these four
+        functions will be added to its instance attributes.
 
         If `by_group=True` and `by_view=True`, the `AnnData` object passed to `func` will **not** have its samples and features
         aligned to the global samples/features, respectively. It is up to `func` to align when necessary using the provided functions.
@@ -419,7 +450,11 @@ class PrismoDataset(Dataset, ABC):
         if isinstance(func, FunctionType | MethodType):
             func.__globals__["align_global_array_to_local"] = self.align_global_array_to_local
             func.__globals__["align_local_array_to_global"] = self.align_local_array_to_global
+            func.__globals__["map_global_indices_to_local"] = self.map_global_indices_to_local
+            func.__globals__["map_local_indices_to_global"] = self.map_local_indices_to_global
         else:
             func.align_global_array_to_local = self.align_global_array_to_local
             func.align_local_array_to_global = self.align_local_array_to_global
+            func.map_global_indices_to_local = self.map_global_indices_to_local
+            func.map_local_indices_to_global = self.map_local_indices_to_global
         return func

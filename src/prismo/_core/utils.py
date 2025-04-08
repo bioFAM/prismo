@@ -5,7 +5,18 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 from numpy.typing import NDArray
-from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix, issparse, lil_array, sparray, spmatrix
+from scipy.sparse import (
+    coo_array,
+    coo_matrix,
+    csc_array,
+    csc_matrix,
+    csr_array,
+    csr_matrix,
+    issparse,
+    lil_array,
+    sparray,
+    spmatrix,
+)
 from scipy.special import expit
 from torch.utils.data import BatchSampler, SequentialSampler
 
@@ -134,6 +145,30 @@ def nanmax(arr: PossiblySparseArray, axis: int | None = None, keepdims=False):
     return _minmax(arr, method="nanmax", axis=axis, keepdims=keepdims)
 
 
+def wherenan(arr: PossiblySparseArray):
+    if not issparse(arr):
+        return np.nonzero(np.isnan(arr))
+    else:
+        nanidx = np.nonzero(np.isnan(arr.data))[0]
+        need_sort = False
+        if isinstance(arr, coo_array | coo_matrix):
+            rowidx, colidx = arr.data[:, 0], arr.data[:, 1]
+            need_sort = True
+        elif isinstance(arr, csr_array | csr_matrix | csc_array | csc_matrix):
+            colidx = arr.indices[nanidx]
+            rowidx = np.searchsorted(arr.indptr, nanidx, side="right") - 1
+            if isinstance(arr, csc_array | csc_matrix):
+                colidx, rowidx = rowidx, colidx
+                need_sort = True
+        else:
+            raise NotImplementedError(f"Unsupported sparse matrix type {type(arr)}.")
+
+        if need_sort:  # be compatible with np.nonzero, which returns sorted results
+            order = np.argsort(rowidx, stable=True)
+            rowidx, colidx = rowidx[order], colidx[order]
+        return rowidx, colidx
+
+
 def _minmax(
     arr: PossiblySparseArray, method: Literal["min", "max", "nanmin", "nanmax"], axis: int | None = None, keepdims=False
 ):
@@ -155,12 +190,29 @@ def _imputation_link(imputation: NDArray, likelihood: Likelihood):
         return expit(imputation)
     elif likelihood != "Normal":
         raise NotImplementedError(f"Imputation for {likelihood} not implemented.")
+    else:
+        return imputation
 
 
 def impute(
-    data: AnnData, group_name, view_name, factors, weights, sample_names, feature_names, likelihood, missingonly
+    data: AnnData,
+    group_name,
+    view_name,
+    factors,
+    weights,
+    sample_names,
+    feature_names,
+    likelihood,
+    missingonly,
+    preprocessor,
 ):
     havemissing = data.n_obs < factors.shape[0] or data.n_vars < weights.shape[1]
+    if issparse(data.X):
+        have_missing_cells = np.isnan(data.X.data).sum() > 0
+    else:
+        have_missing_cells = np.isnan(data.X).sum() > 0
+    havemissing |= have_missing_cells
+
     if missingonly and not havemissing:
         return data
     elif not missingonly:
@@ -170,15 +222,18 @@ def impute(
             np.broadcast_to(False, (data.n_obs,)), group_name, view_name, fill_value=True, align_to="samples"
         )
         missing_var = align_local_array_to_global(  # noqa F821
-            np.broadcast_to(False, (data.n_vars,)), group_name, view_name, fill_value=True, align_to="features"
+            np.broadcast_to(False, (data.n_vars)), group_name, view_name, fill_value=True, align_to="features"
         )
 
-        if issparse(data.X):
+        preprocessed = preprocessor(data.X, slice(None), slice(None), group_name, view_name)[0]
+        if issparse(preprocessed):
             imputation = lil_array((factors.shape[0], weights.shape[1]))
         else:
             imputation = np.empty((sample_names.size, feature_names.size), dtype=data.X.dtype)
 
-        imputation[np.ix_(~missing_obs, ~missing_var)] = data.X
+        obsidx = map_local_indices_to_global(np.arange(data.n_obs), group_name, view_name, align_to="samples")  # noqa F821
+        varidx = map_local_indices_to_global(np.arange(data.n_vars), group_name, view_name, align_to="features")  # noqa F821
+        imputation[np.ix_(obsidx, varidx)] = preprocessed
 
         if issparse(data.X):
             for row in np.nonzero(missing_obs)[0]:
@@ -186,10 +241,19 @@ def impute(
             imputation = imputation.T  # slow column slicing for lil arrays
             for col in np.nonzero(missing_var)[0]:
                 imputation[col, :] = _imputation_link(factors @ weights[:, col], likelihood).T
-            imputation = imputation.tocsr().T
+            imputation = imputation.T
         else:
-            imputation[np.ix_(missing_obs, missing_var)] = _imputation_link(
-                factors[missing_obs, :] @ weights[:, missing_var]
+            imputation[missing_obs, :] = _imputation_link(factors[missing_obs, :] @ weights, likelihood)
+            imputation[:, missing_var] = _imputation_link(factors @ weights[:, missing_var], likelihood)
+
+        if have_missing_cells:
+            nanobs, nanvar = wherenan(data.X)
+            nanobs, nanvar = obsidx[nanobs], varidx[nanvar]
+            imputation[nanobs, nanvar] = _imputation_link(
+                (factors[nanobs, :] * weights[:, nanvar].T).sum(axis=1), likelihood
             )
 
-        return AnnData(X=imputation, obs=pd.DataFrame(index=sample_names), var=pd.DataFrame(index=feature_names))
+        if issparse(data.X):
+            imputation = imputation.tocsr()
+
+    return AnnData(X=imputation, obs=pd.DataFrame(index=sample_names), var=pd.DataFrame(index=feature_names))

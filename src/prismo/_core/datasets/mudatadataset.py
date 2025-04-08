@@ -244,6 +244,25 @@ class MuDataDataset(PrismoDataset):
         else:
             return arr
 
+    def map_local_indices_to_global(
+        self, idx: NDArray[int], group_name: str, view_name: str, align_to: Literal["samples, features"]
+    ) -> NDArray[int]:
+        if align_to == "samples":
+            subdata = self._data[self._groups[group_name], :]
+            viewidx = subdata.obsmap[view_name]
+            return np.argsort(viewidx)[(viewidx == 0).sum() :][idx]
+        else:
+            return idx
+
+    def map_global_indices_to_local(
+        self, idx: NDArray[int], group_name: str, view_name: str, align_to: Literal["samples, features"]
+    ) -> NDArray[int]:
+        if align_to == "samples":
+            subdata = self._data[self._groups[group_name], :]
+            return subdata.obsmap[view_name][idx].astype(int) - 1
+        else:
+            return idx
+
     def get_obs(self) -> dict[str, pd.DataFrame]:
         # We don't want to duplicate MuData's push_obs logic, but at the same time
         # we don't want to modify the data object. So we create a temporary fake

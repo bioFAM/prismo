@@ -59,3 +59,15 @@ def test_nan_op(nan_array, sparse_nan_array, axis, keepdims, method):
 
     assert np.all(arr_result.shape == utils_result.shape)
     assert np.all(arr_result.shape == sparse_result.shape)
+
+
+def test_wherenan(nan_array, sparse_nan_array):
+    arr_result = np.nonzero(np.isnan(nan_array))
+    utils_result = utils.wherenan(nan_array)
+    sparse_result = utils.wherenan(sparse_nan_array)
+
+    assert np.all(arr_result[0] == utils_result[0])
+    assert np.all(arr_result[1] == utils_result[1])
+
+    assert np.all(arr_result[0] == sparse_result[0])
+    assert np.all(arr_result[1] == sparse_result[1])

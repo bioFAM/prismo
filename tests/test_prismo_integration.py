@@ -1,6 +1,9 @@
 # integration tests: only testing if the code runs without errors
+import warnings
+
+import numpy as np
 import pytest
-from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
+from scipy.sparse import SparseEfficiencyWarning, csc_array, csc_matrix, csr_array, csr_matrix, issparse
 
 from prismo import PRISMO, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
 
@@ -67,17 +70,17 @@ def anndata_dict(random_adata, rng):
         ("init_factors", "random"),
         ("init_factors", "orthogonal"),
         ("init_factors", "pca"),
+        ("save_path", None),
         ("save_path", "test.h5"),
-        ("save_path", False),
         ("batch_size", 0),
         ("batch_size", 100),
     ],
 )
-def test_prismo(anndata_dict, tmp_path, attrname, attrvalue):
+def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
     opts = (
         DataOptions(plot_data_overview=False, annotations_varm_key="annot"),
         ModelOptions(n_factors=5),
-        TrainingOptions(max_epochs=2, seed=42),
+        TrainingOptions(max_epochs=2, seed=42, save_path=False),
     )
     if attrname == "save_path" and isinstance(attrvalue, str):
         attrvalue = str(tmp_path / attrvalue)
@@ -99,7 +102,7 @@ def test_prismo(anndata_dict, tmp_path, attrname, attrvalue):
         ("warp_groups", ["group_1"]),
     ],
 )
-def test_prismo_gp(anndata_dict, attrname, attrvalue):
+def test_integration_gp(anndata_dict, attrname, attrvalue):
     opts = (
         DataOptions(covariates_obs_key="covar", plot_data_overview=False),
         ModelOptions(n_factors=5, factor_prior="GP"),
@@ -109,3 +112,51 @@ def test_prismo_gp(anndata_dict, attrname, attrvalue):
     setattr(smooth_opts, attrname, attrvalue)
 
     model = PRISMO(anndata_dict, *opts, smooth_opts)  # noqa F841
+
+
+def test_imputation(rng, anndata_dict):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=SparseEfficiencyWarning)
+
+        nanidx = {}
+        for group_name, group in anndata_dict.items():
+            del group["view_gammapoisson"]
+            cnanidx = {}
+            for view_name, view in group.items():
+                n_nans = rng.choice(int(0.05 * view.n_obs * view.n_vars))
+                rowidx = rng.choice(view.n_obs, size=n_nans)
+                colidx = rng.choice(view.n_vars, size=n_nans)
+
+                view.X[rowidx, colidx] = np.nan
+                cnanidx[view_name] = (rowidx, colidx)
+            nanidx[group_name] = cnanidx
+
+    model = PRISMO(
+        anndata_dict,
+        DataOptions(plot_data_overview=False),
+        ModelOptions(n_factors=5),
+        TrainingOptions(max_epochs=2, seed=42, save_path=False),
+    )
+
+    imputed = model.impute_data(anndata_dict, missing_only=False)
+    for group in imputed.values():
+        for view in group.values():
+            assert np.isnan(view.X if not issparse(view.X) else view.X.data).sum() == 0
+
+    imputed = model.impute_data(anndata_dict, missing_only=True)
+    preprocessor = model._prismodataset(anndata_dict).preprocessor
+    for group_name, group in imputed.items():
+        for view_name, view in group.items():
+            assert np.isnan(view.X if not issparse(view.X) else view.X.data).sum() == 0
+
+            orig_data = anndata_dict[group_name][view_name]
+            new_X = view[orig_data.obs_names, orig_data.var_names].X
+            orig_X = orig_data.X
+            if issparse(orig_X):
+                orig_X = orig_X.toarray()
+            if issparse(new_X):
+                new_X = new_X.toarray()
+            nonnan = ~np.isnan(orig_X)
+            assert np.allclose(
+                preprocessor(orig_X, slice(None), slice(None), group_name, view_name)[0][nonnan], new_X[nonnan]
+            )

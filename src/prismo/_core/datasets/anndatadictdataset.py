@@ -284,6 +284,23 @@ class AnnDataDictDataset(PrismoDataset):
         map = map.g2d
         return np.take(arr, map[map >= 0], axis=axis)
 
+    def map_local_indices_to_global(
+        self, idx: NDArray[int], group_name: str, view_name: str, align_to: Literal["samples, features"]
+    ) -> NDArray[int]:
+        map = (self._obsmap if align_to == "samples" else self._varmap)[group_name].get(view_name)
+        if map is None:
+            return idx
+        return map.g2d[map.g2d >= 0][idx]
+
+    def map_global_indices_to_local(
+        self, idx: NDArray[int], group_name: str, view_name: str, align_to: Literal["samples, features"]
+    ) -> NDArray[int]:
+        map = (self._obsmap if align_to == "samples" else self._varmap)[group_name].get(view_name)
+        if map is None:
+            return idx
+        idx = map.d2g[idx]
+        return idx - np.cumsum(map.g2d < 0)[idx]  # this is for use_obs="intersection"
+
     def _get_attr(self, attr: Literal["obs", "var"]) -> dict[str, pd.DataFrame]:
         return {
             group_name: {

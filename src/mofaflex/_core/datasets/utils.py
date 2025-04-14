@@ -1,3 +1,4 @@
+import logging
 from collections import namedtuple
 from collections.abc import Callable, Mapping, Sequence, Set
 from importlib.util import find_spec
@@ -22,6 +23,8 @@ from scipy.sparse import (
 from ..settings import settings
 
 AlignmentMap = namedtuple("AlignmentMap", ["d2g", "g2d"])
+
+_logger = logging.getLogger(__name__)
 
 
 def have_dask():
@@ -109,3 +112,16 @@ def anndata_to_dask(adata: AnnData):
         for k, v in attr.items():
             dask_attr._data[k] = array_to_dask(v)
     return dask_adata
+
+
+_warned_dask = False
+
+
+def warn_dask(logger: logging.Logger | None = None):
+    global _warned_dask
+    if _warned_dask:
+        return
+    if logger is None:
+        logger = _logger
+    logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+    _warned_dask = True

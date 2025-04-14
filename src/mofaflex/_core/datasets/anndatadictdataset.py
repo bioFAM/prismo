@@ -11,7 +11,7 @@ from scipy import sparse
 
 from ..settings import settings
 from .base import ApplyCallable, MofaFlexDataset, Preprocessor
-from .utils import AlignmentMap, anndata_to_dask, apply_to_nested, from_dask, have_dask
+from .utils import AlignmentMap, anndata_to_dask, apply_to_nested, from_dask, have_dask, warn_dask
 
 T = TypeVar("T")
 _logger = logging.getLogger(__name__)
@@ -423,7 +423,7 @@ class AnnDataDictDataset(MofaFlexDataset):
     ) -> dict[str, dict[str, T]]:
         havedask = have_dask()
         if not havedask and settings.use_dask:
-            _logger.warning("Could not import dask. Input arrays may be copied.")
+            warn_dask(_logger)
         ret = {}
         for group_name, group in self._data.items():
             cret = {}
@@ -448,7 +448,7 @@ class AnnDataDictDataset(MofaFlexDataset):
         havedask = have_dask()
         ret = {}
         if not havedask and settings.use_dask:
-            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+            warn_dask(_logger)
         for view_name in self.view_names:
             data = {}
             convert = False
@@ -489,7 +489,7 @@ class AnnDataDictDataset(MofaFlexDataset):
         havedask = have_dask()
         ret = {}
         if not havedask and settings.use_dask:
-            _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+            warn_dask(_logger)
         for group_name, group in self._data.items():
             data = {}
             convert = False

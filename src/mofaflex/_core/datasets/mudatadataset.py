@@ -10,7 +10,7 @@ from scipy import sparse
 
 from ..settings import settings
 from .base import ApplyCallable, MofaFlexDataset, Preprocessor
-from .utils import anndata_to_dask, apply_to_nested, array_to_dask, from_dask, have_dask
+from .utils import anndata_to_dask, apply_to_nested, array_to_dask, from_dask, have_dask, warn_dask
 
 T = TypeVar("T")
 _logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class MuDataDataset(MofaFlexDataset):
                     group_sample_names = pd.Index(group_sample_names)
                     if np.any(~group_sample_names.isin(self._orig_data.obs_names[group_idx])):
                         _logger.warning(
-                            f"Not all sample names given for group {group_name} are present in the data. Restricting alignment to group names present in th e data."
+                            f"Not all sample names given for group {group_name} are present in the data. Restricting alignment to group names present in the data."
                         )
                         group_sample_names = group_sample_names.intersection(self._orig_data.obs_names[group_idx])
                 else:
@@ -404,7 +404,7 @@ class MuDataDataset(MofaFlexDataset):
                     self._sample_selection, self._feature_selection
                 ]
             else:
-                _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+                warn_dask(_logger)
                 data = self._data
         ret = {}
         for group_name, group_idx in self._groups.items():
@@ -423,7 +423,7 @@ class MuDataDataset(MofaFlexDataset):
                     self._sample_selection, self._feature_selection
                 ]
             else:
-                _logger.warning("Could not import dask. Data arrays may be copied, resulting in high memory usage.")
+                warn_dask(_logger)
         ret = {}
         for modname, mod in data.mod.items():
             groups = np.empty((mod.n_obs,), dtype="O")
@@ -444,7 +444,7 @@ class MuDataDataset(MofaFlexDataset):
                     self._sample_selection, self._feature_selection
                 ]
             else:
-                _logger.warning("Could not import dask. Will copy all input arrays for stacking.")
+                warn_dask(_logger)
         ret = {}
         for group_name, group_idx in self._groups.items():
             subdata = data[group_idx, :]

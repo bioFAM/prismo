@@ -119,11 +119,6 @@ def anndata_to_dask(adata: AnnData):
     dask_adata = AnnData(
         X=array_to_dask(adata.X), var=adata.var, obs=adata.obs
     )  # AnnData does not support Dask DataFrames for var and obs
-    for attrname in ("obsm", "obsp", "varm", "varp", "layers"):
-        attr = getattr(adata, attrname)
-        dask_attr = getattr(dask_adata, attrname)
-        for k, v in attr.items():
-            dask_attr._data[k] = array_to_dask(v)
     return dask_adata
 
 

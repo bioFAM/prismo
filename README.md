@@ -4,7 +4,7 @@
 [![codecov][badge-codecov]][codecov]
 [![Documentation][badge-docs]][documentation]
 
-[badge-tests]: https://img.shields.io/github/actions/workflow/status/bioFAM/mofaflex/test.yaml?branch=main
+[badge-tests]: https://github.com/bioFAM/mofaflex/actions/workflows/test.yaml/badge.svg
 [badge-codecov]: https://codecov.io/gh/bioFAM/mofaflex/graph/badge.svg?token=IJP1IA4JEU
 [badge-docs]: https://img.shields.io/readthedocs/mofaflex
 

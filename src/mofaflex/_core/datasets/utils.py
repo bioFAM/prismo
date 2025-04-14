@@ -31,6 +31,9 @@ def have_dask():
     return find_spec("dask") is not None and find_spec("sparse") is not None
 
 
+_warned_sparse = False
+
+
 def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
     import os
 
@@ -46,6 +49,16 @@ def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
 
     chunksize = settings.dask_chunksize_mb * 1024 * 1024
     if issparse(arr):
+        # https://github.com/pydata/sparse/issues/860
+        # https://github.com/dask/dask/issues/11880
+        global _warned_sparse
+        if not _warned_sparse:
+            _logger.warning(
+                "Sparse arrays are currently not supported by Dask. Dask will not be used"
+                " and data arrays may be copied, resulting in high memory usage."
+            )
+            _warned_sparse = True
+        return arr
         if isinstance(arr, csr_array | csr_matrix):
             arr.sort_indices()
             arr = sparse.GCXS((arr.data, arr.indices, arr.indptr), shape=arr.shape, compressed_axes=(0,))

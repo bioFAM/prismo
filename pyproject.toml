@@ -67,7 +67,6 @@ optional-dependencies.doc = [
 ]
 optional-dependencies.lazy = [
   "dask[array,dataframe]",
-  "sparse",
 ]
 optional-dependencies.test = [
   "coverage",

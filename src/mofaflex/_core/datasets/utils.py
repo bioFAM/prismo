@@ -35,12 +35,8 @@ _warned_sparse = False
 
 
 def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
-    import os
-
-    os.environ["SPARSE_AUTO_DENSIFY"] = "1"  # https://github.com/pydata/sparse/issues/842
     import dask.array as da
     import dask.dataframe as dd
-    import sparse
 
     if isinstance(arr, pd.DataFrame):
         return dd.from_pandas(arr, sort=False)
@@ -59,6 +55,12 @@ def array_to_dask(arr: NDArray | spmatrix | sparray | pd.DataFrame):
             )
             _warned_sparse = True
         return arr
+
+        import os
+
+        os.environ["SPARSE_AUTO_DENSIFY"] = "1"  # https://github.com/pydata/sparse/issues/842
+        import sparse
+
         if isinstance(arr, csr_array | csr_matrix):
             arr.sort_indices()
             arr = sparse.GCXS((arr.data, arr.indices, arr.indptr), shape=arr.shape, compressed_axes=(0,))

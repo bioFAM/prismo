@@ -88,6 +88,8 @@ class MofaFlexPreprocessor(Preprocessor):
     def _calc_scale_ungrouped(self, adata: AnnData, group: NDArray[object], view_name: str, groups: list[str]):
         if view_name not in self._views_to_scale:
             return None
+        if adata.n_obs <= 1:
+            return 1.0
 
         arr = adata.X.copy()
         for group_name in groups:
@@ -107,6 +109,8 @@ class MofaFlexPreprocessor(Preprocessor):
     def _calc_scale_grouped(self, adata: AnnData, group_name: str, view_name: str):
         if view_name not in self._views_to_scale:
             return None
+        if adata.n_obs <= 1:
+            return 1.0
 
         arr = self._center(adata.X, group_name, view_name)
         if isinstance(arr, np.matrix):

@@ -205,6 +205,9 @@ class SmoothOptions(_Options):
     independent_lengthscales: bool = False
     """Whether to use a separate lengthscale per covariate dimension."""
 
+    group_covar_rank: int = 1
+    """Rank of the group correlation matrix. Only relevant if `mefisto_kernel=True`."""
+
     warp_groups: list[str] = field(default_factory=list)
     """List of groups to apply dynamic time warping to."""
 
@@ -535,6 +538,7 @@ class MOFAFLEX:
                 n_groups=len(gp_group_names),
                 kernel=self._gp_opts.kernel,
                 independent_lengthscales=self._gp_opts.independent_lengthscales,
+                rank=self._gp_opts.group_covar_rank,
                 use_mefisto_kernel=self._gp_opts.mefisto_kernel,
             ).to(self._train_opts.device)
             self._gp_group_names = gp_group_names

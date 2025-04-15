@@ -104,6 +104,7 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
         ("kernel", "Matern"),
         ("mefisto_kernel", False),
         ("independent_lengthscales", True),
+        ("group_covar_rank", 2),
         ("warp_groups", ["group_1", "group_2"]),
     ],
 )

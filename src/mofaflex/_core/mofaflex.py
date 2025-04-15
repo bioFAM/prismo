@@ -486,7 +486,6 @@ class MOFAFLEX:
                     for vn, vm in annotations.items()
                 }
 
-
         self._n_dense_factors = n_dense_factors
         self._n_informed_factors = n_informed_factors
         self._model_opts.n_factors = n_dense_factors + n_informed_factors

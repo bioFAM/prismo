@@ -90,6 +90,11 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
 
     model = MOFAFLEX(anndata_dict, *opts)  # noqa F841
 
+    if attrname == "weight_prior" and attrvalue == "Horseshoe":
+        assert model.n_informed_factors > 0
+    else:
+        assert model.n_factors == model.n_dense_factors == 5
+
 
 @pytest.mark.parametrize(
     "attrname,attrvalue",

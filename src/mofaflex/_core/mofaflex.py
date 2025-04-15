@@ -439,17 +439,28 @@ class MOFAFLEX:
         informed = annotations is not None and len(annotations) > 0
         valid_n_factors = self._model_opts.n_factors is not None and self._model_opts.n_factors > 0
 
+        n_dense_factors = 0
+        n_informed_factors = 0
+        factor_names = []
+
+        if informed:
+            ignored_views = []
+            for vn in data.view_names:
+                if vn in annotations and (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
+                    ignored_views.append(vn)
+                    _logger.warning(
+                        f"Horseshoe prior required for annotations, but got {prior} for view {vn}. Annotations will be ignored."
+                    )
+            if len(ignored_views) == data.view_names.size:
+                informed = False
+                n_informed_factors = 0
+
         if not informed and not valid_n_factors:
             raise ValueError(
                 "Invalid latent configuration, "
                 "please provide either a collection of prior masks, "
                 "or set `n_factors` to a positive integer."
             )
-
-        n_dense_factors = 0
-        n_informed_factors = 0
-
-        factor_names = []
 
         if self._model_opts.n_factors is not None:
             n_dense_factors = self._model_opts.n_factors
@@ -467,7 +478,6 @@ class MOFAFLEX:
                     f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)
                 ]
 
-            # keep only numpy arrays
             prior_masks = {vn: vm.astype(np.bool) for vn, vm in annotations.items()}
             # add dense factors if necessary
             if n_dense_factors > 0:
@@ -476,11 +486,6 @@ class MOFAFLEX:
                     for vn, vm in annotations.items()
                 }
 
-            for vn in data.view_names:
-                if vn in prior_masks and (prior := self._model_opts.weight_prior[vn]) != "Horseshoe":
-                    _logger.warning(
-                        f"Horseshoe prior required for annotations, but got {prior} for view {vn}. Annotations will be ignored."
-                    )
 
         self._n_dense_factors = n_dense_factors
         self._n_informed_factors = n_informed_factors

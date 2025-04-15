@@ -6,6 +6,7 @@ import pytest
 from packaging.version import Version
 from scipy import sparse
 
+from mofaflex import settings
 from mofaflex._core.datasets import MofaFlexDataset, MuDataDataset
 
 
@@ -198,37 +199,43 @@ def test_getitems(mdata, dataset, rng):
             assert items["nonmissing_features"][group_name][view_name] == slice(None)
 
 
-def test_apply_by_group_view(mdata, dataset):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_by_group_view(mdata, dataset, usedask):
     def applyfun(adata, group_name, view_name, ref_sample_names, ref_feature_names):
         assert np.all(
             adata.obs_names == pd.Index(ref_sample_names).intersection(mdata[view_name].obs_names, sort=False)
         )
         assert np.all(adata.var_names == ref_feature_names)
 
-    dataset.apply(
-        applyfun,
-        group_kwargs={"ref_sample_names": dataset.sample_names},
-        view_kwargs={"ref_feature_names": dataset.feature_names},
-    )
+    with settings.override(use_dask=usedask):
+        dataset.apply(
+            applyfun,
+            group_kwargs={"ref_sample_names": dataset.sample_names},
+            view_kwargs={"ref_feature_names": dataset.feature_names},
+        )
 
 
-def test_apply_by_view(mdata, dataset):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_by_view(mdata, dataset, usedask):
     def applyfun(adata, group_name, view_name):
         assert np.all(adata.obs_names.sort_values() == mdata[view_name].obs_names.sort_values())
         assert np.all(adata.var_names == mdata[view_name].var_names)
 
-    dataset.apply(applyfun, by_group=False)
+    with settings.override(use_dask=usedask):
+        dataset.apply(applyfun, by_group=False)
 
 
 @pytest.mark.xfail(
     Version(ad.__version__) < Version("0.11.4"), reason="anndata bug: https://github.com/scverse/anndata/pull/1911"
 )
-def test_apply_by_group(mdata, dataset):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_by_group(mdata, dataset, usedask):
     def applyfun(adata, group_name, view_name):
         assert np.all(adata.obs_names == dataset.sample_names[group_name])
         assert np.all(adata.var_names == mdata.var_names)
 
-    dataset.apply(applyfun, by_view=False)
+    with settings.override(use_dask=usedask):
+        dataset.apply(applyfun, by_view=False)
 
 
 def test_get_covariates_from_obs(mdata, dataset):

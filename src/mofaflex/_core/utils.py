@@ -172,6 +172,8 @@ def wherenan(arr: PossiblySparseArray):
 def _minmax(
     arr: PossiblySparseArray, method: Literal["min", "max", "nanmin", "nanmax"], axis: int | None = None, keepdims=False
 ):
+    if np.prod(arr.shape) == 0:
+        return arr.reshape((0,) * arr.ndim)
     if hasattr(arr, method):
         res = getattr(arr, method)(axis=axis)
     else:

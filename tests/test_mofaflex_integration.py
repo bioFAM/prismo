@@ -5,10 +5,10 @@ import numpy as np
 import pytest
 from scipy.sparse import SparseEfficiencyWarning, csc_array, csc_matrix, csr_array, csr_matrix, issparse
 
-from mofaflex import MOFAFLEX, DataOptions, ModelOptions, SmoothOptions, TrainingOptions
+from mofaflex import MOFAFLEX, DataOptions, ModelOptions, SmoothOptions, TrainingOptions, settings
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def anndata_dict(random_adata, rng):
     big_adatas = (
         random_adata("Normal", 500, 100, var_names=[f"normal_var_{i}" for i in range(100)]),
@@ -76,7 +76,8 @@ def anndata_dict(random_adata, rng):
         ("batch_size", 100),
     ],
 )
-def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
     opts = (
         DataOptions(plot_data_overview=False, annotations_varm_key="annot"),
         ModelOptions(n_factors=5),
@@ -88,7 +89,8 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
         if hasattr(opt, attrname):
             setattr(opt, attrname, attrvalue)
 
-    model = MOFAFLEX(anndata_dict, *opts)  # noqa F841
+    with settings.override(use_dask=usedask):
+        model = MOFAFLEX(anndata_dict, *opts)
 
     if attrname == "weight_prior" and attrvalue == "Horseshoe":
         assert model.n_informed_factors > 0
@@ -107,7 +109,8 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue):
         ("warp_groups", ["group_1", "group_2"]),
     ],
 )
-def test_integration_gp(anndata_dict, attrname, attrvalue):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_integration_gp(anndata_dict, attrname, attrvalue, usedask):
     opts = (
         DataOptions(covariates_obs_key="covar", plot_data_overview=False),
         ModelOptions(n_factors=5, factor_prior="GP"),
@@ -116,10 +119,12 @@ def test_integration_gp(anndata_dict, attrname, attrvalue):
     smooth_opts = SmoothOptions(n_inducing=20, warp_interval=1)
     setattr(smooth_opts, attrname, attrvalue)
 
-    model = MOFAFLEX(anndata_dict, *opts, smooth_opts)  # noqa F841
+    with settings.override(use_dask=usedask):
+        model = MOFAFLEX(anndata_dict, *opts, smooth_opts)  # noqa F841
 
 
-def test_imputation(rng, anndata_dict):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_imputation(rng, anndata_dict, usedask):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=SparseEfficiencyWarning)
 
@@ -136,14 +141,16 @@ def test_imputation(rng, anndata_dict):
                 cnanidx[view_name] = (rowidx, colidx)
             nanidx[group_name] = cnanidx
 
-    model = MOFAFLEX(
-        anndata_dict,
-        DataOptions(plot_data_overview=False),
-        ModelOptions(n_factors=5),
-        TrainingOptions(max_epochs=2, seed=42, save_path=False),
-    )
+    with settings.override(use_dask=usedask):
+        model = MOFAFLEX(
+            anndata_dict,
+            DataOptions(plot_data_overview=False),
+            ModelOptions(n_factors=5),
+            TrainingOptions(max_epochs=2, seed=42, save_path=False),
+        )
 
-    imputed = model.impute_data(anndata_dict, missing_only=False)
+        imputed = model.impute_data(anndata_dict, missing_only=False)
+
     for group in imputed.values():
         for view in group.values():
             assert np.isnan(view.X if not issparse(view.X) else view.X.data).sum() == 0

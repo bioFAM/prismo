@@ -70,6 +70,7 @@ optional-dependencies.lazy = [
 ]
 optional-dependencies.test = [
   "coverage",
+  "mofaflex[lazy]",
   "pytest",
 ]
 # https://docs.pypi.org/project_metadata/#project-urls

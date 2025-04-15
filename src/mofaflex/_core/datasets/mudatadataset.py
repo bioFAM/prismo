@@ -398,6 +398,7 @@ class MuDataDataset(MofaFlexDataset):
     def _apply_by_group_view(
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
+        data = self._data
         if settings.use_dask:
             if have_dask():
                 data = _mudata_to_dask(self._orig_data, with_extra=False)[
@@ -405,7 +406,6 @@ class MuDataDataset(MofaFlexDataset):
                 ]
             else:
                 warn_dask(_logger)
-                data = self._data
         ret = {}
         for group_name, group_idx in self._groups.items():
             cret = {}

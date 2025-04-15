@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from scipy import sparse
 
+from mofaflex import settings
 from mofaflex._core.datasets import AnnDataDictDataset, MofaFlexDataset
 
 
@@ -201,20 +202,23 @@ def test_getitems(anndata_dict, dataset, rng):
             assert np.all(items["nonmissing_features"][group_name][view_name] == cnonmissing_var)
 
 
-def test_apply_by_group_view(anndata_dict, dataset):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_by_group_view(anndata_dict, dataset, usedask):
     def applyfun(adata, group_name, view_name, ref_adata, ref_sample_names, ref_feature_names):
         assert np.all(adata.obs_names == ref_adata.obs_names.intersection(ref_sample_names))
         assert np.all(adata.var_names == ref_adata.var_names.intersection(ref_feature_names))
 
-    dataset.apply(
-        applyfun,
-        group_kwargs={"ref_sample_names": dataset.sample_names},
-        view_kwargs={"ref_feature_names": dataset.feature_names},
-        group_view_kwargs={"ref_adata": anndata_dict},
-    )
+    with settings.override(use_dask=usedask):
+        dataset.apply(
+            applyfun,
+            group_kwargs={"ref_sample_names": dataset.sample_names},
+            view_kwargs={"ref_feature_names": dataset.feature_names},
+            group_view_kwargs={"ref_adata": anndata_dict},
+        )
 
 
-def test_apply_by_view(anndata_dict, dataset):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_by_view(anndata_dict, dataset, usedask):
     def applyfun(adata, group_name, view_name):
         view_obs = reduce(lambda x, y: x.union(y), (group[view_name].obs_names for group in anndata_dict.values()))
         view_obs = view_obs.intersection(np.concatenate(list(dataset.sample_names.values())))
@@ -222,10 +226,12 @@ def test_apply_by_view(anndata_dict, dataset):
         assert np.all(np.sort(adata.obs_names) == view_obs.sort_values())
         assert np.all(adata.var_names == dataset.feature_names[view_name])
 
-    dataset.apply(applyfun, by_group=False)
+    with settings.override(use_dask=usedask):
+        dataset.apply(applyfun, by_group=False)
 
 
-def test_apply_by_group(anndata_dict, dataset):
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_by_group(anndata_dict, dataset, usedask):
     def applyfun(adata, group_name, view_name):
         group_var = reduce(lambda x, y: x.union(y), (view.var_names for view in anndata_dict[group_name].values()))
         group_var = group_var.intersection(np.concatenate(list(dataset.feature_names.values())))
@@ -233,7 +239,8 @@ def test_apply_by_group(anndata_dict, dataset):
         assert np.all(adata.obs_names == dataset.sample_names[group_name])
         assert np.all(np.sort(adata.var_names) == group_var.sort_values())
 
-    dataset.apply(applyfun, by_view=False)
+    with settings.override(use_dask=usedask):
+        dataset.apply(applyfun, by_view=False)
 
 
 def test_get_covariates_from_obs(anndata_dict, dataset):

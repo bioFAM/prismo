@@ -101,11 +101,9 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
 @pytest.mark.parametrize(
     "attrname,attrvalue",
     [
-        ("kernel", "RBF"),
         ("kernel", "Matern"),
-        ("mefisto_kernel", True),
         ("mefisto_kernel", False),
-        ("warp_groups", []),
+        ("independent_lengthscales", True),
         ("warp_groups", ["group_1", "group_2"]),
     ],
 )
@@ -114,7 +112,7 @@ def test_integration_gp(anndata_dict, attrname, attrvalue, usedask):
     opts = (
         DataOptions(covariates_obs_key="covar", plot_data_overview=False),
         ModelOptions(n_factors=5, factor_prior="GP"),
-        TrainingOptions(max_epochs=2, seed=42, save_path=False),
+        TrainingOptions(max_epochs=2, seed=42, mofa_compat=True),
     )
     smooth_opts = SmoothOptions(n_inducing=20, warp_interval=1)
     setattr(smooth_opts, attrname, attrvalue)

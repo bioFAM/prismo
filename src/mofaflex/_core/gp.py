@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from typing import Literal
 
 import torch
 from gpytorch.constraints import Interval
@@ -97,7 +98,8 @@ class GP(ApproximateGP):
         covariates: Iterable of covariate tensors to choose inducing points from.
         n_factors: Number of factors in the model.
         n_groups: Number of groups to model correlations between.
-        kernel: Kernel type, either "RBF" or "Matern".
+        kernel: Kernel type.
+    i   independent_lengthscales: Whether to use a separate lengthscale for each covariate dimension.
         rank: Rank of the group correlation kernel.
         **kwargs: Additional kernel-specific parameters.
     """
@@ -108,7 +110,8 @@ class GP(ApproximateGP):
         covariates: Iterable[NDArray],
         n_factors: int,
         n_groups: int,
-        kernel: str = "RBF",
+        kernel: Literal["RBF", "Matern"] = "RBF",
+        independent_lengthscales: bool = False,
         rank: int = 1,
         use_mefisto_kernel: bool = True,
         **kwargs,
@@ -122,10 +125,8 @@ class GP(ApproximateGP):
             raise ValueError("The first dimension of inducing_points must be n_factors.")
 
         n_dims = inducing_points.shape[-1]
-        batch_shape = [n_factors]
-        device = inducing_points.device
 
-        variational_distribution = CholeskyVariationalDistribution(n_inducing, batch_shape)
+        variational_distribution = CholeskyVariationalDistribution(n_inducing, batch_shape=(n_factors,))
 
         variational_strategy = VariationalStrategy(
             self, inducing_points, variational_distribution, learn_inducing_locations=False
@@ -133,38 +134,43 @@ class GP(ApproximateGP):
 
         super().__init__(variational_strategy)
 
-        self.mean_module = ZeroMean(batch_shape)
+        self.mean_module = ZeroMean(batch_shape=(n_factors,))
 
         max_dist = torch.pdist(inducing_points.flatten(0, 1), p=n_dims).max()
 
+        kernel_kwargs = {"batch_shape": (n_factors,), "lengthscale_constraint": Interval(max_dist / 20, max_dist)}
+        init_shape = (n_factors,)
+        if independent_lengthscales:
+            kernel_kwargs["ard_num_dims"] = n_dims
+            init_shape = (n_factors, n_dims)
+
         if kernel == "RBF":
-            base_kernel = RBFKernel(batch_shape=batch_shape, lengthscale_constraint=Interval(max_dist / 20, max_dist))
+            base_kernel = RBFKernel(**kernel_kwargs)
         elif kernel == "Matern":
-            base_kernel = MaternKernel(
-                batch_shape=batch_shape,
-                lengthscale_constraint=Interval(max_dist / 20, max_dist),
-                nu=kwargs.get("nu", 1.5),
-            )
-        base_kernel = ScaleKernel(base_kernel, outputscale_constraint=Interval(1e-3, 1 - 1e-3), batch_shape=batch_shape)
-        base_kernel.outputscale = torch.sigmoid(torch.randn(batch_shape, device=device)).clamp(1e-3, 1 - 1e-3)
-        base_kernel.base_kernel.lengthscale = max_dist * torch.rand(batch_shape).to(device=device).clamp(0.1)
+            base_kernel = MaternKernel(nu=kwargs.get("nu", 1.5), **kernel_kwargs)
+        base_kernel.lengthscale = max_dist * torch.rand(*init_shape).clamp(0.1)
+
+        base_kernel = ScaleKernel(
+            base_kernel, outputscale_constraint=Interval(1e-3, 1 - 1e-3), batch_shape=(n_factors,)
+        )
+        base_kernel.outputscale = torch.sigmoid(torch.randn(n_factors)).clamp(1e-3, 1 - 1e-3)
 
         if use_mefisto_kernel:
-            self.covar_module = MefistoKernel(base_kernel, n_groups, rank)
+            self._covar_module = MefistoKernel(base_kernel, n_groups, rank)
         else:
-            self.covar_module = BasicKernel(base_kernel, n_groups)
+            self._covar_module = BasicKernel(base_kernel, n_groups)
 
     @property
     def outputscale(self):
-        return self.covar_module.base_kernel.outputscale.detach()
+        return self._covar_module.base_kernel.outputscale
 
     @property
     def lengthscale(self):
-        return self.covar_module.base_kernel.base_kernel.lengthscale.detach().squeeze()
+        return self._covar_module.base_kernel.base_kernel.lengthscale.squeeze(-2)
 
     @property
     def group_corr(self):
-        return self.covar_module.group_corr.detach()
+        return self._covar_module.group_corr
 
     def __call__(self, group_idx: torch.Tensor | None, inputs: torch.Tensor | None, prior: bool = False, **kwargs):
         if group_idx is not None and inputs is not None:
@@ -174,7 +180,7 @@ class GP(ApproximateGP):
     def forward(self, x):
         """Forward pass of the GP model."""
         mean = self.mean_module(x)
-        covar = self.covar_module(x)
+        covar = self._covar_module(x)
         return MultivariateNormal(mean, covar)
 
     def update_inducing_points(self, covariates):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -114,7 +115,7 @@ def save_model(
                     maxlen = max(c.shape[1] for c in model.covariates.values())
                     covar_names = [f"covar_{i}" for i in range(maxlen)]
 
-                f.create_dataset("covariates/covariates", data=covar_names, **dset_kwargs)
+                f.create_dataset("covariates/covariates", data=covar_names)
 
                 cov_grp = f.create_group("cov_samples")
                 for g_name, covars in model.covariates.items():
@@ -129,7 +130,17 @@ def save_model(
             samples_meta_grp = f.create_group("samples_metadata")
             for group_name in model.group_names:
                 cgrp = samples_meta_grp.create_group(group_name)
-                df = pd.concat((v for v in model._metadata[group_name].values()), axis=1).reset_index()
+                metadata = model._metadata[group_name]
+                cntr = Counter()
+                for v in metadata.values():
+                    cntr.update(v.columns)
+                df = pd.concat(
+                    (
+                        df.rename(columns={col: f"{view_name}:{col}" for col in df.columns if cntr[col] > 1})
+                        for view_name, df in metadata.items()
+                    ),
+                    axis=1,
+                ).reset_index()
                 for i in range(df.shape[1]):
                     col = df.iloc[:, i]
                     cvals = col.to_numpy()
@@ -185,20 +196,16 @@ def save_model(
 
             if model._gp is not None:
                 smooth_opts_grp = f.create_group("smooth_opts")
-                smooth_opts_grp.create_dataset("scale_cov", data=b"False")
+                smooth_opts_grp.create_dataset("scale_cov", data=model._gp_opts.independent_lengthscales)
                 smooth_opts_grp.create_dataset("start_opt", data=0)
                 smooth_opts_grp.create_dataset("opt_freq", data=1)
-                smooth_opts_grp.create_dataset("sparseGP", data=b"True")
+                smooth_opts_grp.create_dataset("sparseGP", data=True)
                 smooth_opts_grp.create_dataset("warping_freq", data=model._gp_opts.warp_interval)
                 if model._gp_opts.warp_reference_group is not None:
                     smooth_opts_grp.create_dataset("warping_ref", data=model._gp_opts.warp_reference_group)
-                smooth_opts_grp.create_dataset(
-                    "warping_open_begin", data=np.asarray(model._gp_opts.warp_open_begin).astype("S")
-                )
-                smooth_opts_grp.create_dataset(
-                    "warping_open_end", data=np.asarray(model._gp_opts.warp_open_end).astype("S")
-                )
-                smooth_opts_grp.create_dataset("model_groups", data=b"True")
+                smooth_opts_grp.create_dataset("warping_open_begin", data=model._gp_opts.warp_open_begin)
+                smooth_opts_grp.create_dataset("warping_open_end", data=model._gp_opts.warp_open_end)
+                smooth_opts_grp.create_dataset("model_groups", data=True)
 
             varexp_grp = f.create_group("variance_explained")
             varexp_factor_grp = varexp_grp.create_group("r2_per_factor")

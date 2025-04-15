@@ -202,6 +202,9 @@ class SmoothOptions(_Options):
     mefisto_kernel: bool = True
     """Whether to use the MEFISTO group covariance kernel or treat groups independently."""
 
+    independent_lengthscales: bool = False
+    """Whether to use a separate lengthscale per covariate dimension."""
+
     warp_groups: list[str] = field(default_factory=list)
     """List of groups to apply dynamic time warping to."""
 
@@ -387,17 +390,17 @@ class MOFAFLEX:
     @property
     def gp_lengthscale(self) -> npt.NDArray[np.float32] | None:
         """Inferred lengthscales for each factor, if using a GP prior."""
-        return self._gp.lengthscale.cpu().numpy().squeeze() if self._gp is not None else None
+        return self._gp.lengthscale.detach().cpu().numpy() if self._gp is not None else None
 
     @property
     def gp_scale(self) -> npt.NDArray[np.float32] | None:
         """Inferred variance scales (smoothness) for each factor, if using a GP prior."""
-        return self._gp.outputscale.cpu().numpy().squeeze() if self._gp is not None else None
+        return self._gp.outputscale.detach().cpu().numpy() if self._gp is not None else None
 
     @property
     def gp_group_correlation(self) -> npt.NDArray[np.float32]:
         """Between-group correlation for each factor, if using a GP prior."""
-        return self._gp.group_corr.cpu().numpy() if self._gp is not None else None
+        return self._gp.group_corr.detach().cpu().numpy() if self._gp is not None else None
 
     @property
     def training_loss(self) -> npt.NDArray[np.float32]:
@@ -526,12 +529,13 @@ class MOFAFLEX:
                 covariates = self._covariates
 
             self._gp = gp.GP(
-                self._gp_opts.n_inducing,
-                (torch.as_tensor(covariates[g]) for g in gp_group_names),
-                self._model_opts.n_factors,
-                len(gp_group_names),
-                self._gp_opts.kernel,
-                self._gp_opts.mefisto_kernel,
+                n_inducing=self._gp_opts.n_inducing,
+                covariates=(covariates[g] for g in gp_group_names),
+                n_factors=self._model_opts.n_factors,
+                n_groups=len(gp_group_names),
+                kernel=self._gp_opts.kernel,
+                independent_lengthscales=self._gp_opts.independent_lengthscales,
+                use_mefisto_kernel=self._gp_opts.mefisto_kernel,
             ).to(self._train_opts.device)
             self._gp_group_names = gp_group_names
         else:

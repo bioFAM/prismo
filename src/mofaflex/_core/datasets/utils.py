@@ -28,7 +28,7 @@ _logger = logging.getLogger(__name__)
 
 
 def have_dask():
-    return find_spec("dask") is not None and find_spec("sparse") is not None
+    return find_spec("dask") is not None
 
 
 _warned_sparse = False

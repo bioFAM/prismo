@@ -172,7 +172,7 @@ def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:
     if xp.all(xp.isclose(data, 0) | xp.isclose(data, 1)):  # TODO: set correct atol value
         return "Bernoulli"
     elif xp.allclose(data, xp.round(data)) and data.min() >= 0:
-        return "GammaPoisson"
+        return "NegativeBinomial"
     else:
         return "Normal"
 
@@ -186,7 +186,7 @@ def validate_likelihood(view: AnnData, group_name: str, view_name: str, likeliho
         xp.isclose(data, 0) | xp.isclose(data, 1)
     ):  # TODO: set correct atol value
         raise ValueError(f"Bernoulli likelihood in view {view_name} must be used with binary data.")
-    elif likelihood == "GammaPoisson" and not xp.allclose(data, xp.round(data)) and data.min() >= 0:
+    elif likelihood == "NegativeBinomial" and not xp.allclose(data, xp.round(data)) and data.min() >= 0:
         raise ValueError(
-            f"GammaPoisson likelihood in view {view_name} must be used with count (non-negative integer) data."
+            f"NegativeBinomial likelihood in view {view_name} must be used with count (non-negative integer) data."
         )

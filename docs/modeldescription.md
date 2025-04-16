@@ -103,12 +103,8 @@ MOFA-FLEX offers a choice of three likelihoods:
 
 - Normal: The Normal distribution $\Normal{\mu}{\sigma^2}$. This should be suitable for most types of real-valued data.
 
-- Gamma-Poisson: A continuous mixture of Poisson distributions, where the Poisson rate is sampled from a gamma distribution:
-  \begin{align*}
-  \lambda &\sim \dGamma{\alpha}{\lambda}\\
-  y &\sim \Poisson{\lambda}
-  \end{align*}
-  This is equivalent to a negative binomial distribution and should be suitable for count data such as sequencing.
+- negative binomial: The negative binomial distribution $\NegativeBinomial{\mu}{\gamma}$ with mean $\mu$ and overdispersion $\gamma$.
+  This should be suitable for count data such as sequencing.
 
 - Bernoulli: The Bernoulli distribution modeling binary data. This should be suitable for metylation or ATAC data.
 

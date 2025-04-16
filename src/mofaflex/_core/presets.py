@@ -26,7 +26,7 @@ NSF = (
         n_factors=5,
         weight_prior="HorseShoe",
         factor_prior="GP",
-        likelihoods="GammaPoisson",
+        likelihoods="NegativeBinomial",
         nonnegative_weights=True,
         nonnegative_factors=True,
     ),

@@ -13,7 +13,7 @@ def anndata_dict(random_adata, rng):
     big_adatas = (
         random_adata("Normal", 500, 100, var_names=[f"normal_var_{i}" for i in range(100)]),
         random_adata("Bernoulli", 400, 200, var_names=[f"bernoulli_var_{i}" for i in range(200)]),
-        random_adata("GammaPoisson", 600, 90, var_names=[f"gammapoisson_var_{i}" for i in range(90)]),
+        random_adata("NegativeBinomial", 600, 90, var_names=[f"negativebinomial_var_{i}" for i in range(90)]),
     )
 
     group_idxs = []
@@ -24,16 +24,16 @@ def anndata_dict(random_adata, rng):
 
     adata_dict = {"group_1": {}, "group_2": {}}
     for view_name, (view_idx, view) in zip(
-        ("view_normal", "view_bernoulli", "view_gammapoisson"), enumerate(big_adatas), strict=False
+        ("view_normal", "view_bernoulli", "view_negativebinomial"), enumerate(big_adatas), strict=False
     ):
         for group_idx, group in enumerate(adata_dict.values()):
             idx = rng.choice(adata.n_vars, size=int(0.9 * adata.n_vars), replace=False)
             group[view_name] = view[group_idxs[view_idx][group_idx], idx].copy()
 
     adata_dict["group_1"]["view_bernoulli"].X = csr_array(adata_dict["group_1"]["view_bernoulli"].X)
-    adata_dict["group_1"]["view_gammapoisson"].X = csc_array(adata_dict["group_1"]["view_gammapoisson"].X)
+    adata_dict["group_1"]["view_negativebinomial"].X = csc_array(adata_dict["group_1"]["view_negativebinomial"].X)
     adata_dict["group_2"]["view_bernoulli"].X = csr_matrix(adata_dict["group_2"]["view_bernoulli"].X)
-    adata_dict["group_2"]["view_gammapoisson"].X = csc_matrix(adata_dict["group_2"]["view_gammapoisson"].X)
+    adata_dict["group_2"]["view_negativebinomial"].X = csc_matrix(adata_dict["group_2"]["view_negativebinomial"].X)
 
     return adata_dict
 
@@ -129,7 +129,7 @@ def test_imputation(rng, anndata_dict, usedask):
 
         nanidx = {}
         for group_name, group in anndata_dict.items():
-            del group["view_gammapoisson"]
+            del group["view_negativebinomial"]
             cnanidx = {}
             for view_name, view in group.items():
                 n_nans = rng.choice(int(0.05 * view.n_obs * view.n_vars))

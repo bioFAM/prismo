@@ -68,7 +68,7 @@ class Generative(PyroModule):
         if sample_means is not None:
             for group_name, gsample_means in sample_means.items():
                 for view_name, vsample_means in gsample_means.items():
-                    if self.likelihoods[view_name] == "GammaPoisson":
+                    if self.likelihoods[view_name] == "NegativeBinomial":
                         mean = torch.as_tensor(vsample_means)
                         mean[torch.isnan(mean)] = (
                             0  # if a sample is missing from a view, all features will be nan, and the mean of that sample will also be nan. This sample will be masked anyway
@@ -187,7 +187,7 @@ class Generative(PyroModule):
 
             if self.likelihoods[view_name] == "Normal":
                 self.dist_obs[view_name] = self._dist_obs_normal
-            elif self.likelihoods[view_name] == "GammaPoisson":
+            elif self.likelihoods[view_name] == "NegativeBinomial":
                 self.dist_obs[view_name] = self._dist_obs_gamma_poisson
             elif self.likelihoods[view_name] == "Bernoulli":
                 self.dist_obs[view_name] = self._dist_obs_bernoulli
@@ -342,7 +342,7 @@ class Generative(PyroModule):
                 self.sample_dict[f"w_{view_name}"] = self.pos_transform(self.sample_dict[f"w_{view_name}"])
 
             # sample dispersion parameter
-            if self.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
+            if self.likelihoods[view_name] in ["Normal", "NegativeBinomial"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
 
         # sample observations
@@ -781,7 +781,7 @@ class Variational(PyroModule):
 
         # dispersion variational parameters
         for view_name in self.generative.view_names:
-            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
+            if self.generative.likelihoods[view_name] in ["Normal", "NegativeBinomial"]:
                 deep_setattr(
                     self.locs,
                     f"dispersion_{view_name}",
@@ -985,7 +985,7 @@ class Variational(PyroModule):
         for view_name in self.generative.view_names:
             self.sample_dict[f"w_{view_name}"] = self.sample_weights[view_name](view_name, plates)
 
-            if self.generative.likelihoods[view_name] in ["Normal", "GammaPoisson"]:
+            if self.generative.likelihoods[view_name] in ["Normal", "NegativeBinomial"]:
                 self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
 
         return self.sample_dict

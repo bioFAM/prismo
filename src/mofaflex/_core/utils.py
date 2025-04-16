@@ -24,7 +24,7 @@ from .datasets import MofaFlexDataset
 
 WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
 FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
-Likelihood: TypeAlias = Literal["Normal", "GammaPoisson", "Bernoulli"]
+Likelihood: TypeAlias = Literal["Normal", "NegativeBinomial", "Bernoulli"]
 PossiblySparseArray: TypeAlias = NDArray | spmatrix | sparray
 
 MeanStd = namedtuple("MeanStd", ["mean", "std"])

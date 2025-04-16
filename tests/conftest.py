@@ -23,7 +23,7 @@ def random_array(rng):
                 arr = rng.normal(size=shape)
             case "Bernoulli":
                 arr = rng.binomial(1, 0.5, size=shape)
-            case "GammaPoisson":
+            case "NegativeBinomial":
                 arr = rng.negative_binomial(10, 0.9, size=shape)
         return arr
 

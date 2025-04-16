@@ -880,7 +880,7 @@ class MOFAFLEX:
         if likelihood == "Normal":
             ss_res = np.nansum(np.square(y_true - y_pred))
             ss_tot = np.nansum(np.square(y_true))  # data is centered
-        elif likelihood == "GammaPoisson":
+        elif likelihood == "NegativeBinomial":
             y_pred = np.logaddexp(0, y_pred)  # softplus
             ss_res = np.nansum(self._dV_square(y_true, y_pred, dispersions, 1))
 

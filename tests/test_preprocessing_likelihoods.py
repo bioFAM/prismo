@@ -5,7 +5,7 @@ from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 from mofaflex._core import preprocessing
 
 
-@pytest.fixture(scope="module", params=["Normal", "Bernoulli", "GammaPoisson"])
+@pytest.fixture(scope="module", params=["Normal", "Bernoulli", "NegativeBinomial"])
 def likelihood(request):
     return request.param
 

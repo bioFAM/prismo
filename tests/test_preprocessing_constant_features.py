@@ -112,7 +112,7 @@ def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, array
     return adata_dict, constgenes
 
 
-@pytest.mark.parametrize("likelihood", ["Normal", "GammaPoisson", "Bernoulli"])
+@pytest.mark.parametrize("likelihood", ["Normal", "NegativeBinomial", "Bernoulli"])
 @pytest.mark.parametrize("usedask", [False, True])
 @pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
 @pytest.mark.filterwarnings("ignore:invalid value encountered in (scalar )?divide:RuntimeWarning")

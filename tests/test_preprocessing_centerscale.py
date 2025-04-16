@@ -10,7 +10,7 @@ _sparse_arr = [csc_array, csc_matrix, csr_array, csr_matrix]
 
 _ngroups = 2
 _nviews = 3
-_lklhds = ["Normal", "Bernoulli", "GammaPoisson"]
+_lklhds = ["Normal", "Bernoulli", "NegativeBinomial"]
 
 
 def combination_from_idx(idx, n1, n2):

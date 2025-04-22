@@ -72,6 +72,43 @@ class CovariatesDataset(Dataset):
     __getitems__ = __getitem__
 
 
+class GuidingVarsDataset(Dataset):
+    def __init__(
+        self, data: MofaFlexDataset, obs_keys: dict[str, list[str]] | None = None
+    ):
+        super().__init__()
+
+        self.guiding_vars, self.guiding_vars_names = data.get_guiding_vars(obs_keys)
+        self.guiding_vars = {
+            group_name: {
+                guiding_vars_name: np.nanmean(np.stack(
+                    [group_guiding_vars[guiding_vars_name] for group_guiding_vars in self.guiding_vars[group_name].values()],
+                    axis=0
+                ))
+                for guiding_vars_name in self.guiding_vars_names[group_name]
+            }
+            for group_name in self.guiding_vars.keys()
+            }
+
+        self._n_samples = max(data.n_samples.values())
+        self._cast_to = data.cast_to
+
+    def __len__(self,):
+        return self._n_samples
+    
+    def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, NDArray]:
+        return {
+            group_name: {
+                guiding_var_name: self.guiding_vars[group_name][guiding_var_name][group_idx, :].astype(self._cast_to)
+                for guiding_var_name in self.guiding_vars_names.values()
+                if group_name in self.guiding_vars and guiding_var_name in self.guiding_vars[group_name]
+            }
+            for group_name, group_idx in idx.items()
+        }
+    
+    __getitems__ = __getitem__
+
+
 class StackDataset(StackDataset):
     def __getitems__(self, idx: list | dict):
         if isinstance(idx, list):

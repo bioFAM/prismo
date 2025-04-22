@@ -321,6 +321,19 @@ class MofaFlexDataset(Dataset, ABC):
         """
         pass
 
+    def get_guiding_vars(
+        self, obs_keys: dict[str, list[str]] | None = None
+    ) -> tuple[dict[str, dict[str, dict[str, NDArray]]], dict[str, list[str]]]:
+        """Get the guiding variables for each group.
+
+        Args:
+            obs_keys: Columns in `.obs` for each group containing the guiding variables.
+
+        Returns:
+            A tuple. The first element contains the guiding variables for each group, the second contains the guiding variable names for each group.
+        """
+        pass
+
     @abstractmethod
     def get_annotations(self, varm_key: dict[str, str]) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
         """Get the annotations for each view.

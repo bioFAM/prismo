@@ -101,8 +101,8 @@ class DataOptions(_Options):
     covariates_obsm_key: dict[str, str] | str | None = None
     """Key of .obsm attribute of each :class:`AnnData<anndata.AnnData>` object that contains covariate values."""
 
-    guiding_vars_obs_keys: dict[str, str] | str | None = None
-    """Keys of .obs attributes of each guiding variable in :class:`AnnData<anndata.AnnData>` objects."""
+    guiding_vars_obs_keys: dict[str, list[str]] | list[str] | str | None
+    """Keys of .obs attribute of each :class:`AnnData<anndata.AnnData>` object that contain guiding variable values."""
 
     use_obs: Literal["union", "intersection"] | None = "union"
     """How to align observations across views. Ignored if the data is not a nested dict of :class:`AnnData<anndata.AnnData>` objects."""
@@ -130,14 +130,14 @@ class ModelOptions(_Options):
     factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal"
     """Factor priors for each group (if dict) or for all groups (if str)."""
 
-    guiding_var_weight_prior: dict[str, str] | str | None = None
-    """Weight priors for each guiding variable (if dict) or for all guiding variables (if str)."""
-
-    guiding_var_likelihoods: dict[str, Likelihood] | Likelihood | None = None
-    """Likelihoods for each guiding variable (if dict) or for all guiding variables (if str)."""
-
     likelihoods: dict[str, Likelihood] | Likelihood | None = None
     """Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None."""
+
+    guiding_vars_weight_priors: dict[str, str] | None = None
+    """Weight prior for each guiding variable."""
+
+    guiding_vars_likelihoods: dict[str, str] | None = None
+    """Likelihood for each guiding variable."""
 
     nonnegative_weights: dict[str, bool] | bool = False
     """Non-negativity constraints for weights for each view (if dict) or for all views (if bool)."""
@@ -266,7 +266,6 @@ class MOFAFLEX:
         self._group_names = data.group_names
         self._sample_names = data.sample_names
         self._feature_names = data.feature_names
-        self._guiding_var_names = data.guiding_var_names
 
         self._fit(data, preprocessor)
 
@@ -279,7 +278,6 @@ class MOFAFLEX:
         preprocessor = preprocessing.MofaFlexPreprocessor(
             dataset=data,
             likelihoods=self._model_opts.likelihoods,
-            guiding_var_likelihoods=self._model_opts.guiding_var_likelihoods,
             nonnegative_weights=self._model_opts.nonnegative_weights,
             nonnegative_factors=self._model_opts.nonnegative_factors,
             scale_per_group=self._data_opts.scale_per_group,
@@ -358,11 +356,6 @@ class MOFAFLEX:
     def n_informed_factors(self) -> int:
         """Number of informed factors."""
         return self._n_informed_factors
-    
-    @property
-    def n_guided_factors(self) -> int:
-        """Number of guided factors."""
-        return self._n_guided_factors
 
     @property
     def factor_order(self) -> npt.NDArray[int]:
@@ -399,21 +392,6 @@ class MOFAFLEX:
     def covariates_names(self) -> dict[str, str | npt.NDArray[str | np.str_]]:
         """Covariate names for each group where they could be inferred from the input."""
         return self._covariates_names
-    
-    @property
-    def guiding_vars(self) -> dict[str, dict[str, npt.NDArray[np.float32]]]:
-        """Dictionary of Guiding variables for each group."""
-        return self._guiding_vars
-    
-    @property
-    def guiding_var_names(self) -> dict[str, dict[str, str]]:
-        """Guiding variable names for each group."""
-        return self._guiding_var_names
-    
-    @property
-    def guiding_var_factors(self) -> dict[str, npt.NDArray[np.int32]]:
-        """Guiding variable factors for all groups combined."""
-        return self._guiding_var_factors
 
     @property
     def gp_lengthscale(self) -> npt.NDArray[np.float32] | None:
@@ -566,8 +544,13 @@ class MOFAFLEX:
             self._gp_group_names = None
         return gp_warp_groups_order
 
-    def _setup_svi(self, prior_scales, init_tensor, covariates, feature_means, sample_means):
+    def _setup_guiding_vars(self, guiding_vars):
+        return
+
+    def _setup_svi(self, prior_scales, init_tensor, covariates, guiding_vars, feature_means, sample_means):
         gp_warp_groups_order = self._setup_gp(covariates=covariates)
+        self._setup_guiding_vars(guiding_vars=guiding_vars)
+
         generative = Generative(
             n_samples=self.n_samples,
             n_features=self.n_features,
@@ -576,6 +559,10 @@ class MOFAFLEX:
             factor_prior=self._model_opts.factor_prior,
             weight_prior=self._model_opts.weight_prior,
             likelihoods=self._model_opts.likelihoods,
+            guiding_vars_weight_prior=self._model_opts.guiding_vars_weight_priors,
+            guiding_vars_likelihoods=self._model_opts.guiding_vars_likelihoods,
+            guiding_vars_n_categories=self._guiding_vars_n_categories,
+            guiding_vars_factors=self._guiding_vars_factors,
             nonnegative_factors=self._model_opts.nonnegative_factors,
             nonnegative_weights=self._model_opts.nonnegative_weights,
             gp=self._gp,
@@ -603,7 +590,7 @@ class MOFAFLEX:
 
         return svi, variational, gp_warp_groups_order
 
-    def _post_fit(self, data, preprocessor, covariates, variational, train_loss_elbo):
+    def _post_fit(self, data, preprocessor, covariates, guiding_vars, variational, train_loss_elbo):
         self._weights = variational.get_weights()
         self._factors = variational.get_factors()
         self._dispersions = variational.get_dispersion()
@@ -612,6 +599,7 @@ class MOFAFLEX:
         self._sparse_factors_precisions = variational.get_sparse_factor_precisions()
         self._sparse_weights_precisions = variational.get_sparse_weight_precisions()
         self._covariates, self._covariates_names = (covariates.covariates, covariates.covariates_names)
+        self._guiding_vars, self._guiding_vars_names = (guiding_vars.guiding_vars, guiding_vars.guiding_vars_names)
         self._gps = self._get_gps(self._covariates)
         self._train_loss_elbo = np.asarray(train_loss_elbo)
 
@@ -765,6 +753,14 @@ class MOFAFLEX:
             if isinstance(val, str):
                 setattr(self._data_opts, opt_name, dict.fromkeys(keys, val))
 
+        if isinstance(self._data_opts.guiding_vars_obs_keys, str):
+            self._data_opts.guiding_vars_obs_keys = dict.fromkeys(data.group_names, [self._data_opts.guiding_vars_obs_keys])
+
+        if isinstance(self._data_opts.guiding_vars_obs_keys, list):
+            self._data_opts.guiding_vars_obs_keys = dict.fromkeys(data.group_names, self._data_opts.guiding_vars_obs_keys)
+
+        # TODO: guiding_vars_likelihoods and guiding_vars_weight_priors
+
         self._train_opts.device = self._setup_device(self._train_opts.device)
         if self._train_opts.batch_size is None or not (0 < self._train_opts.batch_size <= data.n_samples_total):
             self._train_opts.batch_size = data.n_samples_total
@@ -793,6 +789,7 @@ class MOFAFLEX:
                     scale[: self._n_dense_factors, :] = dense_scale
 
         covariates = CovariatesDataset(data, self._data_opts.covariates_obs_key, self._data_opts.covariates_obsm_key)
+
         svi, variational, gp_warp_groups_order = self._setup_svi(
             prior_scales, init_tensor, covariates.covariates, preprocessor.feature_means, preprocessor.sample_means
         )

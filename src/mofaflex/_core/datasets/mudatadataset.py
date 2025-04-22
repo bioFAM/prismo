@@ -374,6 +374,38 @@ class MuDataDataset(MofaFlexDataset):
             covariates[group_name] = ccovs
         return covariates, covariates_names
 
+    def get_guiding_vars(
+        self, obs_keys: dict[str, list[str]] | None = None
+    ) -> tuple[dict[str, dict[str, dict[str, NDArray]]], dict[str, list[str]]]:
+        guiding_vars, guiding_vars_names = {}, {}
+
+        if obs_keys is None:
+            obs_keys = {}
+
+        for group_name, group_idx in self._groups.items():
+            obskeys = obs_keys.get(group_name, None)
+            if obskeys is None:
+                continue
+
+            cguiding_vars = {}
+            subdata = self._data[group_idx, :]
+            for obskey in obskeys:
+                cguiding_vars[obskey] = {}
+                for modname, mod in subdata.mod.items():
+                    cguiding_var = None
+                    if obskey in mod.obs.columns:
+                        cguiding_var = self._align_array_to_samples(mod.obs[obskey].to_numpy(), modname, subdata)[:, None]
+                    if cguiding_var is not None:
+                        cguiding_vars[obskey][modname] = cguiding_var
+
+                if len(cguiding_vars[obskey]):
+                    guiding_vars_names[group_name].append(obskey)
+                else:
+                    _logger.warn(f"No guiding variable {obskey} data found in obs attribute for group {group_name}.")
+
+            guiding_vars[group_name] = cguiding_vars
+        return guiding_vars, guiding_vars_names
+
     def get_annotations(self, varm_key: dict[str, str]) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
         annotations, annotations_names = {}, {}
         if varm_key is not None:

@@ -244,7 +244,8 @@ def test_similarity_to_observations(rng, featurelist1, featuresets1):
 def test_find_similar_pairs(featurelist1):
     flist = featurelist1 + [
         FeatureSet(
-            list(featurelist1[0].features)[: int(0.9 * len(featurelist1[0]))] + list(featurelist1[3].features)[:4],
+            list(featurelist1[0].features)[: round(0.9 * len(featurelist1[0]))]
+            + list(featurelist1[3].features)[: round(0.1 * len(featurelist1[0]))],
             name="nonunique",
         )
     ]
@@ -278,7 +279,8 @@ def test_merge_pairs(featuresets1):
 def test_merge_similar(featurelist1):
     flist = featurelist1 + [
         FeatureSet(
-            list(featurelist1[0].features)[: int(0.9 * len(featurelist1[0]))] + list(featurelist1[3].features)[:4],
+            list(featurelist1[0].features)[: round(0.9 * len(featurelist1[0]))]
+            + list(featurelist1[3].features)[: round(0.1 * len(featurelist1[0]))],
             name="nonunique",
         )
     ]

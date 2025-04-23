@@ -37,7 +37,7 @@ needs_sphinx = "4.0"
 html_context = {
     "display_github": True,  # Integrate GitHub
     "github_user": "bioFAM",
-    "github_repo": project_name,
+    "github_repo": "mofaflex",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }

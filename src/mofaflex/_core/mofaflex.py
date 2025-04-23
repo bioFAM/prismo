@@ -872,7 +872,7 @@ class MOFAFLEX:
         sVa = np.sqrt(1 + dVa**2)
         return 1 / (16 * nu2**2) * (np.log((dVb + sVb) / (dVa + sVa)) + dVb * sVb - dVa * sVa) ** 2
 
-    def _r2_impl(self, y_true, factor, weights, dispersions, view_name):
+    def _r2_impl(self, y_true, factor, weights, dispersions, sample_means, view_name):
         # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
         y_pred = factor @ weights
         likelihood = self._model_opts.likelihoods[view_name]
@@ -881,7 +881,8 @@ class MOFAFLEX:
             ss_res = np.nansum(np.square(y_true - y_pred))
             ss_tot = np.nansum(np.square(y_true))  # data is centered
         elif likelihood == "NegativeBinomial":
-            y_pred = np.logaddexp(0, y_pred)  # softplus
+            y_pred = np.maximum(0, y_pred)  # ReLU
+            y_pred *= sample_means[..., None]
             ss_res = np.nansum(self._dV_square(y_true, y_pred, dispersions, 1))
 
             truemean = np.nanmean(y_true)
@@ -896,8 +897,8 @@ class MOFAFLEX:
 
         return max(0.0, 1.0 - ss_res / ss_tot)
 
-    def _r2(self, y_true, factors, weights, dispersions, view_name):
-        r2_full = self._r2_impl(y_true, factors, weights, dispersions, view_name)
+    def _r2(self, y_true, factors, weights, dispersions, sample_means, view_name):
+        r2_full = self._r2_impl(y_true, factors, weights, dispersions, sample_means, view_name)
         if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
             _logger.warning(
                 f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
@@ -907,7 +908,11 @@ class MOFAFLEX:
         r2s = []
         if self._model_opts.likelihoods[view_name] == "Normal":
             for k in range(factors.shape[1]):
-                r2s.append(self._r2_impl(y_true, factors[:, k, None], weights[None, k, :], dispersions, view_name))
+                r2s.append(
+                    self._r2_impl(
+                        y_true, factors[:, k, None], weights[None, k, :], dispersions, sample_means, view_name
+                    )
+                )
         else:
             # For models with a link function that is not the identity, such as Bernoulli, calculating R2 of single
             # factors leads to erroneous results, in the case of Bernoulli it can lead to every factor having negative
@@ -919,7 +924,7 @@ class MOFAFLEX:
             for k in range(factors.shape[1]):
                 cfactors = np.delete(factors, k, 1)
                 cweights = np.delete(weights, k, 0)
-                cr2 = self._r2_impl(y_true, cfactors, cweights, dispersions, view_name)
+                cr2 = self._r2_impl(y_true, cfactors, cweights, dispersions, sample_means, view_name)
                 r2s.append(max(0.0, r2_full - cr2))
         return r2_full, r2s
 
@@ -941,13 +946,22 @@ class MOFAFLEX:
                 dispersions = align_global_array_to_local(dispersions, group_name, view_name, align_to="features")  # noqa F821
             try:
                 return self._r2(
-                    cdata,
-                    align_global_array_to_local(factors[group_name], group_name, view_name, align_to="samples", axis=0)[  # noqa F821
-                        sample_idx, :
-                    ],
-                    align_global_array_to_local(weights[view_name], group_name, view_name, align_to="features", axis=1),  # noqa F821
-                    dispersions,
-                    view_name,
+                    y_true=cdata,
+                    factors=align_global_array_to_local(  # noqa F821
+                        factors[group_name], group_name, view_name, align_to="samples", axis=0
+                    )[sample_idx, :],
+                    weights=align_global_array_to_local(  # noqa F821
+                        weights[view_name], group_name, view_name, align_to="features", axis=1
+                    ),
+                    dispersions=dispersions,
+                    sample_means=align_global_array_to_local(  # noqa F821
+                        data.preprocessor.sample_means[group_name][view_name],
+                        group_name,
+                        view_name,
+                        align_to="samples",
+                        axis=0,
+                    )[sample_idx],
+                    view_name=view_name,
                 )
             except NotImplementedError:
                 _logger.warning(

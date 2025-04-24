@@ -1,8 +1,10 @@
 # integration tests: only testing if the code runs without errors
 import warnings
 
+import anndata as ad
 import numpy as np
 import pytest
+from packaging.version import Version
 from scipy.sparse import SparseEfficiencyWarning, csc_array, csc_matrix, csr_array, csr_matrix, issparse
 
 from mofaflex import MOFAFLEX, DataOptions, ModelOptions, SmoothOptions, TrainingOptions, settings
@@ -19,7 +21,7 @@ def anndata_dict(random_adata, rng):
     group_idxs = []
     for adata in big_adatas:
         permuted = rng.permutation(range(adata.n_obs))
-        group_size = rng.choice(adata.n_obs)
+        group_size = rng.choice(np.arange(3, adata.n_obs - 3))
         group_idxs.append((permuted[:group_size], permuted[group_size:]))
 
     adata_dict = {"group_1": {}, "group_2": {}}
@@ -44,7 +46,6 @@ def anndata_dict(random_adata, rng):
         ("scale_per_group", False),
         ("scale_per_group", True),
         ("annotations_varm_key", None),
-        ("annotations_varm_key", "annot"),
         ("covariates_obs_key", None),
         ("covariates_obs_key", "covar"),
         ("covariates_obsm_key", None),
@@ -77,6 +78,11 @@ def anndata_dict(random_adata, rng):
     ],
 )
 @pytest.mark.parametrize("usedask", [False, True])
+@pytest.mark.xfail(
+    Version(ad.__version__) >= Version("0.12.0rc1") and Version(ad.__version__) < Version("0.12.0"),
+    reason="anndata bug: https://github.com/scverse/anndata/pull/1975",
+    strict=False,
+)
 def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
     opts = (
         DataOptions(plot_data_overview=False, annotations_varm_key="annot"),
@@ -109,6 +115,11 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
     ],
 )
 @pytest.mark.parametrize("usedask", [False, True])
+@pytest.mark.xfail(
+    Version(ad.__version__) >= Version("0.12.0rc1") and Version(ad.__version__) < Version("0.12.0"),
+    reason="anndata bug: https://github.com/scverse/anndata/pull/1975",
+    strict=False,
+)
 def test_integration_gp(anndata_dict, attrname, attrvalue, usedask):
     opts = (
         DataOptions(covariates_obs_key="covar", plot_data_overview=False),
@@ -123,6 +134,11 @@ def test_integration_gp(anndata_dict, attrname, attrvalue, usedask):
 
 
 @pytest.mark.parametrize("usedask", [False, True])
+@pytest.mark.xfail(
+    Version(ad.__version__) >= Version("0.12.0rc1") and Version(ad.__version__) < Version("0.12.0"),
+    reason="anndata bug: https://github.com/scverse/anndata/pull/1975",
+    strict=False,
+)
 def test_imputation(rng, anndata_dict, usedask):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=SparseEfficiencyWarning)

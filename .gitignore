@@ -5,6 +5,10 @@
 buck-out/
 .ipynb_checkpoints
 
+# IDEs
+/.idea/
+/.vscode/
+
 # Compiled files
 .venv/
 __pycache__/
@@ -21,10 +25,6 @@ __pycache__/
 # docs
 /docs/generated/
 /docs/_build/
-
-# IDEs
-/.idea/
-/.vscode/
 
 # Files
 *.pkl

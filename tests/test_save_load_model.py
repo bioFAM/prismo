@@ -2,9 +2,10 @@ import os
 import tempfile
 from collections.abc import Mapping, Sequence
 
+import anndata as ad
 import numpy as np
 import pytest
-from anndata import AnnData
+from packaging.version import Version
 
 from mofaflex import MOFAFLEX, DataOptions, ModelOptions, TrainingOptions
 
@@ -41,11 +42,16 @@ def setup_teardown():
     os.unlink(temp_file[1])
 
 
+@pytest.mark.xfail(
+    Version(ad.__version__) >= Version("0.12.0rc1") and Version(ad.__version__) < Version("0.12.0"),
+    reason="anndata bug: https://github.com/scverse/anndata/pull/1975",
+    strict=False,
+)
 def test_save_load_model(setup_teardown):
     temp_file = setup_teardown
 
     # Prepare dummy data
-    data = {"group1": {"view1": AnnData(X=np.random.rand(3, 10)), "view2": AnnData(X=np.random.rand(3, 5))}}
+    data = {"group1": {"view1": ad.AnnData(X=np.random.rand(3, 10)), "view2": ad.AnnData(X=np.random.rand(3, 5))}}
 
     # Create and train the MOFA-FLEX model for a single epoch
     model = MOFAFLEX(

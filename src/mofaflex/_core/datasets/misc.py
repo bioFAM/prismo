@@ -79,16 +79,11 @@ class GuidingVarsDataset(Dataset):
         super().__init__()
 
         self.guiding_vars, self.guiding_vars_names = data.get_guiding_vars(obs_keys)
-        self.guiding_vars = {
-            group_name: {
-                guiding_vars_name: np.nanmean(np.stack(
-                    [group_guiding_vars[guiding_vars_name] for group_guiding_vars in self.guiding_vars[group_name].values()],
-                    axis=0
-                ))
-                for guiding_vars_name in self.guiding_vars_names[group_name]
-            }
-            for group_name in self.guiding_vars.keys()
-            }
+        for group_name in self.guiding_vars.keys():
+            group_guiding_vars_names = self.guiding_vars_names[group_name]
+            for guiding_var_name in group_guiding_vars_names:
+                self.guiding_vars[group_name][guiding_var_name] = np.nanmean(np.stack(tuple(
+                    self.guiding_vars[group_name][guiding_var_name].values()), axis=0), axis=0)
 
         self._n_samples = max(data.n_samples.values())
         self._cast_to = data.cast_to
@@ -97,14 +92,15 @@ class GuidingVarsDataset(Dataset):
         return self._n_samples
     
     def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, NDArray]:
-        return {
-            group_name: {
-                guiding_var_name: self.guiding_vars[group_name][guiding_var_name][group_idx, :].astype(self._cast_to)
-                for guiding_var_name in self.guiding_vars_names.values()
-                if group_name in self.guiding_vars and guiding_var_name in self.guiding_vars[group_name]
-            }
-            for group_name, group_idx in idx.items()
-        }
+        return_dict = {}
+        for group_name, group_idx in idx.items():
+            for guiding_var_name in self.guiding_vars_names[group_name]:
+                if group_name in self.guiding_vars and guiding_var_name in self.guiding_vars[group_name]:
+                    return_dict[group_name] = {
+                        guiding_var_name: self.guiding_vars[group_name][guiding_var_name][group_idx, :].astype(self._cast_to)
+                    }
+
+        return return_dict
     
     __getitems__ = __getitem__
 

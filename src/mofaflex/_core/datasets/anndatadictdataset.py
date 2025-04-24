@@ -422,7 +422,6 @@ class AnnDataDictDataset(MofaFlexDataset):
             guiding_vars[group_name] = cguiding_vars
         return guiding_vars, guiding_vars_names
 
-
     def get_annotations(self, varm_key: dict[str, str]) -> tuple[dict[str, NDArray], dict[str, NDArray]]:
         annotations, annotations_names = {}, {}
         if varm_key is not None:

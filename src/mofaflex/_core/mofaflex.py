@@ -688,7 +688,16 @@ class MOFAFLEX:
             for group_name, n in self.n_samples.items():
                 # scale factor values from -1 to 1 (per factor)
                 q = init_tensor[group_name]["loc"]
-                q = 2.0 * (q - torch.min(q, dim=0)[0]) / (torch.max(q, dim=0)[0] - torch.min(q, dim=0)[0]) - 1
+
+                if q.shape[0] > 1:  # min and max are not defined for dimensions of size 1
+                    q = (
+                        2.0
+                        * (q - torch.min(q, dim=0).values)
+                        / (torch.max(q, dim=0).values - torch.min(q, dim=0).values)
+                        - 1
+                    )
+                else:
+                    q = 2.0 * (q - torch.min(q)) / (torch.max(q) - torch.min(q)) - 1
 
                 # Add artifical dimension at dimension -2 for broadcasting
                 init_tensor[group_name]["loc"] = q.T.unsqueeze(-2).float()

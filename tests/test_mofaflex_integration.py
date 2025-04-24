@@ -1,5 +1,6 @@
 # integration tests: only testing if the code runs without errors
 import warnings
+from functools import reduce
 
 import anndata as ad
 import numpy as np
@@ -21,7 +22,7 @@ def anndata_dict(random_adata, rng):
     group_idxs = []
     for adata in big_adatas:
         permuted = rng.permutation(range(adata.n_obs))
-        group_size = rng.choice(np.arange(3, adata.n_obs - 3))
+        group_size = rng.choice(np.arange(int(0.2 * adata.n_obs), int(0.8 * adata.n_obs)))
         group_idxs.append((permuted[:group_size], permuted[group_size:]))
 
     adata_dict = {"group_1": {}, "group_2": {}}
@@ -102,6 +103,34 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
         assert model.n_informed_factors > 0
     else:
         assert model.n_factors == model.n_dense_factors == 5
+
+
+@pytest.mark.parametrize("usedask", [False, True])
+def test_integration_single_obs(anndata_dict, usedask):
+    intersection = reduce(lambda x, y: x.intersection(y), (view.obs_names for view in anndata_dict["group_2"].values()))
+    anndata_dict["group_2"]["view_bernoulli"] = anndata_dict["group_2"]["view_bernoulli"][intersection[0]]
+    with settings.override(use_dask=usedask):
+        MOFAFLEX(
+            anndata_dict,
+            DataOptions(plot_data_overview=False, use_obs="intersection"),
+            ModelOptions(n_factors=5, factor_prior="SnS", weight_prior="SnS"),
+            TrainingOptions(max_epochs=2, seed=42, save_path=False),
+        )
+
+
+@pytest.mark.parametrize("usedask", [False, True])
+def test_integration_single_var(anndata_dict, usedask):
+    intersection = reduce(
+        lambda x, y: x.intersection(y), (group["view_bernoulli"].var_names for group in anndata_dict.values())
+    )
+    anndata_dict["group_2"]["view_bernoulli"] = anndata_dict["group_2"]["view_bernoulli"][:, intersection[0]]
+    with settings.override(use_dask=usedask):
+        MOFAFLEX(
+            anndata_dict,
+            DataOptions(plot_data_overview=False, use_var="intersection"),
+            ModelOptions(n_factors=5, factor_prior="SnS", weight_prior="SnS"),
+            TrainingOptions(max_epochs=2, seed=42, save_path=False),
+        )
 
 
 @pytest.mark.parametrize(

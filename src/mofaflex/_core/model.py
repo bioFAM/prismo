@@ -1026,7 +1026,7 @@ class Variational(PyroModule):
             if self.generative.nonnegative_factors[group_name]:
                 factors.mean[group_name] = self.generative.pos_transform(factors.mean[group_name])
             for lsidx in range(2):
-                factors[lsidx][group_name] = factors[lsidx][group_name].cpu().numpy().squeeze()
+                factors[lsidx][group_name] = factors[lsidx][group_name].cpu().numpy().squeeze(1)
 
         return factors
 
@@ -1036,8 +1036,8 @@ class Variational(PyroModule):
         for group_name in self.generative.group_names:
             if self.generative.factor_prior[group_name] == "SnS":
                 d = dist.Gamma(*self._get_shape_and_rate(f"alpha_z_{group_name}"))
-                alphas.mean[group_name] = d.mean.cpu().numpy().squeeze()
-                alphas.std[group_name] = d.stddev.cpu().numpy().squeeze()
+                alphas.mean[group_name] = d.mean.cpu().numpy().squeeze(1)
+                alphas.std[group_name] = d.stddev.cpu().numpy().squeeze(1)
         return alphas
 
     @torch.inference_mode()
@@ -1045,7 +1045,7 @@ class Variational(PyroModule):
         probs = {}
         for group_name in self.generative.group_names:
             if self.generative.factor_prior[group_name] == "SnS":
-                probs[group_name] = self._get_prob(f"s_z_{group_name}").cpu().numpy().squeeze()
+                probs[group_name] = self._get_prob(f"s_z_{group_name}").cpu().numpy().squeeze(1)
         return probs
 
     @torch.inference_mode()
@@ -1059,7 +1059,7 @@ class Variational(PyroModule):
             if self.generative.nonnegative_weights[view_name]:
                 weights.mean[view_name] = self.generative.pos_transform(weights.mean[view_name])
             for lsidx in range(2):
-                weights[lsidx][view_name] = weights[lsidx][view_name].cpu().numpy().squeeze()
+                weights[lsidx][view_name] = weights[lsidx][view_name].cpu().numpy().squeeze(-1)
 
         return weights
 
@@ -1069,8 +1069,8 @@ class Variational(PyroModule):
         for view_name in self.generative.view_names:
             if self.generative.weight_prior[view_name] == "SnS":
                 d = dist.Gamma(*self._get_shape_and_rate(f"alpha_w_{view_name}"))
-                alphas.mean[view_name] = d.mean.cpu().numpy().squeeze()
-                alphas.std[view_name] = d.stddev.cpu().numpy().squeeze()
+                alphas.mean[view_name] = d.mean.cpu().numpy().squeeze(-1)
+                alphas.std[view_name] = d.stddev.cpu().numpy().squeeze(-1)
         return alphas
 
     @torch.inference_mode()
@@ -1078,7 +1078,7 @@ class Variational(PyroModule):
         probs = {}
         for view_name in self.generative.view_names:
             if self.generative.weight_prior[view_name] == "SnS":
-                probs[view_name] = self._get_prob(f"s_w_{view_name}").cpu().numpy().squeeze()
+                probs[view_name] = self._get_prob(f"s_w_{view_name}").cpu().numpy().squeeze(-1)
         return probs
 
     @torch.inference_mode()
@@ -1092,6 +1092,6 @@ class Variational(PyroModule):
                 continue
             for lsidx, val in enumerate(disp):
                 # TODO: use actual mean and std of LogNormal
-                dispersion[lsidx][view_name] = val.cpu().numpy().squeeze()
+                dispersion[lsidx][view_name] = val.cpu().numpy().squeeze(-1)
 
         return dispersion

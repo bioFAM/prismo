@@ -72,39 +72,6 @@ class CovariatesDataset(Dataset):
     __getitems__ = __getitem__
 
 
-class GuidingVarsDataset(Dataset):
-    def __init__(
-        self, data: MofaFlexDataset, obs_keys: dict[str, list[str]] | None = None
-    ):
-        super().__init__()
-
-        self.guiding_vars, self.guiding_vars_names = data.get_guiding_vars(obs_keys)
-        for group_name in self.guiding_vars.keys():
-            group_guiding_vars_names = self.guiding_vars_names[group_name]
-            for guiding_var_name in group_guiding_vars_names:
-                self.guiding_vars[group_name][guiding_var_name] = np.nanmean(np.stack(tuple(
-                    self.guiding_vars[group_name][guiding_var_name].values()), axis=0), axis=0)
-
-        self._n_samples = max(data.n_samples.values())
-        self._cast_to = data.cast_to
-
-    def __len__(self,):
-        return self._n_samples
-    
-    def __getitem__(self, idx: dict[str, int | list[int]]) -> dict[str, NDArray]:
-        return_dict = {}
-        for group_name, group_idx in idx.items():
-            for guiding_var_name in self.guiding_vars_names[group_name]:
-                if group_name in self.guiding_vars and guiding_var_name in self.guiding_vars[group_name]:
-                    return_dict[group_name] = {
-                        guiding_var_name: self.guiding_vars[group_name][guiding_var_name][group_idx, :].astype(self._cast_to)
-                    }
-
-        return return_dict
-    
-    __getitems__ = __getitem__
-
-
 class StackDataset(StackDataset):
     def __getitems__(self, idx: list | dict):
         if isinstance(idx, list):
@@ -121,3 +88,16 @@ class StackDataset(StackDataset):
             raise ValueError("Expected nested dataset to have a `__getitems__` method.")
 
         return dataset.__getitems__(idx)
+
+
+class GuidingVarsDataset(StackDataset):
+    def __init__(
+        self, data: MofaFlexDataset, guiding_vars_factors: dict[str, dict[str, str]] | None = None
+    ):
+        datasets = {}
+        for guiding_var_factor in guiding_vars_factors:
+            datasets[guiding_var_factor] = CovariatesDataset(
+                data, obs_key=guiding_vars_factors[guiding_var_factor]
+            )
+
+        super().__init__(**datasets)

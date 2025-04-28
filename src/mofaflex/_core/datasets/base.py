@@ -14,6 +14,7 @@ from torch.utils.data import Dataset
 
 T = TypeVar("T")
 ApplyCallable: TypeAlias = Callable[Concatenate[AnnData, str, str, ...], T]
+ApplyToCallable: TypeAlias = Callable[Concatenate[AnnData, str, ...], T]
 
 
 class Preprocessor:
@@ -378,7 +379,8 @@ class MofaFlexDataset(Dataset, ABC):
                 in the group or for the view, respectively. Ignored if `by_group=False`.
             **kwargs: Additional arguments to pass to `func`.
 
-        Returns: Nested dict with the return value of `func` for each group and view.
+        Returns:
+            Nested dict with the return value of `func` for each group and view.
         """
         if not by_group and not by_view:
             raise NotImplementedError("At least one of `by_group` and `by_view` must be `True`.")
@@ -431,6 +433,92 @@ class MofaFlexDataset(Dataset, ABC):
                 if by_group
                 else self._apply_by_view(func, ckwargs, **kwargs)
             )
+
+    def apply_to_view(
+        self, view_name: str, func: ApplyToCallable[T], group_kwargs: dict[str, dict[str, Any]] | None = None, **kwargs
+    ) -> dict[str, T]:
+        """Apply a function to each group for a given view.
+
+        If `func` is a function, it will have four functions injected into its global namespace: `align_global_array_to_local`,
+        `align_local_array_to_global`, `map_global_indices_to_local`, and `map_local_indices_to_global`. These are methods of the
+        given MofaFlexDataset instance, see their documentation for how to use them. If `func` is an instance of a class, these four
+        functions will be added to its instance attributes.
+
+        The `AnnData` object passed to `func` will **not** have its samples and features aligned to the global samples/features,
+        respectively. It is up to `func` to align when necessary using the provided functions.
+
+        The data contained in the passed AnnData object may be of any type that AnnData supports, not necessarily plain NumPy arrays.
+        It is recommended to use the array-api-compat package to properly handle different data types.
+
+        Args:
+            view_name: The name of the view to apply `func` to.
+            func: The function to apply. The function will be passed an `AnnData` object and the group name as the first two arguments.
+            group_kwargs: Additional arguments to pass to `func` for each group. The outer dict contains the argument name as key, the inner
+                dict contains the value of that argument for each group. If the inner dict is missing a group, `None` will be used as the
+                value of that argument for the group.
+            **kwargs: Additional arguments to pass to `func`.
+
+        Returns:
+            dict with the return value of `func` for each group.
+        """
+        if group_kwargs is None:
+            group_kwargs = {}
+
+        func = self._inject_alignment_functions(func)
+        ckwargs = defaultdict(lambda: defaultdict(dict))
+        for argname, gkwargs in group_kwargs.items():
+            for group_name in self.group_names:
+                ckwargs[group_name][argname] = gkwargs.get(group_name, None)
+        return self._apply_to_view(view_name, func, ckwargs, **kwargs)
+
+    def apply_to_group(
+        self, group_name: str, func: ApplyToCallable[T], view_kwargs: dict[str, dict[str, Any]] | None = None, **kwargs
+    ) -> dict[str, T]:
+        """Apply a function to each view for a given group.
+
+        If `func` is a function, it will have four functions injected into its global namespace: `align_global_array_to_local`,
+        `align_local_array_to_global`, `map_global_indices_to_local`, and `map_local_indices_to_global`. These are methods of the
+        given MofaFlexDataset instance, see their documentation for how to use them. If `func` is an instance of a class, these four
+        functions will be added to its instance attributes.
+
+        The `AnnData` object passed to `func` will **not** have its samples and features aligned to the global samples/features,
+        respectively. It is up to `func` to align when necessary using the provided functions.
+
+        The data contained in the passed AnnData object may be of any type that AnnData supports, not necessarily plain NumPy arrays.
+        It is recommended to use the array-api-compat package to properly handle different data types.
+
+        Args:
+            group_name: The name of the group to apply `func` to.
+            func: The function to apply. The function will be passed an `AnnData` object and the view name as the first two arguments.
+            view_kwargs: Additional arguments to pass to `func` for each view. The outer dict contains the argument name as key, the inner
+                dict contains the value of that argument for each view. If the inner dict is missing a view, `None` will be used as the
+                value of that argument for the view.
+            **kwargs: Additional arguments to pass to `func`.
+
+        Returns:
+            dict with the return value of `func` for each view.
+        """
+        if view_kwargs is None:
+            view_kwargs = {}
+
+        func = self._inject_alignment_functions(func)
+        ckwargs = defaultdict(lambda: defaultdict(dict))
+        for argname, vkwargs in view_kwargs.items():
+            for view_name in self.view_names:
+                ckwargs[view_name][argname] = vkwargs.get(view_name, None)
+        return self._apply_to_group(group_name, func, ckwargs, **kwargs)
+
+    @abstractmethod
+    def _apply_to_view(
+        self, view_name: str, func: ApplyToCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs
+    ) -> dict[str, T]:
+        pass
+
+    @abstractmethod
+    def _apply_to_group(
+        self, group_name: str, func: ApplyToCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs
+    ) -> dict[str, T]:
+        pass
 
     @abstractmethod
     def _apply_by_group(self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:

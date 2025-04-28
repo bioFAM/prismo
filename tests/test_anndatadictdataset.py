@@ -243,6 +243,41 @@ def test_apply_by_group(anndata_dict, dataset, usedask):
         dataset.apply(applyfun, by_view=False)
 
 
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_to_view(anndata_dict, dataset, usedask):
+    def applyfun(adata, group_name, ref_adata, ref_sample_names, ref_feature_names, _view_name):
+        assert np.all(adata.obs_names == ref_adata[group_name][_view_name].obs_names.intersection(ref_sample_names))
+        assert np.all(adata.var_names == ref_adata[group_name][_view_name].var_names.intersection(ref_feature_names))
+
+    with settings.override(use_dask=usedask):
+        for view_name in dataset.view_names:
+            dataset.apply_to_view(
+                view_name,
+                applyfun,
+                group_kwargs={"ref_sample_names": dataset.sample_names},
+                ref_adata=anndata_dict,
+                ref_feature_names=dataset.feature_names[view_name],
+                _view_name=view_name,
+            )
+
+
+@pytest.mark.parametrize("usedask", [False, True])
+def test_apply_to_group(anndata_dict, dataset, usedask):
+    def applyfun(adata, view_name, ref_adata, ref_sample_names, ref_feature_names):
+        assert np.all(adata.obs_names == ref_adata[view_name].obs_names.intersection(ref_sample_names))
+        assert np.all(adata.var_names == ref_adata[view_name].var_names.intersection(ref_feature_names))
+
+    with settings.override(use_dask=usedask):
+        for group_name in dataset.group_names:
+            dataset.apply_to_group(
+                group_name,
+                applyfun,
+                view_kwargs={"ref_feature_names": dataset.feature_names},
+                ref_adata=anndata_dict[group_name],
+                ref_sample_names=dataset.sample_names[group_name],
+            )
+
+
 def test_get_covariates_from_obs(anndata_dict, dataset):
     covars, covar_names = dataset.get_covariates(obs_key=dict.fromkeys(dataset.group_names, "covar"))
 

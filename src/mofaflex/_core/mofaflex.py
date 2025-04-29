@@ -18,7 +18,6 @@ from pyro.infer import SVI, TraceMeanField_ELBO
 from pyro.optim import ClippedAdam
 from scipy import stats
 from scipy.sparse import issparse
-from scipy.special import expit
 from sklearn.decomposition import NMF, PCA
 from torch.utils.data import DataLoader, default_convert
 from torch.utils.data._utils.collate import collate  # this is documented, so presumably part of the public API
@@ -29,10 +28,11 @@ from .. import pl
 from . import gp, preprocessing
 from .datasets import CovariatesDataset, MofaFlexBatchSampler, MofaFlexDataset, StackDataset
 from .io import MOFACompatOption, load_model, save_model
+from .likelihoods import Likelihood, LikelihoodType
 from .model import Generative, Variational
 from .pcgse import pcgse_test
 from .training import EarlyStopper
-from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior, impute, sample_all_data_as_one_batch
+from .utils import FactorPrior, MeanStd, WeightPrior, impute, sample_all_data_as_one_batch
 
 _logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class ModelOptions(_Options):
     factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal"
     """Factor priors for each group (if dict) or for all groups (if str)."""
 
-    likelihoods: dict[str, Likelihood] | Likelihood | None = None
+    likelihoods: dict[str, LikelihoodType] | LikelihoodType | None = None
     """Data likelihoods for each view (if dict) or for all views (if str). Inferred automatically if None."""
 
     nonnegative_weights: dict[str, bool] | bool = False
@@ -414,14 +414,14 @@ class MOFAFLEX:
         if (
             not isinstance(self._model_opts.likelihoods, dict | str | None)
             or isinstance(self._model_opts.likelihoods, str)
-            and self._model_opts.likelihoods not in get_args(Likelihood)
+            and self._model_opts.likelihoods not in get_args(LikelihoodType)
             or isinstance(self._model_opts.likelihoods, dict)
-            and not all(val in get_args(Likelihood) for val in self._model_opts.likelihoods.values())
+            and not all(val in get_args(LikelihoodType) for val in self._model_opts.likelihoods.values())
         ):
             raise ValueError("Likelihoods must be a dictionary or a string containing a valid likelihood name.")
 
         if self._model_opts.likelihoods is None:
-            self._model_opts.likelihoods = data.apply(preprocessing.infer_likelihood, by_group=False)
+            self._model_opts.likelihoods = data.apply(Likelihood.infer, by_group=False)
             msg = []
             for view_name, likelihood in self._model_opts.likelihoods.items():
                 msg.append(f"{view_name}: {likelihood}")
@@ -430,12 +430,15 @@ class MOFAFLEX:
             if isinstance(self._model_opts.likelihoods, str):
                 self._model_opts.likelihoods = dict.fromkeys(data.view_names, self._model_opts.likelihoods)
 
-            if isinstance(self._model_opts.likelihoods, dict):
-                data.apply(
-                    preprocessing.validate_likelihood,
-                    view_kwargs={"likelihood": self._model_opts.likelihoods},
-                    by_group=False,
-                )
+            self._model_opts.likelihoods = {
+                view: Likelihood.get(likelihood) for view, likelihood in self._model_opts.likelihoods.items()
+            }
+
+            data.apply(
+                lambda *args, likelihood, **kwargs: likelihood.validate(*args, **kwargs),
+                view_kwargs={"likelihood": self._model_opts.likelihoods},
+                by_group=False,
+            )
 
     def _setup_annotations(self, data):
         annotations = None
@@ -553,10 +556,10 @@ class MOFAFLEX:
             n_samples=self.n_samples,
             n_features=self.n_features,
             n_factors=self._model_opts.n_factors,
+            likelihoods=self._model_opts.likelihoods,
             prior_scales=prior_scales,
             factor_prior=self._model_opts.factor_prior,
             weight_prior=self._model_opts.weight_prior,
-            likelihoods=self._model_opts.likelihoods,
             nonnegative_factors=self._model_opts.nonnegative_factors,
             nonnegative_weights=self._model_opts.nonnegative_weights,
             gp=self._gp,
@@ -869,74 +872,6 @@ class MOFAFLEX:
             ]
         self._gp.update_inducing_points(covariates.covariates.values())
 
-    @staticmethod
-    def _Vprime(mu, nu2, nu1):
-        return 2 * nu2 * mu + nu1
-
-    @classmethod
-    def _dV_square(cls, a, b, nu2, nu1):
-        dVb = cls._Vprime(b, nu2, nu1)
-        dVa = cls._Vprime(a, nu2, nu1)
-        sVb = np.sqrt(1 + dVb**2)
-        sVa = np.sqrt(1 + dVa**2)
-        return 1 / (16 * nu2**2) * (np.log((dVb + sVb) / (dVa + sVa)) + dVb * sVb - dVa * sVa) ** 2
-
-    def _r2_impl(self, y_true, factor, weights, dispersions, sample_means, view_name):
-        # this is based on Zhang: A Coefficient of Determination for Generalized Linear Models (2017)
-        y_pred = factor @ weights
-        likelihood = self._model_opts.likelihoods[view_name]
-
-        if likelihood == "Normal":
-            ss_res = np.nansum(np.square(y_true - y_pred))
-            ss_tot = np.nansum(np.square(y_true))  # data is centered
-        elif likelihood == "NegativeBinomial":
-            y_pred = np.maximum(0, y_pred)  # ReLU
-            y_pred *= sample_means[..., None]
-            ss_res = np.nansum(self._dV_square(y_true, y_pred, dispersions, 1))
-
-            truemean = np.nanmean(y_true)
-            nu2 = (np.nanvar(y_true) - truemean) / truemean**2  # method of moments estimator
-            ss_tot = np.nansum(self._dV_square(y_true, truemean, nu2, 1))
-        elif likelihood == "Bernoulli":
-            y_pred = expit(y_pred)
-            ss_res = np.nansum(self._dV_square(y_true, y_pred, -1, 1))
-            ss_tot = np.nansum(self._dV_square(y_true, np.nanmean(y_true), -1, 1))
-        else:
-            raise NotImplementedError(likelihood)
-
-        return max(0.0, 1.0 - ss_res / ss_tot)
-
-    def _r2(self, y_true, factors, weights, dispersions, sample_means, view_name):
-        r2_full = self._r2_impl(y_true, factors, weights, dispersions, sample_means, view_name)
-        if r2_full < 1e-8:  # TODO: have some global definition/setting of EPS
-            _logger.warning(
-                f"R2 for view {view_name} is 0. Increase the number of factors and/or the number of training epochs."
-            )
-            return r2_full, [0.0] * factors.shape[1]
-
-        r2s = []
-        if self._model_opts.likelihoods[view_name] == "Normal":
-            for k in range(factors.shape[1]):
-                r2s.append(
-                    self._r2_impl(
-                        y_true, factors[:, k, None], weights[None, k, :], dispersions, sample_means, view_name
-                    )
-                )
-        else:
-            # For models with a link function that is not the identity, such as Bernoulli, calculating R2 of single
-            # factors leads to erroneous results, in the case of Bernoulli it can lead to every factor having negative
-            # R2 values. This is because an unimportant factor will not contribute much to the full model, but the zero
-            # prediction of this single factor will be mapped by the link function to a non-zero value, which can result
-            # in a worse prediction than the intercept-only null model. As a workaround, we therefore calculate R2 of
-            # a model with all factors except for one and subtract it from the R2 value of the full model to arrive at
-            # the R2 of the current factor.
-            for k in range(factors.shape[1]):
-                cfactors = np.delete(factors, k, 1)
-                cweights = np.delete(weights, k, 0)
-                cr2 = self._r2_impl(y_true, cfactors, cweights, dispersions, sample_means, view_name)
-                r2s.append(max(0.0, r2_full - cr2))
-        return r2_full, r2s
-
     def _sort_factors(self, data, weights, factors, subsample=1000):
         # Loop over all groups
         dfs_factors, dfs_full = {}, {}
@@ -954,7 +889,8 @@ class MOFAFLEX:
             if dispersions is not None:
                 dispersions = align_global_array_to_local(dispersions, group_name, view_name, align_to="features")  # noqa F821
             try:
-                return self._r2(
+                return self._model_opts.likelihoods[view_name].r2(
+                    view_name,
                     y_true=cdata,
                     factors=align_global_array_to_local(  # noqa F821
                         factors[group_name], group_name, view_name, align_to="samples", axis=0
@@ -970,7 +906,6 @@ class MOFAFLEX:
                         align_to="samples",
                         axis=0,
                     )[sample_idx],
-                    view_name=view_name,
                 )
             except NotImplementedError:
                 _logger.warning(
@@ -1349,6 +1284,9 @@ class MOFAFLEX:
             "preprocessor_state": self._preprocessor_state,
         }
         state["train_opts"]["device"] = str(state["train_opts"]["device"])
+        state["model_opts"]["likelihoods"] = {
+            view_name: str(likelihood) for view_name, likelihood in state["model_opts"]["likelihoods"].items()
+        }
         if hasattr(self, "_orig_covariates"):
             state["orig_covariates"] = self._orig_covariates
 
@@ -1371,6 +1309,10 @@ class MOFAFLEX:
 
         if map_location is not None:
             state["train_opts"]["device"] = map_location
+        state["model_opts"]["likelihoods"] = {
+            view_name: Likelihood.get(likelihood)
+            for view_name, likelihood in state["model_opts"]["likelihoods"].items()
+        }
 
         model = cls.__new__(cls)
         model._weights = MeanStd(**state["weights"])

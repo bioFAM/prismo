@@ -3,6 +3,7 @@ import pytest
 from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix, issparse
 
 from mofaflex._core import MofaFlexDataset
+from mofaflex._core.likelihoods import Likelihood
 from mofaflex._core.preprocessing import MofaFlexPreprocessor
 from mofaflex._core.utils import sample_all_data_as_one_batch
 
@@ -31,7 +32,8 @@ def combination_from_idx(idx, n1, n2):
 )
 def likelihoods(request):
     return {
-        f"view_{i}": _lklhds[idx] for i, idx in enumerate(combination_from_idx(request.param, _nviews, len(_lklhds)))
+        f"view_{i}": Likelihood.get(_lklhds[idx])
+        for i, idx in enumerate(combination_from_idx(request.param, _nviews, len(_lklhds)))
     }
 
 

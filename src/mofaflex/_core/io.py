@@ -171,7 +171,9 @@ def save_model(
 
             model_opts_grp = f.create_group("model_options")
             model_opts_grp.create_dataset(
-                "likelihoods", data=[model._model_opts.likelihoods[v].lower() for v in model.view_names], **dset_kwargs
+                "likelihoods",
+                data=[str(model._model_opts.likelihoods[v]).lower() for v in model.view_names],
+                **dset_kwargs,
             )
             model_opts_grp.create_dataset(
                 "spikeslab_factors", data=any(p == "SnS" for p in model._model_opts.factor_prior.values())

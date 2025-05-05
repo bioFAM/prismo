@@ -17,14 +17,12 @@ from scipy.sparse import (
     sparray,
     spmatrix,
 )
-from scipy.special import expit
 from torch.utils.data import BatchSampler, SequentialSampler
 
 from .datasets import MofaFlexDataset
 
 WeightPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS"]
 FactorPrior: TypeAlias = Literal["Normal", "Laplace", "Horseshoe", "SnS", "GP"]
-Likelihood: TypeAlias = Literal["Normal", "NegativeBinomial", "Bernoulli"]
 PossiblySparseArray: TypeAlias = NDArray | spmatrix | sparray
 
 MeanStd = namedtuple("MeanStd", ["mean", "std"])
@@ -187,15 +185,6 @@ def _minmax(
     return res
 
 
-def _imputation_link(imputation: NDArray, likelihood: Likelihood):
-    if likelihood == "Bernoulli":
-        return expit(imputation)
-    elif likelihood != "Normal":
-        raise NotImplementedError(f"Imputation for {likelihood} not implemented.")
-    else:
-        return imputation
-
-
 def impute(
     data: AnnData,
     group_name,
@@ -218,7 +207,7 @@ def impute(
     if missingonly and not havemissing:
         return data
     elif not missingonly:
-        imputation = _imputation_link(factors @ weights, likelihood)
+        imputation = likelihood.transform_prediction(factors @ weights, preprocessor.sample_means)
     else:
         missing_obs = align_local_array_to_global(  # noqa F821
             np.broadcast_to(False, (data.n_obs,)), group_name, view_name, fill_value=True, align_to="samples"
@@ -239,20 +228,28 @@ def impute(
 
         if issparse(data.X):
             for row in np.nonzero(missing_obs)[0]:
-                imputation[row, :] = _imputation_link(factors[row, :] @ weights, likelihood)
+                imputation[row, :] = likelihood.transform_prediction(
+                    factors[row, :] @ weights, preprocessor.sample_means
+                )
             imputation = imputation.T  # slow column slicing for lil arrays
             for col in np.nonzero(missing_var)[0]:
-                imputation[col, :] = _imputation_link(factors @ weights[:, col], likelihood).T
+                imputation[col, :] = likelihood.transform_prediction(
+                    factors @ weights[:, col], preprocessor.sample_means
+                ).T
             imputation = imputation.T
         else:
-            imputation[missing_obs, :] = _imputation_link(factors[missing_obs, :] @ weights, likelihood)
-            imputation[:, missing_var] = _imputation_link(factors @ weights[:, missing_var], likelihood)
+            imputation[missing_obs, :] = likelihood.transform_prediction(
+                factors[missing_obs, :] @ weights, preprocessor.sample_means
+            )
+            imputation[:, missing_var] = likelihood.transform_prediction(
+                factors @ weights[:, missing_var], preprocessor.sample_means
+            )
 
         if have_missing_cells:
             nanobs, nanvar = wherenan(data.X)
             nanobs, nanvar = obsidx[nanobs], varidx[nanvar]
-            imputation[nanobs, nanvar] = _imputation_link(
-                (factors[nanobs, :] * weights[:, nanvar].T).sum(axis=1), likelihood
+            imputation[nanobs, nanvar] = likelihood.transform_prediction(
+                (factors[nanobs, :] * weights[:, nanvar].T).sum(axis=1), preprocessor.sample_means
             )
 
         if issparse(data.X):

@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from ..settings import settings
-from .base import ApplyCallable, MofaFlexDataset, Preprocessor
+from .base import ApplyCallable, ApplyToCallable, MofaFlexDataset, Preprocessor
 from .utils import anndata_to_dask, apply_to_nested, array_to_dask, from_dask, have_dask, warn_dask
 
 T = TypeVar("T")
@@ -395,9 +395,7 @@ class MuDataDataset(MofaFlexDataset):
                         annotations[modname] = annot[varidx].T
         return annotations, annotations_names
 
-    def _apply_by_group_view(
-        self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
-    ) -> dict[str, dict[str, T]]:
+    def _data_for_apply(self):
         data = self._data
         if settings.use_dask:
             if have_dask():
@@ -406,6 +404,33 @@ class MuDataDataset(MofaFlexDataset):
                 ]
             else:
                 warn_dask(_logger)
+        return data
+
+    def _apply_to_view(
+        self, view_name: str, func: ApplyToCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs
+    ) -> dict[str, T]:
+        data = self._data_for_apply()
+        ret = {}
+        for group_name, group_idx in self._groups.items():
+            cret = func(data[group_idx, :][view_name], group_name, **kwargs, **gkwargs[group_name])
+            ret[group_name] = apply_to_nested(cret, from_dask)
+        return ret
+
+    def _apply_to_group(
+        self, group_name: str, func: ApplyToCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs
+    ) -> dict[str, T]:
+        data = self._data_for_apply()
+        ret = {}
+        data = data[self._groups[group_name], :]
+        for modname, mod in data.mod.items():
+            cret = func(mod, modname, **kwargs, **vkwargs[modname])
+            ret[modname] = apply_to_nested(cret, from_dask)
+        return ret
+
+    def _apply_by_group_view(
+        self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
+    ) -> dict[str, dict[str, T]]:
+        data = self._data_for_apply()
         ret = {}
         for group_name, group_idx in self._groups.items():
             cret = {}
@@ -437,14 +462,7 @@ class MuDataDataset(MofaFlexDataset):
         return ret
 
     def _apply_by_group(self, func: ApplyCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs) -> dict[str, T]:
-        data = self._data
-        if settings.use_dask:
-            if have_dask():
-                data = _mudata_to_dask(self._orig_data, with_extra=False)[
-                    self._sample_selection, self._feature_selection
-                ]
-            else:
-                warn_dask(_logger)
+        data = self._data_for_apply()
         ret = {}
         for group_name, group_idx in self._groups.items():
             subdata = data[group_idx, :]

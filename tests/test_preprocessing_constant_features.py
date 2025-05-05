@@ -7,6 +7,7 @@ from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 
 from mofaflex import settings
 from mofaflex._core import MofaFlexDataset
+from mofaflex._core.likelihoods import Likelihood
 from mofaflex._core.preprocessing import MofaFlexPreprocessor
 from mofaflex._core.utils import sample_all_data_as_one_batch
 
@@ -114,7 +115,6 @@ def adata_dict(rng, array, array1_n_constant_cols, array2_n_constant_cols, array
 
 @pytest.mark.parametrize("likelihood", ["Normal", "NegativeBinomial", "Bernoulli"])
 @pytest.mark.parametrize("usedask", [False, True])
-@pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
 @pytest.mark.filterwarnings("ignore:invalid value encountered in (scalar )?divide:RuntimeWarning")
 @pytest.mark.filterwarnings("ignore:Degrees of freedom <= 0 for slice:RuntimeWarning")
 @pytest.mark.filterwarnings("ignore:Mean of empty slice.:RuntimeWarning")
@@ -123,7 +123,7 @@ def test_remove_constant_features(adata_dict, arrays_are, likelihood, usedask):
 
     with settings.override(use_dask=usedask):
         dataset = MofaFlexDataset(adata_dict)
-        likelihoods = dict.fromkeys(dataset.view_names, likelihood)
+        likelihoods = dict.fromkeys(dataset.view_names, Likelihood.get(likelihood))
 
         preprocessor = MofaFlexPreprocessor(
             dataset,

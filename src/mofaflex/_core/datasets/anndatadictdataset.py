@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from ..settings import settings
-from .base import ApplyCallable, MofaFlexDataset, Preprocessor
+from .base import ApplyCallable, ApplyToCallable, MofaFlexDataset, Preprocessor
 from .utils import AlignmentMap, anndata_to_dask, apply_to_nested, from_dask, have_dask, warn_dask
 
 T = TypeVar("T")
@@ -418,6 +418,48 @@ class AnnDataDictDataset(MofaFlexDataset):
 
         return annotations, annotations_names
 
+    def _view_for_apply(self, group_name: str, view_name: str) -> ad.AnnData:
+        havedask = have_dask()
+        if not havedask and settings.use_dask:
+            warn_dask(_logger)
+
+        view = self._data[group_name].get(view_name)
+        if view is not None:
+            gobsmap = self._obsmap[group_name]
+            gvarmap = self._varmap[group_name]
+            vobsmap = gobsmap.get(view_name)
+            vvarmap = gvarmap.get(view_name)
+            if vobsmap is not None or vvarmap is not None:
+                if havedask and settings.use_dask:
+                    view = anndata_to_dask(view)
+                obsidx = slice(None) if vobsmap is None else vobsmap.g2d >= 0
+                varidx = slice(None) if vvarmap is None else vvarmap.g2d >= 0
+                view = view[obsidx, varidx]
+
+        return view
+
+    def _apply_to_view(
+        self, view_name: str, func: ApplyToCallable[T], gkwargs: dict[str, dict[str, Any]], **kwargs
+    ) -> dict[str, T]:
+        ret = {}
+        for group_name in self.group_names:
+            view = self._view_for_apply(group_name, view_name)
+            if view is not None:
+                cret = func(view, group_name, **kwargs, **gkwargs[group_name])
+                ret[group_name] = apply_to_nested(cret, from_dask)
+        return ret
+
+    def _apply_to_group(
+        self, group_name: str, func: ApplyToCallable[T], vkwargs: dict[str, dict[str, Any]], **kwargs
+    ) -> dict[str, T]:
+        ret = {}
+        for view_name in self.view_names:
+            view = self._view_for_apply(group_name, view_name)
+            if view is not None:
+                cret = func(view, view_name, **kwargs, **vkwargs[view_name])
+                ret[group_name] = apply_to_nested(cret, from_dask)
+        return ret
+
     def _apply_by_group_view(
         self, func: ApplyCallable[T], gvkwargs: dict[str, dict[str, dict[str, Any]]], **kwargs
     ) -> dict[str, dict[str, T]]:
@@ -425,22 +467,13 @@ class AnnDataDictDataset(MofaFlexDataset):
         if not havedask and settings.use_dask:
             warn_dask(_logger)
         ret = {}
-        for group_name, group in self._data.items():
+        for group_name in self.group_names:
             cret = {}
-            gobsmap = self._obsmap[group_name]
-            gvarmap = self._varmap[group_name]
-            for view_name, view in group.items():
-                vobsmap = gobsmap.get(view_name)
-                vvarmap = gvarmap.get(view_name)
-                if vobsmap is not None or vvarmap is not None:
-                    if havedask and settings.use_dask:
-                        view = anndata_to_dask(view)
-                    obsidx = slice(None) if vobsmap is None else vobsmap.g2d >= 0
-                    varidx = slice(None) if vvarmap is None else vvarmap.g2d >= 0
-                    view = view[obsidx, varidx]
-
-                ccret = func(view, group_name, view_name, **kwargs, **gvkwargs[group_name][view_name])
-                cret[view_name] = apply_to_nested(ccret, from_dask)
+            for view_name in self.view_names:
+                view = self._view_for_apply(group_name, view_name)
+                if view is not None:
+                    ccret = func(view, group_name, view_name, **kwargs, **gvkwargs[group_name][view_name])
+                    cret[view_name] = apply_to_nested(ccret, from_dask)
             ret[group_name] = cret
         return ret
 

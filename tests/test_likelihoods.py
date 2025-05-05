@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csc_array, csc_matrix, csr_array, csr_matrix
 
-from mofaflex._core import preprocessing
+from mofaflex._core.likelihoods import Likelihood
 
 
 @pytest.fixture(scope="module", params=["Normal", "Bernoulli", "NegativeBinomial"])
@@ -16,9 +16,9 @@ def adata(rng, create_adata, likelihood, random_array, request):
 
 
 def test_infer_likelihoods(adata, likelihood):
-    inferred = preprocessing.infer_likelihood(adata)
+    inferred = Likelihood.infer(adata)
     assert likelihood == inferred
 
 
 def test_validate_likelihoods(adata, likelihood):
-    preprocessing.validate_likelihood(adata, None, None, likelihood)
+    Likelihood.get(likelihood).validate(adata, None, None)

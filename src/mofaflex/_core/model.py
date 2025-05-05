@@ -9,9 +9,12 @@ from pyro.nn import PyroModule, PyroParam
 
 from .dist import ReinMaxBernoulli
 from .gp import GP
-from .utils import FactorPrior, Likelihood, MeanStd, WeightPrior
+from .likelihoods import Likelihood
+from .utils import FactorPrior, MeanStd, WeightPrior
 
 EPS = 1e-8
+
+PyroModuleDict = PyroModule[torch.nn.ModuleDict]
 
 
 class Generative(PyroModule):
@@ -20,10 +23,10 @@ class Generative(PyroModule):
         n_samples: dict[str, int],
         n_features: dict[str, int],
         n_factors: int,
+        likelihoods: dict[str, Likelihood],
         prior_scales=None,
         factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal",
         weight_prior: dict[str, WeightPrior] | WeightPrior = "Normal",
-        likelihoods: dict[str, Likelihood] | Likelihood = "Normal",
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
         feature_means: dict[dict[str, torch.Tensor]] = None,
@@ -43,9 +46,6 @@ class Generative(PyroModule):
         if isinstance(weight_prior, str):
             weight_prior = dict.fromkeys(self.view_names, weight_prior)
 
-        if isinstance(likelihoods, str):
-            likelihoods = dict.fromkeys(self.view_names, likelihoods)
-
         if isinstance(nonnegative_weights, bool):
             nonnegative_weights = dict.fromkeys(self.view_names, nonnegative_weights)
 
@@ -61,19 +61,20 @@ class Generative(PyroModule):
         self.n_factors = n_factors
         self.factor_prior = factor_prior
         self.weight_prior = weight_prior
-        self.likelihoods = likelihoods
+        self.likelihoods = PyroModuleDict(
+            {
+                view_name: likelihood.pyro_likelihood(
+                    view_name,
+                    sample_dim=self._sample_plate_dim,
+                    feature_dim=self._feature_plate_dim,
+                    sample_means=sample_means,
+                    feature_means=feature_means,
+                )
+                for view_name, likelihood in likelihoods.items()
+            }
+        )
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
-
-        if sample_means is not None:
-            for group_name, gsample_means in sample_means.items():
-                for view_name, vsample_means in gsample_means.items():
-                    if self.likelihoods[view_name] == "NegativeBinomial":
-                        mean = torch.as_tensor(vsample_means)
-                        mean[torch.isnan(mean)] = (
-                            0  # if a sample is missing from a view, all features will be nan, and the mean of that sample will also be nan. This sample will be masked anyway
-                        )
-                        self.register_buffer(f"sample_means_{group_name}_{view_name}", torch.as_tensor(vsample_means))
 
         self.gp = gp
         if self.gp is not None:
@@ -97,9 +98,6 @@ class Generative(PyroModule):
         self._setup_distributions()
 
         self.sample_dict: dict[str, torch.Tensor] = {}
-
-    def _get_sample_means(self, group_name: str, view_name: str):
-        return getattr(self, f"sample_means_{group_name}_{view_name}", None)
 
     def _get_prior_scale(self, view_name: str):
         return getattr(self, f"prior_scales_{view_name}", None)
@@ -179,22 +177,6 @@ class Generative(PyroModule):
                 self.sample_weights[view_name] = self._sample_weights_sns
             else:
                 raise ValueError(f"Invalid weight_prior: {self.weight_prior[view_name]}")
-
-        self.dist_obs = {}
-        for view_name in self.view_names:
-            if self.likelihoods[view_name] is None:
-                self.likelihoods[view_name] = "Normal"
-
-            if self.likelihoods[view_name] == "Normal":
-                self.dist_obs[view_name] = self._dist_obs_normal
-            elif self.likelihoods[view_name] == "NegativeBinomial":
-                self.dist_obs[view_name] = self._dist_obs_gamma_poisson
-            elif self.likelihoods[view_name] == "Bernoulli":
-                self.dist_obs[view_name] = self._dist_obs_bernoulli
-            else:
-                raise ValueError(f"Invalid likelihood: {self.likelihoods[view_name]}")
-
-        self.sample_dispersion = self._sample_dispersion_gamma
 
     def _sample_factors_normal(self, group_name, plates, **kwargs):
         with plates["factors"], plates[f"samples_{group_name}"]:
@@ -286,20 +268,6 @@ class Generative(PyroModule):
                 s = pyro.sample(f"s_w_{view_name}", dist.Bernoulli(theta))
                 return pyro.sample(f"w_{view_name}", dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
 
-    def _sample_dispersion_gamma(self, view_name, plates, **kwargs):
-        with plates[f"features_{view_name}"]:
-            return pyro.sample(f"dispersion_{view_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
-
-    def _dist_obs_normal(self, loc, dispersion, **kwargs):
-        return dist.Normal(loc, torch.reciprocal(dispersion + EPS))
-
-    def _dist_obs_gamma_poisson(self, loc, dispersion, sample_means, **kwargs):
-        rate = self.pos_transform(loc) * sample_means[None, ...]
-        return dist.GammaPoisson(1 / dispersion, 1 / (rate * dispersion + EPS))
-
-    def _dist_obs_bernoulli(self, loc, **kwargs):
-        return dist.Bernoulli(logits=loc)
-
     def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates):
         current_gp_groups = {g: self.get_gp_group_idx(g) for g in self.gp_group_names if g in data}
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
@@ -341,10 +309,6 @@ class Generative(PyroModule):
             if self.nonnegative_weights[view_name]:
                 self.sample_dict[f"w_{view_name}"] = self.pos_transform(self.sample_dict[f"w_{view_name}"])
 
-            # sample dispersion parameter
-            if self.likelihoods[view_name] in ["Normal", "NegativeBinomial"]:
-                self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
-
         # sample observations
         for group_name, group in data.items():
             gnonmissing_samples = nonmissing_samples[group_name]
@@ -362,37 +326,16 @@ class Generative(PyroModule):
                 loc = torch.einsum("...ijk,...ilj->...jlk", z, w)
 
                 obs = view_obs.T
-                obs_mask = ~torch.isnan(obs)
-                obs = torch.nan_to_num(obs, nan=0)
-
-                sample_means = self._get_sample_means(group_name, view_name)
-                if sample_means is not None:
-                    sample_means = sample_means[sample_idx[group_name][nonmissing_samples[group_name][view_name]]]
-                dispersion = self.sample_dict.get(f"dispersion_{view_name}")
-                if dispersion is not None:
-                    dispersion = dispersion[nonmissing_features[group_name][view_name]]
-
-                dist_parameterized = self.dist_obs[view_name](loc, dispersion=dispersion, sample_means=sample_means)
-
-                with (
-                    pyro.poutine.mask(mask=obs_mask),
-                    pyro.poutine.scale(scale=self.view_scales[view_name]),
-                    pyro.plate(
-                        f"features_{group_name}_{view_name}",
-                        self.n_features[view_name],
-                        dim=self._feature_plate_dim,
-                        subsample=vnonmissing_features if isinstance(vnonmissing_features, torch.Tensor) else None,
-                    ),  # pyro.plate can't handle slices'
-                    pyro.plate(
-                        f"samples_{group_name}_{view_name}",
-                        self.n_samples[group_name],
-                        dim=self._sample_plate_dim,
-                        subsample=sample_idx[group_name][vnonmissing_samples],
-                    ),
-                ):
-                    self.sample_dict[f"x_{group_name}_{view_name}"] = pyro.sample(
-                        f"x_{group_name}_{view_name}", dist_parameterized, obs=obs
-                    )
+                self.likelihoods[view_name].model(
+                    data=obs,
+                    estimate=loc,
+                    group_name=group_name,
+                    scale=self.view_scales[view_name],
+                    sample_plate=plates[f"samples_{group_name}"],
+                    feature_plate=plates[f"features_{view_name}"],
+                    nonmissing_samples=vnonmissing_samples,
+                    nonmissing_features=vnonmissing_features,
+                )
 
         return self.sample_dict
 
@@ -779,23 +722,6 @@ class Variational(PyroModule):
                     ),
                 )
 
-        # dispersion variational parameters
-        for view_name in self.generative.view_names:
-            if self.generative.likelihoods[view_name] in ["Normal", "NegativeBinomial"]:
-                deep_setattr(
-                    self.locs,
-                    f"dispersion_{view_name}",
-                    PyroParam(self.init_loc * torch.ones((n_features[view_name], 1)), constraint=constraints.real),
-                )
-                deep_setattr(
-                    self.scales,
-                    f"dispersion_{view_name}",
-                    PyroParam(
-                        self.init_scale * torch.ones((n_features[view_name], 1)),
-                        constraint=constraints.softplus_positive,
-                    ),
-                )
-
     def _setup_distributions(self):
         # factor_prior
         self.sample_factors = {}
@@ -822,9 +748,6 @@ class Variational(PyroModule):
                 self.sample_weights[view_name] = self._sample_weights_horseshoe
             if self.generative.weight_prior[view_name] == "SnS":
                 self.sample_weights[view_name] = self._sample_weights_sns
-
-        # dispersion_prior
-        self.sample_dispersion = self._sample_dispersion_lognormal
 
     def _sample_factors_normal(self, group_name, plates, **kwargs):
         z_loc, z_scale = self._get_loc_and_scale(f"z_{group_name}")
@@ -951,11 +874,6 @@ class Variational(PyroModule):
                 w_loc, w_scale = self._get_loc_and_scale(f"w_{view_name}")
                 return pyro.sample(f"w_{view_name}", dist.Normal(w_loc, w_scale))
 
-    def _sample_dispersion_lognormal(self, view_name, plates, **kwargs):
-        dispersion_loc, dispersion_scale = self._get_loc_and_scale(f"dispersion_{view_name}")
-        with plates[f"features_{view_name}"]:
-            return pyro.sample(f"dispersion_{view_name}", dist.LogNormal(dispersion_loc, dispersion_scale))
-
     def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates):
         current_gp_groups = {
             g: self.generative.get_gp_group_idx(g) for g in self.generative.gp_group_names if g in data
@@ -985,8 +903,11 @@ class Variational(PyroModule):
         for view_name in self.generative.view_names:
             self.sample_dict[f"w_{view_name}"] = self.sample_weights[view_name](view_name, plates)
 
-            if self.generative.likelihoods[view_name] in ["Normal", "NegativeBinomial"]:
-                self.sample_dict[f"dispersion_{view_name}"] = self.sample_dispersion(view_name, plates)
+        for group_name, group in data.items():
+            for view_name in group.keys():
+                self.generative.likelihoods[view_name].guide(
+                    group_name, plates[f"samples_{group_name}"], plates[f"features_{view_name}"]
+                )
 
         return self.sample_dict
 
@@ -1085,13 +1006,12 @@ class Variational(PyroModule):
     def get_dispersion(self):
         """Get all dispersion vectors, dispersion_x."""
         dispersion = MeanStd({}, {})
-        for view_name in self.generative.view_names:
+        for view_name, likelihood in self.generative.likelihoods.items():
             try:
-                disp = self._get_loc_and_scale(f"dispersion_{view_name}")
+                disp = likelihood.dispersion
             except AttributeError:
                 continue
-            for lsidx, val in enumerate(disp):
-                # TODO: use actual mean and std of LogNormal
-                dispersion[lsidx][view_name] = val.cpu().numpy().squeeze(-1)
+            dispersion.mean[view_name] = disp.mean
+            dispersion.std[view_name] = disp.std
 
         return dispersion

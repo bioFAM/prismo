@@ -10,6 +10,7 @@ from scipy.sparse import issparse, sparray, spmatrix
 
 from . import utils
 from .datasets import MofaFlexDataset, Preprocessor
+from .likelihoods import LikelihoodType
 
 _logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class MofaFlexPreprocessor(Preprocessor):
     def __init__(
         self,
         dataset: MofaFlexDataset | None,
-        likelihoods: dict[str, utils.Likelihood],
+        likelihoods: dict[str, LikelihoodType],
         nonnegative_weights: dict[str, bool],
         nonnegative_factors: dict[str, bool],
         scale_per_group: bool = True,
@@ -35,7 +36,7 @@ class MofaFlexPreprocessor(Preprocessor):
             raise ValueError("Need either a dataset or a state.")
 
         self._scale_per_group = scale_per_group
-        self._views_to_scale = {view_name for view_name, likelihood in likelihoods.items() if likelihood == "Normal"}
+        self._views_to_scale = {view_name for view_name, likelihood in likelihoods.items() if likelihood.scale_data}
         self._nonnegative_weights = {k for k, v in nonnegative_weights.items() if v}
         self._nonnegative_factors = {k for k, v in nonnegative_factors.items() if v}
 
@@ -162,31 +163,3 @@ class MofaFlexPreprocessor(Preprocessor):
             arr /= self._scale[group][view] if self._scale_per_group else self._scale[view]
 
         return arr, nonmissing_samples, nonmissing_features
-
-
-def infer_likelihood(view: AnnData, *args) -> utils.Likelihood:
-    """Infer the likelihood for a view based on the data distribution."""
-    data = view.X.data if issparse(view.X) else view.X
-    xp = array_namespace(data)
-    data = data[~xp.isnan(data)]
-    if xp.all(xp.isclose(data, 0) | xp.isclose(data, 1)):  # TODO: set correct atol value
-        return "Bernoulli"
-    elif xp.allclose(data, xp.round(data)) and data.min() >= 0:
-        return "NegativeBinomial"
-    else:
-        return "Normal"
-
-
-def validate_likelihood(view: AnnData, group_name: str, view_name: str, likelihood: utils.Likelihood):
-    """Validate the likelihood for a view based on the data distribution."""
-    data = view.X.data if issparse(view.X) else view.X
-    xp = array_namespace(data)
-    data = data[~xp.isnan(data)]
-    if likelihood == "Bernoulli" and not xp.all(
-        xp.isclose(data, 0) | xp.isclose(data, 1)
-    ):  # TODO: set correct atol value
-        raise ValueError(f"Bernoulli likelihood in view {view_name} must be used with binary data.")
-    elif likelihood == "NegativeBinomial" and not xp.allclose(data, xp.round(data)) and data.min() >= 0:
-        raise ValueError(
-            f"NegativeBinomial likelihood in view {view_name} must be used with count (non-negative integer) data."
-        )

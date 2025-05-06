@@ -95,7 +95,7 @@ class GuidingVarsDataset(StackDataset):
         self, data: MofaFlexDataset, guiding_vars_factors: dict[str, dict[str, str]] | None = None
     ):
         datasets = {}
-        for guiding_var_factor in guiding_vars_factors:
+        for guiding_var_factor in guiding_vars_factors.keys():
             datasets[guiding_var_factor] = CovariatesDataset(
                 data, obs_key=guiding_vars_factors[guiding_var_factor]
             )

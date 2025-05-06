@@ -27,7 +27,7 @@ class Generative(PyroModule):
         guiding_vars_weight_priors: dict[str, str] = "Normal",
         guiding_vars_likelihoods: dict[str, str] = "Normal",
         guiding_vars_n_categories: dict[str, int] | None = None,
-        guiding_vars_factors: dict[str, int] | None = None,
+        guiding_var_names_to_groups_obs_keys: dict[str, dict[str, str]] | None = None,
         nonnegative_weights: dict[str, bool] | bool = False,
         nonnegative_factors: dict[str, bool] | bool = False,
         feature_means: dict[dict[str, torch.Tensor]] = None,
@@ -69,7 +69,7 @@ class Generative(PyroModule):
         self.guiding_vars_weight_priors = guiding_vars_weight_priors
         self.guiding_vars_likelihoods = guiding_vars_likelihoods
         self.guiding_vars_ncategories = guiding_vars_n_categories
-        self.guiding_vars_factors = guiding_vars_factors
+        self.guiding_var_names_to_groups_obs_keys = guiding_var_names_to_groups_obs_keys
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
 
@@ -454,8 +454,6 @@ class Generative(PyroModule):
 
             # guiding variables
             for guiding_var_name in self.guiding_vars_names:
-                gvnonmissing_samples = gnonmissing_samples[guiding_var_name]
-                guiding_var_factor = self.guiding_vars_factors[guiding_var_name]
                 z_guiding = self.sample_dict[f"z_{group_name}"][guiding_var_factor, 0]
                 w_guiding = self.sample_dict[f"w_guiding_vars_{guiding_var_name}"]
 
@@ -475,7 +473,7 @@ class Generative(PyroModule):
                         f"samples_{group_name}_{guiding_var_name}",
                         self.n_samples[group_name],
                         dim=self._sample_plate_dim,
-                        subsample=sample_idx[group_name][gvnonmissing_samples],
+                        subsample=sample_idx[group_name],
                     ),
                 ):
                     self.sample_dict[f"guiding_vars_{group_name}_{guiding_var_name}"] = pyro.sample(

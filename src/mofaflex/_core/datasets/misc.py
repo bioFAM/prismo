@@ -88,3 +88,16 @@ class StackDataset(StackDataset):
             raise ValueError("Expected nested dataset to have a `__getitems__` method.")
 
         return dataset.__getitems__(idx)
+
+
+class GuidingVarsDataset(StackDataset):
+    def __init__(
+        self, data: MofaFlexDataset, guiding_vars_factors: dict[str, dict[str, str]] | None = None
+    ):
+        datasets = {}
+        for guiding_var_factor in guiding_vars_factors.keys():
+            datasets[guiding_var_factor] = CovariatesDataset(
+                data, obs_key=guiding_vars_factors[guiding_var_factor]
+            )
+
+        super().__init__(**datasets)

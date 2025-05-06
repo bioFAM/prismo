@@ -92,12 +92,12 @@ class StackDataset(StackDataset):
 
 class GuidingVarsDataset(StackDataset):
     def __init__(
-        self, data: MofaFlexDataset, guiding_vars_factors: dict[str, dict[str, str]] | None = None
+        self, data: MofaFlexDataset, guiding_vars_names_to_groups_obs_names: dict[str, dict[str, str]] | None = None
     ):
         datasets = {}
-        for guiding_var_factor in guiding_vars_factors.keys():
-            datasets[guiding_var_factor] = CovariatesDataset(
-                data, obs_key=guiding_vars_factors[guiding_var_factor]
+        for guiding_var_name in guiding_vars_names_to_groups_obs_names.keys():
+            datasets[guiding_var_name] = CovariatesDataset(
+                data, obs_key=guiding_vars_names_to_groups_obs_names[guiding_var_name]
             )
 
         super().__init__(**datasets)

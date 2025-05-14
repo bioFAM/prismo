@@ -1,5 +1,4 @@
 import numpy as np
-import numpy.typing as npt
 import torch
 from numpy.typing import NDArray
 from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
@@ -48,7 +47,7 @@ class MofaFlexBatchSampler(Sampler[dict[str, list[int]]]):
 
 class CovariatesDataset(Dataset):
     def __init__(
-        self, data: MofaFlexDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None,
+        self, data: MofaFlexDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
     ):
         super().__init__()
 
@@ -107,14 +106,15 @@ class StackDataset(StackDataset):
 
 class GuidingVarsDataset(StackDataset):
     def __init__(
-        self, data: MofaFlexDataset, guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None, guiding_vars_likelihoods: dict[str, str] | None = None,
+        self,
+        data: MofaFlexDataset,
+        guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None,
+        guiding_vars_likelihoods: dict[str, str] | None = None,
     ):
         datasets = {}
         if guiding_vars_obs_keys:
             for guiding_var_name in guiding_vars_obs_keys.keys():
-                datasets[guiding_var_name] = CovariatesDataset(
-                    data, obs_key=guiding_vars_obs_keys[guiding_var_name],
-                )
+                datasets[guiding_var_name] = CovariatesDataset(data, obs_key=guiding_vars_obs_keys[guiding_var_name])
 
         else:
             datasets["default"] = CovariatesDataset(data)

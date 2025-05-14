@@ -192,13 +192,15 @@ class Generative(PyroModule):
                 self.sample_weights[view_name] = self._sample_weights_sns
             else:
                 raise ValueError(f"Invalid weight_prior: {self.weight_prior[view_name]}")
-            
+
         self.sample_guiding_vars_weights = {}
         for guiding_var_name in self.guiding_vars_names:
             if self.guiding_vars_weight_priors[guiding_var_name] == "Normal":
                 self.sample_guiding_vars_weights[guiding_var_name] = self._sample_guiding_vars_weights_normal
             else:
-                raise ValueError(f"Invalid guiding_vars_weight_prior: {self.guiding_vars_weight_priors[guiding_var_name]}")
+                raise ValueError(
+                    f"Invalid guiding_vars_weight_prior: {self.guiding_vars_weight_priors[guiding_var_name]}"
+                )
 
         self.dist_guiding_vars = {}
         for guiding_var_name in self.guiding_vars_names:
@@ -209,7 +211,9 @@ class Generative(PyroModule):
             elif self.guiding_vars_likelihoods[guiding_var_name] == "Categorical":
                 self.dist_guiding_vars[guiding_var_name] = self._dist_guiding_vars_categorical
             else:
-                raise ValueError(f"Invalid guiding variables likelihood: {self.guiding_vars_likelihoods[guiding_var_name]}")
+                raise ValueError(
+                    f"Invalid guiding variables likelihood: {self.guiding_vars_likelihoods[guiding_var_name]}"
+                )
 
         self.sample_guiding_vars_dispersion = self._sample_guiding_vars_dispersion_gamma
 
@@ -304,13 +308,17 @@ class Generative(PyroModule):
                 return pyro.sample(f"w_{view_name}", dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
 
     def _sample_guiding_vars_dispersion_gamma(self, guiding_var_name, **kwargs):
-        return pyro.sample(f"guiding_vars_dispersion_{guiding_var_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,))))
+        return pyro.sample(
+            f"guiding_vars_dispersion_{guiding_var_name}", dist.Gamma(1e-3 * torch.ones((1,)), 1e-3 * torch.ones((1,)))
+        )
 
     def _sample_guiding_vars_weights_normal(self, guiding_var_name, **kwargs):
         weights_dim = len(self.guiding_vars_categories[guiding_var_name])
         return pyro.sample(
             f"guiding_vars_w_{guiding_var_name}",
-            dist.Normal(torch.zeros(weights_dim, 2), torch.ones(weights_dim, 2)).to_event(2) # (categories, intercept & slope)
+            dist.Normal(torch.zeros(weights_dim, 2), torch.ones(weights_dim, 2)).to_event(
+                2
+            ),  # (categories, intercept & slope)
         )
 
     def _dist_guiding_vars_normal(self, loc, dispersion, **kwargs):
@@ -365,12 +373,16 @@ class Generative(PyroModule):
 
         # sample guiding variable weights
         for guiding_var_name in self.guiding_vars_names:
-            self.sample_dict[f"w_guiding_vars_{guiding_var_name}"] = self.sample_guiding_vars_weights[guiding_var_name](guiding_var_name)
+            self.sample_dict[f"w_guiding_vars_{guiding_var_name}"] = self.sample_guiding_vars_weights[guiding_var_name](
+                guiding_var_name
+            )
 
         # sample guiding variable dispersions
         for guiding_var_name in self.guiding_vars_names:
             if self.guiding_vars_likelihoods[guiding_var_name] == "Normal":
-                self.sample_dict[f"guiding_vars_dispersion_{guiding_var_name}"] = self.sample_guiding_vars_dispersion(guiding_var_name)
+                self.sample_dict[f"guiding_vars_dispersion_{guiding_var_name}"] = self.sample_guiding_vars_dispersion(
+                    guiding_var_name
+                )
 
         # sample observations
         for group_name, group in data.items():
@@ -404,17 +416,16 @@ class Generative(PyroModule):
             for guiding_var_name in self.guiding_vars_names:
                 if group_name not in guiding_vars[guiding_var_name]:
                     continue
-                
+
                 z_guiding = self.sample_dict[f"z_{group_name}"][self.guiding_vars_factors[guiding_var_name], 0]
                 w_guiding = self.sample_dict[f"w_guiding_vars_{guiding_var_name}"]
 
                 # (n_cats, 1) + (n_cats, 1) * (n_samples,)
-                loc = w_guiding[:, 0:1] + w_guiding[:, 1:2] * z_guiding # (n_cats, n_samples)
+                loc = w_guiding[:, 0:1] + w_guiding[:, 1:2] * z_guiding  # (n_cats, n_samples)
                 obs_guiding_vars = guiding_vars[guiding_var_name][group_name].squeeze(-1)
 
                 dist_parameterized_guiding_vars = self.dist_guiding_vars[guiding_var_name](
-                    loc=loc,
-                    dispersion=self.sample_dict.get(f"guiding_vars_dispersion_{guiding_var_name}", None),
+                    loc=loc, dispersion=self.sample_dict.get(f"guiding_vars_dispersion_{guiding_var_name}", None)
                 )
 
                 with (
@@ -427,7 +438,9 @@ class Generative(PyroModule):
                     pyro.poutine.scale(scale=self.guiding_vars_likelihood_scales[guiding_var_name]),
                 ):
                     self.sample_dict[f"guiding_vars_{group_name}_{guiding_var_name}"] = pyro.sample(
-                        f"guiding_vars_{group_name}_{guiding_var_name}", dist_parameterized_guiding_vars, obs=obs_guiding_vars
+                        f"guiding_vars_{group_name}_{guiding_var_name}",
+                        dist_parameterized_guiding_vars,
+                        obs=obs_guiding_vars,
                     )
 
         return self.sample_dict
@@ -822,14 +835,16 @@ class Variational(PyroModule):
                     self.locs,
                     f"guiding_vars_w_{guiding_var_name}",
                     PyroParam(
-                        self.init_loc * torch.ones([len(self.generative.guiding_vars_categories[guiding_var_name]), 2]), constraint=constraints.real
+                        self.init_loc * torch.ones([len(self.generative.guiding_vars_categories[guiding_var_name]), 2]),
+                        constraint=constraints.real,
                     ),
                 )
                 deep_setattr(
                     self.scales,
                     f"guiding_vars_w_{guiding_var_name}",
                     PyroParam(
-                        self.init_scale * torch.ones([len(self.generative.guiding_vars_categories[guiding_var_name]), 2]),
+                        self.init_scale
+                        * torch.ones([len(self.generative.guiding_vars_categories[guiding_var_name]), 2]),
                         constraint=constraints.softplus_positive,
                     ),
                 )
@@ -838,17 +853,13 @@ class Variational(PyroModule):
                 deep_setattr(
                     self.locs,
                     f"guiding_vars_dispersion_{guiding_var_name}",
-                    PyroParam(
-                        self.init_loc * torch.ones([1]), constraint=constraints.real
-                    ),
+                    PyroParam(self.init_loc * torch.ones([1]), constraint=constraints.real),
                 )
 
                 deep_setattr(
                     self.scales,
                     f"guiding_vars_dispersion_{guiding_var_name}",
-                    PyroParam(
-                        self.init_scale * torch.ones([1]), constraint=constraints.positive
-                    ),
+                    PyroParam(self.init_scale * torch.ones([1]), constraint=constraints.positive),
                 )
 
     def _setup_distributions(self):
@@ -1018,7 +1029,9 @@ class Variational(PyroModule):
 
     def _sample_guiding_vars_dispersion(self, guiding_var_name, plates, **kwargs):
         dispersion_loc, dispersion_scale = self._get_loc_and_scale(f"guiding_vars_dispersion_{guiding_var_name}")
-        return pyro.sample(f"guiding_vars_dispersion_{guiding_var_name}", dist.LogNormal(dispersion_loc, dispersion_scale))
+        return pyro.sample(
+            f"guiding_vars_dispersion_{guiding_var_name}", dist.LogNormal(dispersion_loc, dispersion_scale)
+        )
 
     def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates, guiding_vars):
         current_gp_groups = {

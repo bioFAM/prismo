@@ -521,9 +521,10 @@ class MOFAFLEX:
 
             prior_masks = {vn: vm.astype(np.bool) for vn, vm in annotations.items()}
             # add dense factors if necessary
-            if n_dense_factors > 0:
+            n_guiding_vars = len(self._data_opts.guiding_vars_obs_keys)
+            if n_dense_factors + n_guiding_vars > 0:
                 prior_masks = {
-                    vn: np.concatenate((np.ones((n_dense_factors, data.n_features[vn]), dtype=np.bool), vm), axis=0)
+                    vn: np.concatenate((np.ones((n_dense_factors + n_guiding_vars, data.n_features[vn]), dtype=np.bool), vm), axis=0)
                     for vn, vm in annotations.items()
                 }
 
@@ -592,7 +593,7 @@ class MOFAFLEX:
 
         if self._n_guiding_vars == 0:
             self._guiding_vars_factors = {}
-            self._guiding_vars_n_categories = {}
+            self._guiding_vars_categories = {}
             return
         
         # if no likelihood scale is provided, use the mean of the number of features
@@ -603,11 +604,11 @@ class MOFAFLEX:
         # update global number of factors
         self._model_opts.n_factors = self._model_opts.n_factors + self._n_guiding_vars
 
-        # update global factor names (informed factors + guiding vars + dense factors)
+        # update global factor names (dense factors + guiding vars + informed factors)
         self._factor_names = np.concatenate([
-            self._factor_names[:self._n_informed_factors],
+            self._factor_names[:self.n_dense_factors],
             self._guiding_vars_names,
-            self._factor_names[self._n_informed_factors:]
+            self._factor_names[self.n_dense_factors + self._n_guiding_vars - 1:]
             ])
         
         # create mapping from guiding var names to factor indices

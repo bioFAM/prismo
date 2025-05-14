@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.typing as npt
 import torch
 from numpy.typing import NDArray
 from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
@@ -47,15 +48,29 @@ class MofaFlexBatchSampler(Sampler[dict[str, list[int]]]):
 
 class CovariatesDataset(Dataset):
     def __init__(
-        self, data: MofaFlexDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None
+        self, data: MofaFlexDataset, obs_key: dict[str, str] | None = None, obsm_key: dict[str, str] | None = None,
     ):
         super().__init__()
 
         self.covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
+
+        categories = set()
+        for group_name, group_covars in self.covariates.items():
+            for view_name, view_covars in group_covars.items():
+                if view_covars.dtype == np.object_:
+                    categories.update(set(np.unique(view_covars).tolist()))
+        categories_mapping = {cat: i for i, cat in enumerate(sorted(categories))}
+
+        for group_name, group_covars in self.covariates.items():
+            for view_name, view_covars in group_covars.items():
+                if view_covars.dtype == np.object_:
+                    self.covariates[group_name][view_name] = np.vectorize(categories_mapping.get)(view_covars)
+
         self.covariates = {
             group_name: np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
             for group_name, group_covars in self.covariates.items()
         }
+
         self._n_samples = max(data.n_samples.values())
         self._cast_to = data.cast_to
 
@@ -92,12 +107,16 @@ class StackDataset(StackDataset):
 
 class GuidingVarsDataset(StackDataset):
     def __init__(
-        self, data: MofaFlexDataset, guiding_vars_names_to_groups_obs_names: dict[str, dict[str, str]] | None = None
+        self, data: MofaFlexDataset, guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None, guiding_vars_likelihoods: dict[str, str] | None = None,
     ):
         datasets = {}
-        for guiding_var_name in guiding_vars_names_to_groups_obs_names.keys():
-            datasets[guiding_var_name] = CovariatesDataset(
-                data, obs_key=guiding_vars_names_to_groups_obs_names[guiding_var_name]
-            )
+        if guiding_vars_obs_keys:
+            for guiding_var_name in guiding_vars_obs_keys.keys():
+                datasets[guiding_var_name] = CovariatesDataset(
+                    data, obs_key=guiding_vars_obs_keys[guiding_var_name],
+                )
+
+        else:
+            datasets["default"] = CovariatesDataset(data)
 
         super().__init__(**datasets)

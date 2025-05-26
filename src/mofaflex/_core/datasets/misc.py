@@ -54,10 +54,10 @@ class CovariatesDataset(Dataset):
         self.covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
 
         categories = set()
-        for group_name, group_covars in self.covariates.items():
-            for view_name, view_covars in group_covars.items():
+        for _, group_covars in self.covariates.items():
+            for _, view_covars in group_covars.items():
                 if view_covars.dtype == np.object_:
-                    categories.update(set(np.unique(view_covars).tolist()))
+                    categories.update(set(np.unique(view_covars)))
         categories_mapping = {cat: i for i, cat in enumerate(sorted(categories))}
 
         for group_name, group_covars in self.covariates.items():
@@ -105,16 +105,11 @@ class StackDataset(StackDataset):
 
 
 class GuidingVarsDataset(StackDataset):
-    def __init__(
-        self,
-        data: MofaFlexDataset,
-        guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None,
-        guiding_vars_likelihoods: dict[str, str] | None = None,
-    ):
+    def __init__(self, data: MofaFlexDataset, guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None):
         datasets = {}
         if guiding_vars_obs_keys:
-            for guiding_var_name in guiding_vars_obs_keys.keys():
-                datasets[guiding_var_name] = CovariatesDataset(data, obs_key=guiding_vars_obs_keys[guiding_var_name])
+            for guiding_var_name, obs_key in guiding_vars_obs_keys.items():
+                datasets[guiding_var_name] = CovariatesDataset(data, obs_key=obs_key)
 
         else:
             datasets["default"] = CovariatesDataset(data)

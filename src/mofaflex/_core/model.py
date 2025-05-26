@@ -1,6 +1,5 @@
 from operator import attrgetter
 
-import numpy.typing as npt
 import pyro
 import pyro.distributions as dist
 import torch
@@ -25,11 +24,10 @@ class Generative(PyroModule):
         n_features: dict[str, int],
         n_factors: int,
         likelihoods: dict[str, Likelihood],
-        guiding_vars_names: list[str] = [],
-        guiding_vars_weight_priors: dict[str, str] = "Normal",
-        guiding_vars_likelihoods: dict[str, str] = "Normal",
-        guiding_vars_categories: dict[str, npt.NDArray[str]] | None = None,
-        guiding_vars_names_to_groups_obs_keys: dict[str, dict[str, str]] | None = None,
+        guiding_vars_names: list[str] | None = None,
+        guiding_vars_weight_priors: dict[str, str] | None = None,
+        guiding_vars_likelihoods: dict[str, str] | None = None,
+        guiding_vars_n_categories: dict[str, int] | None = None,
         guiding_vars_factors: dict[str, int] | None = None,
         guiding_vars_likelihood_scales: dict[str, float] | None = None,
         prior_scales=None,
@@ -81,11 +79,10 @@ class Generative(PyroModule):
                 for view_name, likelihood in likelihoods.items()
             }
         )
-        self.guiding_vars_names = guiding_vars_names
+        self.guiding_vars_names = guiding_vars_names if guiding_vars_names is not None else []
         self.guiding_vars_weight_priors = guiding_vars_weight_priors
         self.guiding_vars_likelihoods = guiding_vars_likelihoods
-        self.guiding_vars_categories = guiding_vars_categories
-        self.guiding_vars_names_to_groups_obs_keys = guiding_vars_names_to_groups_obs_keys
+        self.guiding_vars_n_categories = guiding_vars_n_categories
         self.guiding_vars_factors = guiding_vars_factors
         self.guiding_vars_likelihood_scales = guiding_vars_likelihood_scales
         self.nonnegative_weights = nonnegative_weights
@@ -313,7 +310,7 @@ class Generative(PyroModule):
         )
 
     def _sample_guiding_vars_weights_normal(self, guiding_var_name, **kwargs):
-        weights_dim = len(self.guiding_vars_categories[guiding_var_name])
+        weights_dim = self.guiding_vars_n_categories[guiding_var_name]
         return pyro.sample(
             f"guiding_vars_w_{guiding_var_name}",
             dist.Normal(torch.zeros(weights_dim, 2), torch.ones(weights_dim, 2)).to_event(
@@ -835,7 +832,7 @@ class Variational(PyroModule):
                     self.locs,
                     f"guiding_vars_w_{guiding_var_name}",
                     PyroParam(
-                        self.init_loc * torch.ones([len(self.generative.guiding_vars_categories[guiding_var_name]), 2]),
+                        self.init_loc * torch.ones([self.generative.guiding_vars_n_categories[guiding_var_name], 2]),
                         constraint=constraints.real,
                     ),
                 )
@@ -843,8 +840,7 @@ class Variational(PyroModule):
                     self.scales,
                     f"guiding_vars_w_{guiding_var_name}",
                     PyroParam(
-                        self.init_scale
-                        * torch.ones([len(self.generative.guiding_vars_categories[guiding_var_name]), 2]),
+                        self.init_scale * torch.ones([self.generative.guiding_vars_n_categories[guiding_var_name], 2]),
                         constraint=constraints.softplus_positive,
                     ),
                 )

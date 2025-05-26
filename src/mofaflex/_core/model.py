@@ -29,7 +29,6 @@ class Generative(PyroModule):
         guiding_vars_likelihoods: dict[str, str] | None = None,
         guiding_vars_n_categories: dict[str, int] | None = None,
         guiding_vars_factors: dict[str, int] | None = None,
-        guiding_vars_likelihood_scales: dict[str, float] | None = None,
         prior_scales=None,
         factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal",
         weight_prior: dict[str, WeightPrior] | WeightPrior = "Normal",
@@ -84,7 +83,6 @@ class Generative(PyroModule):
         self.guiding_vars_likelihoods = guiding_vars_likelihoods
         self.guiding_vars_n_categories = guiding_vars_n_categories
         self.guiding_vars_factors = guiding_vars_factors
-        self.guiding_vars_likelihood_scales = guiding_vars_likelihood_scales
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
 
@@ -100,12 +98,19 @@ class Generative(PyroModule):
 
         self.scale_elbo = True
         n_views = len(self.view_names)
+        n_guiding_vars = len(self.guiding_vars_names)
         self.view_scales = dict.fromkeys(self.view_names, 1.0)
-        if self.scale_elbo and n_views > 1:
+        self.guiding_vars_scales = dict.fromkeys(self.guiding_vars_names, 1.0)
+        if self.scale_elbo and n_views + n_guiding_vars > 1:
             for view_name, view_n_features in n_features.items():
-                self.view_scales[view_name] = (n_views / (n_views - 1)) * (
-                    1.0 - view_n_features / sum(n_features.values())
+                self.view_scales[view_name] = ((n_views + n_guiding_vars) / ((n_views + n_guiding_vars) - 1)) * (
+                    1.0 - view_n_features / (sum(n_features.values()) + n_guiding_vars)
                 )
+
+            for guiding_var_name in self.guiding_vars_names:
+                self.guiding_vars_scales[guiding_var_name] = (
+                    (n_views + n_guiding_vars) / ((n_views + n_guiding_vars) - 1)
+                ) * (1.0 - 1.0 / (sum(n_features.values()) + n_guiding_vars))
 
         self._setup_distributions()
 
@@ -418,7 +423,7 @@ class Generative(PyroModule):
                 w_guiding = self.sample_dict[f"w_guiding_vars_{guiding_var_name}"]
 
                 # (n_cats, 1) + (n_cats, 1) * (n_samples,)
-                loc = w_guiding[:, 0:1] + w_guiding[:, 1:2] * z_guiding  # (n_cats, n_samples)
+                loc = w_guiding[:, 0, None] + w_guiding[:, 1, None] * z_guiding  # (n_cats, n_samples)
                 obs_guiding_vars = guiding_vars[guiding_var_name][group_name].squeeze(-1)
 
                 dist_parameterized_guiding_vars = self.dist_guiding_vars[guiding_var_name](
@@ -426,13 +431,8 @@ class Generative(PyroModule):
                 )
 
                 with (
-                    pyro.plate(
-                        f"samples_{group_name}_{guiding_var_name}",
-                        self.n_samples[group_name],
-                        dim=self._sample_plate_dim,
-                        subsample=sample_idx[group_name],
-                    ),
-                    pyro.poutine.scale(scale=self.guiding_vars_likelihood_scales[guiding_var_name]),
+                    plates[f"samples_{group_name}"],
+                    pyro.poutine.scale(scale=self.guiding_vars_scales[guiding_var_name]),
                 ):
                     self.sample_dict[f"guiding_vars_{group_name}_{guiding_var_name}"] = pyro.sample(
                         f"guiding_vars_{group_name}_{guiding_var_name}",
@@ -832,7 +832,7 @@ class Variational(PyroModule):
                     self.locs,
                     f"guiding_vars_w_{guiding_var_name}",
                     PyroParam(
-                        self.init_loc * torch.ones([self.generative.guiding_vars_n_categories[guiding_var_name], 2]),
+                        torch.full([self.generative.guiding_vars_n_categories[guiding_var_name], 2], self.init_loc),
                         constraint=constraints.real,
                     ),
                 )
@@ -840,7 +840,7 @@ class Variational(PyroModule):
                     self.scales,
                     f"guiding_vars_w_{guiding_var_name}",
                     PyroParam(
-                        self.init_scale * torch.ones([self.generative.guiding_vars_n_categories[guiding_var_name], 2]),
+                        torch.full([self.generative.guiding_vars_n_categories[guiding_var_name], 2], self.init_scale),
                         constraint=constraints.softplus_positive,
                     ),
                 )

@@ -136,14 +136,11 @@ class ModelOptions(_Options):
     nonnegative_weights: dict[str, bool] | bool = False
     """Non-negativity constraints for weights for each view (if dict) or for all views (if bool)."""
 
-    guiding_vars_weight_priors: dict[str, str] | str | None = None
+    guiding_vars_weight_priors: dict[str, str] | Literal["Normal"] | None = "Normal"
     """Weight prior for each guiding variable (if dict) or for all guiding variables (if str)."""
 
-    guiding_vars_likelihoods: dict[str, str] | str | None = None
+    guiding_vars_likelihoods: dict[str, str] | Literal["Normal", "Categorical", "Bernoulli"] | None = "Normal"
     """Likelihood for each guiding variable (if dict) or for all guiding variables (if str)."""
-
-    guiding_vars_likelihood_scales: dict[str, float] | float | None = None
-    """Likelihood scale for each guiding variable (if dict) or for all guiding variables (if float)."""
 
     nonnegative_factors: dict[str, bool] | bool = False
     """Non-negativity constraints for factors for each group (if dict) or for all groups (if bool)."""
@@ -582,10 +579,6 @@ class MOFAFLEX:
             self._guiding_vars_n_categories = {}
             return
 
-        for guiding_var_name in self._guiding_vars_names:
-            if self._model_opts.guiding_vars_likelihood_scales[guiding_var_name] is None:
-                self._model_opts.guiding_vars_likelihood_scales[guiding_var_name] = 1.0
-
         # update global number of factors
         self._model_opts.n_factors = self._model_opts.n_factors + self._n_guiding_vars
 
@@ -634,7 +627,6 @@ class MOFAFLEX:
             guiding_vars_n_categories=self._guiding_vars_n_categories,
             guiding_vars_obs_keys=self._data_opts.guiding_vars_obs_keys,
             guiding_vars_factors=self._guiding_vars_factors,
-            guiding_vars_likelihood_scales=self._model_opts.guiding_vars_likelihood_scales,
             prior_scales=prior_scales,
             factor_prior=self._model_opts.factor_prior,
             weight_prior=self._model_opts.weight_prior,
@@ -835,14 +827,12 @@ class MOFAFLEX:
                 "nonnegative_factors",
                 "guiding_vars_weight_priors",
                 "guiding_vars_likelihoods",
-                "guiding_vars_likelihood_scales",
             ),
             (
                 data.view_names,
                 data.group_names,
                 data.view_names,
                 data.group_names,
-                guiding_vars_names,
                 guiding_vars_names,
                 guiding_vars_names,
             ),

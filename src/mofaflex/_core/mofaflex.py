@@ -507,7 +507,7 @@ class MOFAFLEX:
 
             prior_masks = {vn: vm.astype(np.bool) for vn, vm in annotations.items()}
             # add dense factors if necessary
-            n_guiding_vars = len(self._data_opts.guiding_vars_obs_keys)
+            n_guiding_vars = len(self._data_opts.guiding_vars_obs_keys) if self._data_opts.guiding_vars_obs_keys else 0
             if n_dense_factors + n_guiding_vars > 0:
                 prior_masks = {
                     vn: np.concatenate(

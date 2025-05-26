@@ -573,10 +573,9 @@ class MOFAFLEX:
             list(self._data_opts.guiding_vars_obs_keys.keys()) if self._data_opts.guiding_vars_obs_keys else []
         )
         self._n_guiding_vars = len(self._guiding_vars_names)
-
+        self._guiding_vars_factors = {}
+        self._guiding_vars_n_categories = {}
         if self._n_guiding_vars == 0:
-            self._guiding_vars_factors = {}
-            self._guiding_vars_n_categories = {}
             return
 
         # update global number of factors
@@ -592,12 +591,11 @@ class MOFAFLEX:
         )
 
         # create mapping from guiding var names to factor indices
-        self._guiding_vars_factors = {}
         for i, guiding_var_name in enumerate(self._guiding_vars_names):
             self._guiding_vars_factors[guiding_var_name] = self._n_informed_factors + i
 
         # get unique categories for each guiding variable
-        self._guiding_vars_n_categories = {}
+
         for guiding_var_name, guiding_var_likelihood in self._model_opts.guiding_vars_likelihoods.items():
             if guiding_var_likelihood == "Categorical":
                 guiding_var_categories = []

@@ -52,10 +52,24 @@ class CovariatesDataset(Dataset):
         super().__init__()
 
         self.covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
+
+        categories = set()
+        for _, group_covars in self.covariates.items():
+            for _, view_covars in group_covars.items():
+                if view_covars.dtype == np.object_:
+                    categories.update(set(np.unique(view_covars)))
+        categories_mapping = {cat: i for i, cat in enumerate(sorted(categories))}
+
+        for group_name, group_covars in self.covariates.items():
+            for view_name, view_covars in group_covars.items():
+                if view_covars.dtype == np.object_:
+                    self.covariates[group_name][view_name] = np.vectorize(categories_mapping.get)(view_covars)
+
         self.covariates = {
             group_name: np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
             for group_name, group_covars in self.covariates.items()
         }
+
         self._n_samples = max(data.n_samples.values())
         self._cast_to = data.cast_to
 
@@ -88,3 +102,16 @@ class StackDataset(StackDataset):
             raise ValueError("Expected nested dataset to have a `__getitems__` method.")
 
         return dataset.__getitems__(idx)
+
+
+class GuidingVarsDataset(StackDataset):
+    def __init__(self, data: MofaFlexDataset, guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None):
+        datasets = {}
+        if guiding_vars_obs_keys:
+            for guiding_var_name, obs_key in guiding_vars_obs_keys.items():
+                datasets[guiding_var_name] = CovariatesDataset(data, obs_key=obs_key)
+
+        else:
+            datasets["default"] = CovariatesDataset(data)
+
+        super().__init__(**datasets)

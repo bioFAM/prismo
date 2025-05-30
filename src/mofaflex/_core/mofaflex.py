@@ -487,11 +487,11 @@ class MOFAFLEX:
                     f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)
                 ]
 
-            prior_masks = {vn: vm.astype(np.bool) for vn, vm in annotations.items()}
+            prior_masks = {vn: vm.astype(np.bool_) for vn, vm in annotations.items()}
             # add dense factors if necessary
             if n_dense_factors > 0:
                 prior_masks = {
-                    vn: np.concatenate((np.ones((n_dense_factors, data.n_features[vn]), dtype=np.bool), vm), axis=0)
+                    vn: np.concatenate((np.ones((n_dense_factors, data.n_features[vn]), dtype=np.bool_), vm), axis=0)
                     for vn, vm in annotations.items()
                 }
 

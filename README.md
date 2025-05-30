@@ -59,5 +59,5 @@ If you found a bug, please use the [issue tracker][].
 [documentation]: https://mofaflex.readthedocs.io
 [discussions]: https://github.com/bioFAM/mofaflex/discussions
 [changelog]: https://mofaflex.readthedocs.io/latest/changelog.html
-[api documentation]: https://mofaflex.readthedocs.io/en/latest/api.htm
+[api documentation]: https://mofaflex.readthedocs.io/latest/api/index.html
 [pypi]: https://pypi.org/project/mofaflex

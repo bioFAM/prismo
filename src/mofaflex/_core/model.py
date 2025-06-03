@@ -153,7 +153,12 @@ class Generative(PyroModule):
 
         for view_name in self.view_names:
             plates[f"features_{view_name}"] = pyro.plate(
-                f"plate_features_{view_name}", self.n_features[view_name], dim=self._feature_plate_dim
+                f"plate_features_{view_name}",
+                self.n_features[view_name],
+                subsample=torch.arange(  # workaround for https://github.com/pyro-ppl/pyro/pull/3405
+                    self.n_features[view_name]
+                ),
+                dim=self._feature_plate_dim,
             )
 
         plates["factors"] = pyro.plate("plate_factors", self.n_factors, dim=-3)

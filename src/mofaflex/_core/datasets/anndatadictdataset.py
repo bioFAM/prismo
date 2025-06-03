@@ -405,13 +405,13 @@ class AnnDataDictDataset(MofaFlexDataset):
                         if isinstance(annot, pd.DataFrame):
                             annotations_names[view_name] = annot.columns
                             annot = annot.to_numpy()
-                        fill_value = False if annot.dtype == np.bool else np.nan
+                        fill_value = False if annot.dtype == np.bool_ else np.nan
                         cannot.append(
                             self._align_data_array_to_global(
                                 annot, group_name, view_name, "features", fill_value=fill_value
                             ).T
                         )
-                if all(a.dtype == np.bool for a in cannot):
+                if all(a.dtype == np.bool_ for a in cannot):
                     annotations[view_name] = reduce(np.logical_or, cannot)
                 else:
                     annotations[view_name] = np.nanmean(np.stack(cannot, axis=0), axis=0)

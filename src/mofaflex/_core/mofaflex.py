@@ -502,7 +502,7 @@ class MOFAFLEX:
                     f"Factor {k + 1}" for k in range(n_dense_factors, n_dense_factors + n_informed_factors)
                 ]
 
-            prior_masks = {vn: vm.astype(np.bool) for vn, vm in annotations.items()}
+            prior_masks = {vn: vm.astype(np.bool_) for vn, vm in annotations.items()}
             # add dense factors if necessary
             n_guiding_vars = len(self._data_opts.guiding_vars_obs_keys) if self._data_opts.guiding_vars_obs_keys else 0
             if n_dense_factors + n_guiding_vars > 0:
@@ -510,9 +510,9 @@ class MOFAFLEX:
                     vn: np.concatenate(
                         (np.ones((n_dense_factors + n_guiding_vars, data.n_features[vn]), dtype=np.bool), vm), axis=0
                     )
+
                     for vn, vm in annotations.items()
                 }
-
         self._n_dense_factors = n_dense_factors
         self._n_informed_factors = n_informed_factors
         self._model_opts.n_factors = n_dense_factors + n_informed_factors

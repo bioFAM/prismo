@@ -162,12 +162,12 @@ class DataGenerator:
         return self._z
 
     @property
-    def w_mask(self) -> npt.NDArray[np.bool]:
+    def w_mask(self) -> npt.NDArray[np.bool_]:
         """Gene set mask describing co-expressed genes."""
         return self._attr_to_matrix("_w_masks")
 
     @property
-    def noisy_w_mask(self) -> npt.NDArray[np.bool]:
+    def noisy_w_mask(self) -> npt.NDArray[np.bool_]:
         """Gene set mask describing co-expressed genes, with added noise."""
         return self._attr_to_matrix("_noisy_w_masks")
 
@@ -277,7 +277,7 @@ class DataGenerator:
             n_features = self.n_features[m]
             w_shape = (self.n_factors, n_features)
             w = rng.standard_normal(w_shape)
-            w_mask = np.zeros(w_shape, dtype=np.bool)
+            w_mask = np.zeros(w_shape, dtype=np.bool_)
 
             fraction_active_features = {
                 "Gamma": (
@@ -418,7 +418,7 @@ class DataGenerator:
             missing_fraction_partial_features: Fraction of samples marked as missing due to `n_partial_features`.
             random_fraction: Fraction of all observations marked as missing at random.
         """
-        sample_view_mask = np.ones((self.n_samples, self.n_views), dtype=np.bool)
+        sample_view_mask = np.ones((self.n_samples, self.n_views), dtype=np.bool_)
         missing_sample_indices = rng.choice(self.n_samples, n_partial_samples, replace=False)
 
         # partially missing samples

@@ -51,6 +51,18 @@ def anndata_dict(random_adata, rng):
         ("covariates_obs_key", "covar"),
         ("covariates_obsm_key", None),
         ("covariates_obsm_key", "covar"),
+        (
+            "guiding_vars_obs_keys",
+            {
+                "gvar_normal_name": "gvar_normal",
+                "gvar_bernoulli_name": "gvar_bernoulli",
+                "gvar_categorical_name": "gvar_categorical",
+            },
+        ),
+        (
+            "guiding_vars_likelihoods",
+            {"gvar_normal_name": "Normal", "gvar_bernoulli_name": "Bernoulli", "gvar_categorical_name": "Categorical"},
+        ),
         ("use_obs", "union"),
         ("use_obs", "intersection"),
         ("use_var", "union"),
@@ -100,7 +112,7 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
         model = MOFAFLEX(anndata_dict, *opts)
 
     if attrname == "weight_prior" and attrvalue == "Horseshoe":
-        assert model.n_informed_factors > 0
+        assert (model.n_informed_factors > 0) | (model.n_guiding_vars > 0)
     else:
         assert model.n_factors == model.n_dense_factors == 5
 

@@ -54,6 +54,9 @@ def random_adata(rng, random_array):
             var=pd.DataFrame(index=var_names if var_names is not None else [f"gene_{i}" for i in range(nvar)]),
         )
         adata.obsm["covar"] = pd.DataFrame(rng.random(size=(nobs, 3)), columns=["a", "b", "c"], index=adata.obs_names)
+        adata.obs["gvar_normal"] = pd.DataFrame(rng.random(size=(nobs)), index=adata.obs_names)
+        adata.obs["gvar_bernoulli"] = pd.DataFrame(rng.binomial(1, 0.5, size=(nobs)), index=adata.obs_names)
+        adata.obs["gvar_categorical"] = pd.DataFrame(rng.choice(["A", "B", "C"], size=(nobs)), index=adata.obs_names)
         adata.varm["annot"] = pd.DataFrame(
             rng.choice([False, True], size=(nvar, 10)), columns=[f"annot_{i}" for i in range(10)], index=adata.var_names
         )

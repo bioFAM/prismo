@@ -112,7 +112,7 @@ def test_integration(anndata_dict, tmp_path, attrname, attrvalue, usedask):
         model = MOFAFLEX(anndata_dict, *opts)
 
     if attrname == "weight_prior" and attrvalue == "Horseshoe":
-        assert (model.n_informed_factors > 0) | (model.n_guiding_vars > 0)
+        assert (model.n_informed_factors > 0) | (model._n_guiding_vars > 0)
     else:
         assert model.n_factors == model.n_dense_factors == 5
 

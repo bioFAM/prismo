@@ -510,7 +510,6 @@ class MOFAFLEX:
                     vn: np.concatenate(
                         (np.ones((n_dense_factors + n_guiding_vars, data.n_features[vn]), dtype=np.bool), vm), axis=0
                     )
-
                     for vn, vm in annotations.items()
                 }
         self._n_dense_factors = n_dense_factors

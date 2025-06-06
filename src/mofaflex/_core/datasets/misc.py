@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 from numpy.typing import NDArray
 from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
@@ -51,24 +52,40 @@ class CovariatesDataset(Dataset):
     ):
         super().__init__()
 
-        self.covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
+        covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
 
+        # if data is categorical, get unique categories
         categories = set()
-        for _, group_covars in self.covariates.items():
+        for _, group_covars in covariates.items():
             for _, view_covars in group_covars.items():
                 if view_covars.dtype == np.object_:
-                    categories.update(set(np.unique(view_covars)))
-        categories_mapping = {cat: i for i, cat in enumerate(sorted(categories))}
+                    non_nan_values = view_covars[~pd.isnull(view_covars)]
+                    categories.update(set(np.unique(non_nan_values)))
+                    have_nans = non_nan_values.size < view_covars.size
 
-        for group_name, group_covars in self.covariates.items():
+        # map categories to floats
+        categories_mapping = {cat: float(i) if have_nans else i for i, cat in enumerate(sorted(categories))}
+
+        for group_name, group_covars in covariates.items():
             for view_name, view_covars in group_covars.items():
                 if view_covars.dtype == np.object_:
-                    self.covariates[group_name][view_name] = np.vectorize(categories_mapping.get)(view_covars)
+                    covariates[group_name][view_name] = np.vectorize(lambda cat: categories_mapping.get(cat, np.nan))(
+                        view_covars
+                    )
 
-        self.covariates = {
-            group_name: np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
-            for group_name, group_covars in self.covariates.items()
-        }
+        # ensure the a covariate value is consistent across views (nanmean or first)
+        self.covariates = {}
+        for group_name, group_covars in covariates.items():
+            group_covars_stacked = np.stack(tuple(group_covars.values()), axis=0)
+            if np.all(np.isnan(group_covars_stacked) | (group_covars_stacked == np.floor(group_covars_stacked))):
+                self.covariates[group_name] = np.apply_along_axis(
+                    lambda x: x[~np.isnan(x)].astype(int)[0] if np.any(~np.isnan(x)) else np.nan,
+                    axis=0,
+                    arr=group_covars_stacked,
+                )
+
+            else:
+                self.covariates[group_name] = np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
 
         self._n_samples = max(data.n_samples.values())
         self._cast_to = data.cast_to

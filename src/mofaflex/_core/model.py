@@ -438,11 +438,12 @@ class Generative(PyroModule):
                 with (
                     plates[f"samples_{group_name}"],
                     pyro.poutine.scale(scale=self.guiding_vars_scales[guiding_var_name]),
+                    pyro.poutine.mask(mask=~torch.isnan(obs_guiding_vars)),
                 ):
                     self.sample_dict[f"guiding_vars_{group_name}_{guiding_var_name}"] = pyro.sample(
                         f"guiding_vars_{group_name}_{guiding_var_name}",
                         dist_parameterized_guiding_vars,
-                        obs=obs_guiding_vars,
+                        obs=torch.nan_to_num(obs_guiding_vars, nan=0),
                     )
 
         return self.sample_dict

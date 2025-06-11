@@ -1,53 +1,13 @@
 import numpy as np
-import pyro
-import torch
 from numpy.typing import NDArray
-from pyro import distributions as dist
-from pyro.nn import pyro_method
 
-from .base import EPS, R2, Likelihood, PyroLikelihood, PyroLikelihoodWithDispersion
+from ..pyro.likelihoods import PyroLikelihood, _PyroNormal
+from .base import R2, Likelihood
 
 
 class Normal(Likelihood):
     _priority = 0
     scale_data = True
-
-    class _PyroNormal(PyroLikelihoodWithDispersion):
-        def __init__(
-            self,
-            view_name: str,
-            sample_dim: int,
-            feature_dim: int,
-            sample_means: dict[str, dict[str, NDArray[np.floating]]],
-            feature_means: dict[str, dict[str, NDArray[np.floating]]],
-            *,
-            init_loc: float = 0.0,
-            init_scale: float = 0.1,
-        ):
-            super().__init__(
-                view_name,
-                sample_dim,
-                feature_dim,
-                sample_means,
-                feature_means,
-                init_loc=init_loc,
-                init_scale=init_scale,
-            )
-
-        @pyro_method
-        def _model(
-            self,
-            estimate: torch.Tensor,
-            group_name: str,
-            sample_plate: pyro.plate,
-            feature_plate: pyro.plate,
-            nonmissing_samples: torch.Tensor | slice,
-            nonmissing_features: torch.Tensor | slice,
-        ) -> pyro.distributions.Distribution:
-            dispersion = self._model_dispersion(
-                estimate, group_name, sample_plate, feature_plate, nonmissing_samples, nonmissing_features
-            )
-            return dist.Normal(estimate, torch.reciprocal(dispersion + EPS))
 
     @classmethod
     def pyro_likelihood(
@@ -62,7 +22,7 @@ class Normal(Likelihood):
         init_scale: float = 0.1,
         **kwargs,
     ) -> PyroLikelihood:
-        return cls._PyroNormal(
+        return _PyroNormal(
             view_name, sample_dim, feature_dim, sample_means, feature_means, init_loc=init_loc, init_scale=init_scale
         )
 

@@ -79,9 +79,7 @@ class CovariatesDataset(Dataset):
             group_covars_stacked = np.stack(tuple(group_covars.values()), axis=0)
             if np.all(np.isnan(group_covars_stacked) | (group_covars_stacked == np.floor(group_covars_stacked))):
                 self.covariates[group_name] = np.apply_along_axis(
-                    lambda x: x[~np.isnan(x)].astype(int)[0] if np.any(~np.isnan(x)) else np.nan,
-                    axis=0,
-                    arr=group_covars_stacked,
+                    lambda x: x[~np.isnan(x)][0] if np.any(~np.isnan(x)) else np.nan, axis=0, arr=group_covars_stacked
                 )
 
             else:

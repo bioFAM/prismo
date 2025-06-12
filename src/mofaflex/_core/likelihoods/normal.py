@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from ..pyro.likelihoods import PyroLikelihood, _PyroNormal
+from ..pyro.likelihoods import PyroLikelihood, PyroNormal
 from .base import R2, Likelihood
 
 
@@ -22,7 +22,7 @@ class Normal(Likelihood):
         init_scale: float = 0.1,
         **kwargs,
     ) -> PyroLikelihood:
-        return _PyroNormal(
+        return PyroNormal(
             view_name, sample_dim, feature_dim, sample_means, feature_means, init_loc=init_loc, init_scale=init_scale
         )
 

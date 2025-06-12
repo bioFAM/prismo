@@ -1,3 +1,4 @@
+import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
@@ -15,7 +16,13 @@ EPS = 1e-8  # TODO: have some global definition/setting of EPS
 
 # https://stackoverflow.com/a/61350480
 class _PyroLikelihoodMeta(type(ABC), type(PyroModule)):
-    pass
+    def __call__(cls, *args, **kwargs):
+        obj = cls.__new__(cls, *args, **kwargs)
+        args = list(args)
+        if obj.__class__ is not cls:
+            args = args[1:]
+        obj.__init__(*args, **kwargs)
+        return obj
 
 
 class PyroLikelihood(ABC, PyroModule, metaclass=_PyroLikelihoodMeta):
@@ -24,6 +31,8 @@ class PyroLikelihood(ABC, PyroModule, metaclass=_PyroLikelihoodMeta):
     Subclasses must implement `_model`, which returns a Pyro distribution object to be used as likelihood,
     and `_guide`, which implements the variational distribution. Its return value is ignored.
     """
+
+    __registry = {}
 
     def __init__(
         self,
@@ -37,12 +46,31 @@ class PyroLikelihood(ABC, PyroModule, metaclass=_PyroLikelihoodMeta):
         self._nsamples = {
             group_name: next(iter(smeans.values())).shape[0] for group_name, smeans in sample_means.items()
         }
+
         self._nfeatures = next(iter(feature_means.values()))[view_name].shape[0]
         self._view_name = view_name
         self._sample_dim = sample_dim
         self._feature_dim = feature_dim
 
         self._mode = None
+
+    def __init_subclass__(cls, **kwargs):
+        init_sig = inspect.signature(cls.__init__)
+        for arg in ("view_name", "sample_dim", "feature_dim", "sample_means", "feature_means"):
+            if arg not in init_sig.parameters:
+                raise TypeError(f"Constructor of class {cls} is missing the {arg} argument.")
+
+        super().__init_subclass__(**kwargs)
+        __class__.__registry[cls.__name__ if not cls.__name__.startswith("Pyro") else cls.__name__[4:]] = cls
+
+    def __new__(cls, likelihood: str, *args, **kwargs):
+        if cls != __class__:
+            return super().__new__(cls)
+        try:
+            subcls = cls.__registry[likelihood]
+            return subcls.__new__(subcls, None, *args, **kwargs)
+        except KeyError as e:
+            raise NotImplementedError(f"Unknown likelihood {likelihood}.") from e
 
     @pyro_method
     def model(
@@ -73,7 +101,7 @@ class PyroLikelihood(ABC, PyroModule, metaclass=_PyroLikelihoodMeta):
         self._mode = "model"
 
         data_mask = ~torch.isnan(data)
-        data = torch.nan_to_num(data, nan=0)
+        data = torch.nan_to_num(data, nan=0.0)
 
         nonmissing_sample_plate = pyro.plate(
             f"samples_{group_name}_{self._view_name}",
@@ -81,6 +109,7 @@ class PyroLikelihood(ABC, PyroModule, metaclass=_PyroLikelihoodMeta):
             dim=self._sample_dim,
             subsample=sample_plate.indices[nonmissing_samples],
         )
+
         nonmissing_feature_plate = pyro.plate(
             f"features_{group_name}_{self._view_name}",
             self._nfeatures,

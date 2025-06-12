@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import expit
 
-from ..pyro.likelihoods import PyroLikelihood, _PyroBernoulli
+from ..pyro.likelihoods import PyroBernoulli, PyroLikelihood
 from .base import R2, Likelihood
 
 
@@ -20,7 +20,7 @@ class Bernoulli(Likelihood):
         feature_means: dict[str, dict[str, NDArray[np.floating]]],
         **kwargs,
     ) -> PyroLikelihood:
-        return _PyroBernoulli(view_name, sample_dim, feature_dim, sample_means, feature_means)
+        return PyroBernoulli(view_name, sample_dim, feature_dim, sample_means, feature_means)
 
     @classmethod
     def _validate(cls, data: NDArray, xp) -> bool:

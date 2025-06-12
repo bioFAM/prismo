@@ -8,7 +8,7 @@ from pyro.nn import pyro_method
 from .base import EPS, PyroLikelihoodWithDispersion
 
 
-class _PyroNormal(PyroLikelihoodWithDispersion):
+class PyroNormal(PyroLikelihoodWithDispersion):
     def __init__(
         self,
         view_name: str,

@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from .base import EPS, PyroLikelihoodWithDispersion
 
 
-class _PyroNegativeBinomial(PyroLikelihoodWithDispersion):
+class PyroNegativeBinomial(PyroLikelihoodWithDispersion):
     def __init__(
         self,
         view_name: str,

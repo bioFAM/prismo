@@ -7,7 +7,7 @@ from pyro import distributions as dist
 from .base import PyroLikelihood
 
 
-class _PyroBernoulli(PyroLikelihood):
+class PyroBernoulli(PyroLikelihood):
     def __init__(
         self,
         view_name: str,

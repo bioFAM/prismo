@@ -1,6 +1,7 @@
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from inspect import isabstract
 
 import numpy as np
 import pyro
@@ -61,7 +62,8 @@ class PyroLikelihood(ABC, PyroModule, metaclass=_PyroLikelihoodMeta):
                 raise TypeError(f"Constructor of class {cls} is missing the {arg} argument.")
 
         super().__init_subclass__(**kwargs)
-        __class__.__registry[cls.__name__ if not cls.__name__.startswith("Pyro") else cls.__name__[4:]] = cls
+        if not isabstract(cls):
+            __class__.__registry[cls.__name__ if not cls.__name__.startswith("Pyro") else cls.__name__[4:]] = cls
 
     def __new__(cls, likelihood: str, *args, **kwargs):
         if cls != __class__:

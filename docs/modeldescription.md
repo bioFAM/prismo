@@ -139,3 +139,7 @@ We then redefine $\sigma^2$ as
 \end{equation*}
 
 As should be obvious from the above, domain knowledge is only supported when using the Horseshoe prior for the weights.
+
+## Guiding individual factors using external covariates
+
+SOFA{cite:p}`capraz2024semi` pioneered the coupling of individual factors to external covariates in multi-view factor models, thereby facilitating the disentanglement of known and unknown sources of variation. This coupling is achieved using an additional linear regression task from the external covariate, which can be assumed to follow a Normal, Bernoulli or Categorical distribution, on the factor. The regression includes an intercept term and both regression parameters are treated as additional latent variables with Normal prior distributions. Several covariates can be provided and each is assigned to a unique factor.

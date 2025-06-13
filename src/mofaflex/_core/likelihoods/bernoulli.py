@@ -1,41 +1,14 @@
 import numpy as np
-import pyro
-import torch
 from numpy.typing import NDArray
-from pyro import distributions as dist
 from scipy.special import expit
 
-from .base import R2, Likelihood, PyroLikelihood
+from ..pyro.likelihoods import PyroBernoulli, PyroLikelihood
+from .base import R2, Likelihood
 
 
 class Bernoulli(Likelihood):
     _priority = 10
     scale_data = False
-
-    class _PyroBernoulli(PyroLikelihood):
-        def __init__(
-            self,
-            view_name: str,
-            sample_dim: int,
-            feature_dim: int,
-            sample_means: dict[str, dict[str, NDArray[np.floating]]],
-            feature_means: dict[str, dict[str, NDArray[np.floating]]],
-        ):
-            super().__init__(view_name, sample_dim, feature_dim, sample_means, feature_means)
-
-        def _model(
-            self,
-            estimate: torch.Tensor,
-            group_name: str,
-            sample_plate: pyro.plate,
-            feature_plate: pyro.plate,
-            nonmissing_samples: torch.Tensor | slice,
-            nonmissing_features: torch.Tensor | slice,
-        ) -> pyro.distributions.Distribution:
-            return dist.Bernoulli(logits=estimate)
-
-        def _guide(self, group_name: str, sample_plate: pyro.plate, feature_plate: pyro.plate):
-            pass
 
     @classmethod
     def pyro_likelihood(
@@ -47,7 +20,7 @@ class Bernoulli(Likelihood):
         feature_means: dict[str, dict[str, NDArray[np.floating]]],
         **kwargs,
     ) -> PyroLikelihood:
-        return cls._PyroBernoulli(view_name, sample_dim, feature_dim, sample_means, feature_means)
+        return PyroBernoulli(view_name, sample_dim, feature_dim, sample_means, feature_means)
 
     @classmethod
     def _validate(cls, data: NDArray, xp) -> bool:

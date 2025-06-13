@@ -1048,16 +1048,17 @@ class Variational(PyroModule):
                 guiding_var_name, plates
             )
 
-            if self.generative.guiding_vars_likelihoods[guiding_var_name] == "Normal":
-                self.sample_dict[f"guiding_vars_dispersion_{guiding_var_name}"] = self.sample_guiding_vars_dispersion(
-                    guiding_var_name, plates
-                )
-
         for group_name, group in data.items():
             for view_name in group.keys():
                 self.generative.likelihoods[view_name].guide(
                     group_name, plates[f"samples_{group_name}"], plates[f"features_{view_name}"]
                 )
+
+            for guiding_var_name in self.generative.guiding_vars_names:
+                if group_name in guiding_vars[guiding_var_name]:
+                    self.generative.guiding_vars_likelihoods[guiding_var_name].guide(
+                        group_name, plates[f"samples_{group_name}"], plates[f"guiding_vars_{guiding_var_name}"]
+                    )
 
         return self.sample_dict
 

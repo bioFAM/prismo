@@ -641,7 +641,7 @@ class MOFAFLEX:
 
         return svi, variational, gp_warp_groups_order
 
-    def _post_fit(self, data, preprocessor, covariates, guiding_vars, variational, train_loss_elbo):
+    def _post_fit(self, data, preprocessor, covariates, variational, train_loss_elbo):
         self._weights = variational.get_weights()
         self._factors = variational.get_factors()
         self._dispersions = variational.get_dispersion()
@@ -962,7 +962,7 @@ class MOFAFLEX:
         if isinstance(t, tqdm_notebook):  # https://github.com/tqdm/tqdm/issues/1659
             t.container.children[1].bar_style = "success"
 
-        self._post_fit(data, preprocessor, covariates, guiding_vars, variational, train_loss_elbo)
+        self._post_fit(data, preprocessor, covariates, variational, train_loss_elbo)
 
     def _warp_covariates(self, covariates, variational, warp_groups_order):
         factormeans = variational.get_factors().mean

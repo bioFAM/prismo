@@ -10,6 +10,7 @@ from pyro.nn import PyroModule, PyroParam
 from .dist import ReinMaxBernoulli
 from .gp import GP
 from .likelihoods import Likelihood
+from .pyro.likelihoods import PyroLikelihood
 from .utils import FactorPrior, MeanStd, WeightPrior
 
 EPS = 1e-8
@@ -24,6 +25,12 @@ class Generative(PyroModule):
         n_features: dict[str, int],
         n_factors: int,
         likelihoods: dict[str, Likelihood],
+        guiding_vars_names: list[str] | None = None,
+        guiding_vars_weight_priors: dict[str, str] | None = None,
+        guiding_vars_likelihoods: dict[str, str] | None = None,
+        guiding_vars_n_categories: dict[str, int] | None = None,
+        guiding_vars_factors: dict[str, int] | None = None,
+        guiding_vars_scales: dict[str, float] | None = None,
         prior_scales=None,
         factor_prior: dict[str, FactorPrior] | FactorPrior = "Normal",
         weight_prior: dict[str, WeightPrior] | WeightPrior = "Normal",
@@ -64,17 +71,36 @@ class Generative(PyroModule):
         self.likelihoods = PyroModuleDict(
             {
                 view_name: likelihood.pyro_likelihood(
-                    view_name,
+                    view_name=view_name,
                     sample_dim=self._sample_plate_dim,
                     feature_dim=self._feature_plate_dim,
                     sample_means=sample_means,
                     feature_means=feature_means,
+                    is_guiding_var=False,
                 )
                 for view_name, likelihood in likelihoods.items()
             }
         )
+        self.guiding_vars_names = guiding_vars_names if guiding_vars_names is not None else []
+        self.guiding_vars_weight_priors = guiding_vars_weight_priors
+        self.guiding_vars_likelihoods = PyroModuleDict(
+            {
+                guiding_var_name: PyroLikelihood(
+                    guiding_vars_likelihoods[guiding_var_name],
+                    view_name=guiding_var_name,
+                    sample_dim=self._sample_plate_dim,
+                    feature_dim=self._feature_plate_dim,
+                    sample_means=sample_means,
+                    feature_means={"dummy_name": {guiding_var_name: torch.zeros(1, 1)}},
+                )
+                for guiding_var_name in self.guiding_vars_names
+            }
+        )
+        self.guiding_vars_n_categories = guiding_vars_n_categories
+        self.guiding_vars_factors = guiding_vars_factors
         self.nonnegative_weights = nonnegative_weights
         self.nonnegative_factors = nonnegative_factors
+        self.guiding_vars_scales = guiding_vars_scales
 
         self.gp = gp
         if self.gp is not None:
@@ -144,6 +170,10 @@ class Generative(PyroModule):
                 dim=self._feature_plate_dim,
             )
 
+        plates["guiding_vars"] = pyro.plate(
+            "plate_guiding_vars", 1, subsample=torch.arange(1), dim=self._feature_plate_dim
+        )
+
         plates["factors"] = pyro.plate("plate_factors", self.n_factors, dim=-3)
 
         return plates
@@ -182,6 +212,15 @@ class Generative(PyroModule):
                 self.sample_weights[view_name] = self._sample_weights_sns
             else:
                 raise ValueError(f"Invalid weight_prior: {self.weight_prior[view_name]}")
+
+        self.sample_guiding_vars_weights = {}
+        for guiding_var_name in self.guiding_vars_names:
+            if self.guiding_vars_weight_priors[guiding_var_name] == "Normal":
+                self.sample_guiding_vars_weights[guiding_var_name] = self._sample_guiding_vars_weights_normal
+            else:
+                raise ValueError(
+                    f"Invalid guiding_vars_weight_prior: {self.guiding_vars_weight_priors[guiding_var_name]}"
+                )
 
     def _sample_factors_normal(self, group_name, plates, **kwargs):
         with plates["factors"], plates[f"samples_{group_name}"]:
@@ -273,7 +312,16 @@ class Generative(PyroModule):
                 s = pyro.sample(f"s_w_{view_name}", dist.Bernoulli(theta))
                 return pyro.sample(f"w_{view_name}", dist.Normal(0.0, 1.0 / (alpha + EPS))) * s
 
-    def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates):
+    def _sample_guiding_vars_weights_normal(self, guiding_var_name, **kwargs):
+        weights_dim = self.guiding_vars_n_categories[guiding_var_name]
+        return pyro.sample(
+            f"guiding_vars_w_{guiding_var_name}",
+            dist.Normal(torch.zeros(weights_dim, 2), torch.ones(weights_dim, 2)).to_event(
+                2
+            ),  # (categories, intercept & slope)
+        )
+
+    def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates, guiding_vars):
         current_gp_groups = {g: self.get_gp_group_idx(g) for g in self.gp_group_names if g in data}
         current_group_names = tuple(k for k in data.keys() if k not in current_gp_groups)
 
@@ -314,6 +362,12 @@ class Generative(PyroModule):
             if self.nonnegative_weights[view_name]:
                 self.sample_dict[f"w_{view_name}"] = self.pos_transform(self.sample_dict[f"w_{view_name}"])
 
+        # sample guiding variable weights
+        for guiding_var_name in self.guiding_vars_names:
+            self.sample_dict[f"w_guiding_vars_{guiding_var_name}"] = self.sample_guiding_vars_weights[guiding_var_name](
+                guiding_var_name
+            )
+
         # sample observations
         for group_name, group in data.items():
             gnonmissing_samples = nonmissing_samples[group_name]
@@ -340,6 +394,29 @@ class Generative(PyroModule):
                     feature_plate=plates[f"features_{view_name}"],
                     nonmissing_samples=vnonmissing_samples,
                     nonmissing_features=vnonmissing_features,
+                )
+
+            # guiding variables
+            for guiding_var_name in self.guiding_vars_names:
+                if group_name not in guiding_vars[guiding_var_name]:
+                    continue
+
+                z_guiding = self.sample_dict[f"z_{group_name}"][self.guiding_vars_factors[guiding_var_name], 0]
+                w_guiding = self.sample_dict[f"w_guiding_vars_{guiding_var_name}"]
+
+                # (n_cats, 1) + (n_cats, 1) * (n_samples,)
+                loc = w_guiding[:, 0, None] + w_guiding[:, 1, None] * z_guiding  # (n_cats, n_samples)
+                obs_guiding_vars = guiding_vars[guiding_var_name][group_name].squeeze(-1)
+
+                self.guiding_vars_likelihoods[guiding_var_name].model(
+                    data=obs_guiding_vars,
+                    estimate=loc,
+                    group_name=group_name,
+                    scale=self.guiding_vars_scales[guiding_var_name],
+                    sample_plate=plates[f"samples_{group_name}"],
+                    feature_plate=plates[f"guiding_vars_{guiding_var_name}"],
+                    nonmissing_samples=slice(None),
+                    nonmissing_features=slice(None),
                 )
 
         return self.sample_dict
@@ -727,6 +804,26 @@ class Variational(PyroModule):
                     ),
                 )
 
+        # guiding variables variational parameters
+        for guiding_var_name in self.generative.guiding_vars_names:
+            if self.generative.guiding_vars_weight_priors[guiding_var_name] == "Normal":
+                deep_setattr(
+                    self.locs,
+                    f"guiding_vars_w_{guiding_var_name}",
+                    PyroParam(
+                        torch.full([self.generative.guiding_vars_n_categories[guiding_var_name], 2], self.init_loc),
+                        constraint=constraints.real,
+                    ),
+                )
+                deep_setattr(
+                    self.scales,
+                    f"guiding_vars_w_{guiding_var_name}",
+                    PyroParam(
+                        torch.full([self.generative.guiding_vars_n_categories[guiding_var_name], 2], self.init_scale),
+                        constraint=constraints.softplus_positive,
+                    ),
+                )
+
     def _setup_distributions(self):
         # factor_prior
         self.sample_factors = {}
@@ -753,6 +850,12 @@ class Variational(PyroModule):
                 self.sample_weights[view_name] = self._sample_weights_horseshoe
             if self.generative.weight_prior[view_name] == "SnS":
                 self.sample_weights[view_name] = self._sample_weights_sns
+
+        # guiding variables
+        self.sample_guiding_vars_weights = {}
+        for guiding_var_name in self.generative.guiding_vars_names:
+            if self.generative.guiding_vars_weight_priors[guiding_var_name] == "Normal":
+                self.sample_guiding_vars_weights[guiding_var_name] = self._sample_guiding_vars_weights_normal
 
     def _sample_factors_normal(self, group_name, plates, **kwargs):
         z_loc, z_scale = self._get_loc_and_scale(f"z_{group_name}")
@@ -879,7 +982,11 @@ class Variational(PyroModule):
                 w_loc, w_scale = self._get_loc_and_scale(f"w_{view_name}")
                 return pyro.sample(f"w_{view_name}", dist.Normal(w_loc, w_scale))
 
-    def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates):
+    def _sample_guiding_vars_weights_normal(self, guiding_var_name, plates, **kwargs):
+        w_loc, w_scale = self._get_loc_and_scale(f"guiding_vars_w_{guiding_var_name}")
+        return pyro.sample(f"guiding_vars_w_{guiding_var_name}", dist.Normal(w_loc, w_scale).to_event(2))
+
+    def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates, guiding_vars):
         current_gp_groups = {
             g: self.generative.get_gp_group_idx(g) for g in self.generative.gp_group_names if g in data
         }
@@ -908,11 +1015,22 @@ class Variational(PyroModule):
         for view_name in self.generative.view_names:
             self.sample_dict[f"w_{view_name}"] = self.sample_weights[view_name](view_name, plates)
 
+        for guiding_var_name in self.generative.guiding_vars_names:
+            self.sample_dict[f"guiding_vars_w_{guiding_var_name}"] = self.sample_guiding_vars_weights[guiding_var_name](
+                guiding_var_name, plates
+            )
+
         for group_name, group in data.items():
             for view_name in group.keys():
                 self.generative.likelihoods[view_name].guide(
                     group_name, plates[f"samples_{group_name}"], plates[f"features_{view_name}"]
                 )
+
+            for guiding_var_name in self.generative.guiding_vars_names:
+                if group_name in guiding_vars[guiding_var_name]:
+                    self.generative.guiding_vars_likelihoods[guiding_var_name].guide(
+                        group_name, plates[f"samples_{group_name}"], plates[f"guiding_vars_{guiding_var_name}"]
+                    )
 
         return self.sample_dict
 

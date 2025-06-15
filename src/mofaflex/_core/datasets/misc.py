@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 from numpy.typing import NDArray
 from torch.utils.data import BatchSampler, Dataset, RandomSampler, Sampler, StackDataset
@@ -51,11 +52,41 @@ class CovariatesDataset(Dataset):
     ):
         super().__init__()
 
-        self.covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
-        self.covariates = {
-            group_name: np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
-            for group_name, group_covars in self.covariates.items()
-        }
+        covariates, self.covariates_names = data.get_covariates(obs_key, obsm_key)
+
+        # if data is categorical, get unique categories
+        categories = set()
+        have_nans = False
+        for group_covars in covariates.values():
+            for view_covars in group_covars.values():
+                if view_covars.dtype == np.object_:
+                    non_nan_values = view_covars[~pd.isnull(view_covars)]
+                    categories |= set(non_nan_values)
+                    have_nans = non_nan_values.size < view_covars.size
+
+        # map categories to floats
+        categories_mapping = {cat: float(i) if have_nans else i for i, cat in enumerate(sorted(categories))}
+
+        for group_covars in covariates.values():
+            for view_covars in group_covars.values():
+                if view_covars.dtype == np.object_:
+                    view_covars_mapped = np.full_like(view_covars, fill_value=np.nan, dtype=float)
+                    for k, v in categories_mapping.items():
+                        view_covars_mapped[view_covars == k] = v
+
+        # ensure the a covariate value is consistent across views (nanmean or first)
+        self.covariates = {}
+        for group_name, group_covars in covariates.items():
+            group_covars_stacked = np.stack(tuple(group_covars.values()), axis=0)
+            if np.all(np.isnan(group_covars_stacked) | (group_covars_stacked == np.floor(group_covars_stacked))):
+                idx = np.isfinite(group_covars_stacked)
+                self.covariates[group_name] = np.where(
+                    np.any(idx, axis=1), group_covars_stacked[:, np.argmax(idx, axis=1)], np.nan
+                )
+
+            else:
+                self.covariates[group_name] = np.nanmean(np.stack(tuple(group_covars.values()), axis=0), axis=0)
+
         self._n_samples = max(data.n_samples.values())
         self._cast_to = data.cast_to
 
@@ -88,3 +119,16 @@ class StackDataset(StackDataset):
             raise ValueError("Expected nested dataset to have a `__getitems__` method.")
 
         return dataset.__getitems__(idx)
+
+
+class GuidingVarsDataset(StackDataset):
+    def __init__(self, data: MofaFlexDataset, guiding_vars_obs_keys: dict[str, dict[str, str]] | None = None):
+        datasets = {}
+        if guiding_vars_obs_keys:
+            for guiding_var_name, obs_key in guiding_vars_obs_keys.items():
+                datasets[guiding_var_name] = CovariatesDataset(data, obs_key=obs_key)
+
+        else:
+            datasets["dummy_guiding_var"] = CovariatesDataset(data)
+
+        super().__init__(**datasets)

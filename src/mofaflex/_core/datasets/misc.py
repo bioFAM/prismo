@@ -56,30 +56,32 @@ class CovariatesDataset(Dataset):
 
         # if data is categorical, get unique categories
         categories = set()
-        for _, group_covars in covariates.items():
-            for _, view_covars in group_covars.items():
+        have_nans = False
+        for group_covars in covariates.values():
+            for view_covars in group_covars.values():
                 if view_covars.dtype == np.object_:
                     non_nan_values = view_covars[~pd.isnull(view_covars)]
-                    categories.update(set(np.unique(non_nan_values)))
+                    categories |= set(non_nan_values)
                     have_nans = non_nan_values.size < view_covars.size
 
         # map categories to floats
         categories_mapping = {cat: float(i) if have_nans else i for i, cat in enumerate(sorted(categories))}
 
-        for group_name, group_covars in covariates.items():
-            for view_name, view_covars in group_covars.items():
+        for group_covars in covariates.values():
+            for view_covars in group_covars.values():
                 if view_covars.dtype == np.object_:
-                    covariates[group_name][view_name] = np.vectorize(lambda cat: categories_mapping.get(cat, np.nan))(
-                        view_covars
-                    )
+                    view_covars_mapped = np.full_like(view_covars, fill_value=np.nan, dtype=float)
+                    for k, v in categories_mapping.items():
+                        view_covars_mapped[view_covars == k] = v
 
         # ensure the a covariate value is consistent across views (nanmean or first)
         self.covariates = {}
         for group_name, group_covars in covariates.items():
             group_covars_stacked = np.stack(tuple(group_covars.values()), axis=0)
             if np.all(np.isnan(group_covars_stacked) | (group_covars_stacked == np.floor(group_covars_stacked))):
-                self.covariates[group_name] = np.apply_along_axis(
-                    lambda x: x[~np.isnan(x)][0] if np.any(~np.isnan(x)) else np.nan, axis=0, arr=group_covars_stacked
+                idx = np.isfinite(group_covars_stacked)
+                self.covariates[group_name] = np.where(
+                    np.any(idx, axis=1), group_covars_stacked[:, np.argmax(idx, axis=1)], np.nan
                 )
 
             else:
@@ -127,6 +129,6 @@ class GuidingVarsDataset(StackDataset):
                 datasets[guiding_var_name] = CovariatesDataset(data, obs_key=obs_key)
 
         else:
-            datasets["default"] = CovariatesDataset(data)
+            datasets["dummy_guiding_var"] = CovariatesDataset(data)
 
         super().__init__(**datasets)

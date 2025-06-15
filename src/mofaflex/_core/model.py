@@ -824,19 +824,6 @@ class Variational(PyroModule):
                     ),
                 )
 
-            if self.generative.guiding_vars_likelihoods[guiding_var_name] == "Normal":
-                deep_setattr(
-                    self.locs,
-                    f"guiding_vars_dispersion_{guiding_var_name}",
-                    PyroParam(self.init_loc * torch.ones([1]), constraint=constraints.real),
-                )
-
-                deep_setattr(
-                    self.scales,
-                    f"guiding_vars_dispersion_{guiding_var_name}",
-                    PyroParam(self.init_scale * torch.ones([1]), constraint=constraints.positive),
-                )
-
     def _setup_distributions(self):
         # factor_prior
         self.sample_factors = {}
@@ -869,9 +856,6 @@ class Variational(PyroModule):
         for guiding_var_name in self.generative.guiding_vars_names:
             if self.generative.guiding_vars_weight_priors[guiding_var_name] == "Normal":
                 self.sample_guiding_vars_weights[guiding_var_name] = self._sample_guiding_vars_weights_normal
-
-            if self.generative.guiding_vars_likelihoods[guiding_var_name] == "Normal":
-                self.sample_guiding_vars_dispersion = self._sample_guiding_vars_dispersion
 
     def _sample_factors_normal(self, group_name, plates, **kwargs):
         z_loc, z_scale = self._get_loc_and_scale(f"z_{group_name}")
@@ -1001,12 +985,6 @@ class Variational(PyroModule):
     def _sample_guiding_vars_weights_normal(self, guiding_var_name, plates, **kwargs):
         w_loc, w_scale = self._get_loc_and_scale(f"guiding_vars_w_{guiding_var_name}")
         return pyro.sample(f"guiding_vars_w_{guiding_var_name}", dist.Normal(w_loc, w_scale).to_event(2))
-
-    def _sample_guiding_vars_dispersion(self, guiding_var_name, plates, **kwargs):
-        dispersion_loc, dispersion_scale = self._get_loc_and_scale(f"guiding_vars_dispersion_{guiding_var_name}")
-        return pyro.sample(
-            f"guiding_vars_dispersion_{guiding_var_name}", dist.LogNormal(dispersion_loc, dispersion_scale)
-        )
 
     def forward(self, data, sample_idx, nonmissing_samples, nonmissing_features, covariates, guiding_vars):
         current_gp_groups = {

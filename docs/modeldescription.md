@@ -142,4 +142,14 @@ As should be obvious from the above, domain knowledge is only supported when usi
 
 ## Guiding individual factors using external covariates
 
-SOFA{cite:p}`capraz2024semi` pioneered the coupling of individual factors to external covariates in multi-view factor models, thereby facilitating the disentanglement of known and unknown sources of variation. This coupling is achieved using an additional linear regression task from the external covariate, which can be assumed to follow a Normal, Bernoulli or Categorical distribution, on the factor. The regression includes an intercept term and both regression parameters are treated as additional latent variables with Normal prior distributions. Several covariates can be provided and each is assigned to a unique factor.
+SOFA{cite:p}`capraz2024semi` pioneered the coupling of individual factors to external covariates in multi-view factor models, thereby facilitating the disentanglement of known and unknown sources of variation. This coupling is achieved using an additional linear regression task from the external covariate, which can be assumed to follow a Normal, Bernoulli or Categorical distribution, on the factor. Several covariates can be provided and each is assigned to a unique factor.
+
+Given the factor scores $Z_{n,k}$ of a single factor $k$ and observation $n$, the linear predictor $\nu_n$ for a given covariate is given by
+\begin{align*}
+    \nu_n = w_0 + w_1 Z_{n,k},
+\end{align*}
+where $w_0$ is an intercept and $w_1$ is a regression coefficient. $w_0$ and $w_1$ are Bayesian latent variables with standard Normal prior distributions:
+\begin{align*}
+    w_i \sim \Normal{0}{1} \quad i \in [0, 1].
+\end{align*}
+The covariate is then modeled using Normal, Bernoulli or Categorical distributions with the linear predictor $\nu_n$ (and an additional scale parameter in the Normal distribution.)

@@ -170,10 +170,9 @@ class Generative(PyroModule):
                 dim=self._feature_plate_dim,
             )
 
-        for guiding_var_name in self.guiding_vars_names:
-            plates[f"guiding_vars_{guiding_var_name}"] = pyro.plate(
-                f"plate_guiding_vars_{guiding_var_name}", 1, subsample=torch.arange(1), dim=self._feature_plate_dim
-            )
+        plates["guiding_vars"] = pyro.plate(
+            "plate_guiding_vars", 1, subsample=torch.arange(1), dim=self._feature_plate_dim
+        )
 
         plates["factors"] = pyro.plate("plate_factors", self.n_factors, dim=-3)
 

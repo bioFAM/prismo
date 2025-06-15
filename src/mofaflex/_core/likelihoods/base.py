@@ -21,7 +21,6 @@ class R2(NamedTuple):
     ss_tot: float
 
 
-# https://stackoverflow.com/a/61350480
 class _LikelihoodMeta(type(ABC)):
     def __eq__(cls, o):
         if isinstance(o, str):

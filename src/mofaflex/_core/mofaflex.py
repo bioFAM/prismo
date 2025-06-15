@@ -142,6 +142,9 @@ class ModelOptions(_Options):
     guiding_vars_likelihoods: dict[str, str] | Literal["Normal", "Categorical", "Bernoulli"] | None = "Normal"
     """Likelihood for each guiding variable (if dict) or for all guiding variables (if str)."""
 
+    guiding_vars_scales: dict[str, float] | float | None = None
+    """Scale for the likelihood of each guiding variable, to put more or less emphasis on them during training."""
+
     nonnegative_factors: dict[str, bool] | bool = False
     """Non-negativity constraints for factors for each group (if dict) or for all groups (if bool)."""
 
@@ -607,6 +610,7 @@ class MOFAFLEX:
             guiding_vars_n_categories=self._guiding_vars_n_categories,
             guiding_vars_obs_keys=self._data_opts.guiding_vars_obs_keys,
             guiding_vars_factors=self._guiding_vars_factors,
+            guiding_vars_scales=self._model_opts.guiding_vars_scales,
             prior_scales=prior_scales,
             factor_prior=self._model_opts.factor_prior,
             weight_prior=self._model_opts.weight_prior,
@@ -807,6 +811,7 @@ class MOFAFLEX:
                 "nonnegative_factors",
                 "guiding_vars_weight_priors",
                 "guiding_vars_likelihoods",
+                "guiding_vars_scales",
             ),
             (
                 data.view_names,
@@ -815,12 +820,17 @@ class MOFAFLEX:
                 data.group_names,
                 guiding_vars_names,
                 guiding_vars_names,
+                guiding_vars_names,
             ),
             strict=True,
         ):
             val = getattr(self._model_opts, opt_name)
             if not isinstance(val, dict):
                 setattr(self._model_opts, opt_name, dict.fromkeys(keys, val))
+
+        for guiding_var_name in guiding_vars_names:
+            if self._model_opts.guiding_vars_scales[guiding_var_name] is None:
+                self._model_opts.guiding_vars_scales[guiding_var_name] = 1.0
 
         for opt_name, keys in zip(
             ("covariates_obs_key", "covariates_obsm_key", "annotations_varm_key"),
